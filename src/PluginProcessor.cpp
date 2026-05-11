@@ -9,7 +9,7 @@ constexpr auto minRmsForMatching = 1.0e-5f;
 constexpr auto vuBallisticsSeconds = 0.3f;
 constexpr auto parameterSmoothingSeconds = 0.02;
 constexpr auto baxShelfQ = 0.38f;
-constexpr auto saturationDriveScale = 0.32f;
+constexpr auto saturationDriveScale = 0.36f;
 
 juce::String sidePrefix(int sideIndex)
 {
