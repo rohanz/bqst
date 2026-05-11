@@ -7,6 +7,7 @@ constexpr auto sqrtHalf = 0.70710678118654752440f;
 constexpr auto numOversamplingFactors = 3;
 constexpr auto minRmsForMatching = 1.0e-5f;
 constexpr auto vuBallisticsSeconds = 0.3f;
+constexpr auto parameterSmoothingSeconds = 0.02;
 
 juce::String sidePrefix(int sideIndex)
 {
@@ -93,6 +94,27 @@ void BqtAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
     for (auto& dryBuffer : dryBuffers)
         dryBuffer.setSize(1, samplesPerBlock, false, false, true);
 
+    inputTrimGain.reset(sampleRate, parameterSmoothingSeconds);
+    inputTrimGain.setCurrentAndTargetValue(1.0f);
+
+    for (int side = 0; side < 2; ++side)
+    {
+        const auto index = static_cast<size_t>(side);
+        eqLowGainDb[index].reset(sampleRate, parameterSmoothingSeconds);
+        eqHighGainDb[index].reset(sampleRate, parameterSmoothingSeconds);
+        driveAmount[index].reset(sampleRate, parameterSmoothingSeconds);
+        driveGain[index].reset(sampleRate, parameterSmoothingSeconds);
+        saturationMix[index].reset(sampleRate, parameterSmoothingSeconds);
+        outputTrimGain[index].reset(sampleRate, parameterSmoothingSeconds);
+
+        eqLowGainDb[index].setCurrentAndTargetValue(0.0f);
+        eqHighGainDb[index].setCurrentAndTargetValue(0.0f);
+        driveAmount[index].setCurrentAndTargetValue(0.0f);
+        driveGain[index].setCurrentAndTargetValue(1.0f);
+        saturationMix[index].setCurrentAndTargetValue(1.0f);
+        outputTrimGain[index].setCurrentAndTargetValue(1.0f);
+    }
+
     for (auto& sideOversamplers : oversamplers)
     {
         for (int factorIndex = 0; factorIndex < numOversamplingFactors; ++factorIndex)
@@ -130,14 +152,20 @@ void BqtAudioProcessor::updateFilters()
     {
         const auto linkedSide = parameters.getRawParameterValue("eqLink")->load() > 0.5f ? 0 : side;
         const auto prefix = sidePrefix(linkedSide);
-        const auto lowGain = dbToGain(getFloat(parameters, prefix + "LowGain"));
-        const auto highGain = dbToGain(getFloat(parameters, prefix + "HighGain"));
+        const auto lowGainDb = getFloat(parameters, prefix + "LowGain");
+        const auto highGainDb = getFloat(parameters, prefix + "HighGain");
         const auto lowFreq = bqt::lowShelfFrequenciesHz[static_cast<size_t>(getChoice(parameters, prefix + "LowFreq"))];
         const auto highFreq = bqt::highShelfFrequenciesHz[static_cast<size_t>(getChoice(parameters, prefix + "HighFreq"))];
 
         const auto sideIndex = static_cast<size_t>(side);
-        *filters[sideIndex].lowShelf.coefficients = *Coefficients::makeLowShelf(currentSampleRate, lowFreq, 0.707f, lowGain);
-        *filters[sideIndex].highShelf.coefficients = *Coefficients::makeHighShelf(currentSampleRate, highFreq, 0.707f, highGain);
+        eqLowGainDb[sideIndex].setTargetValue(lowGainDb);
+        eqHighGainDb[sideIndex].setTargetValue(highGainDb);
+
+        if (! eqLowGainDb[sideIndex].isSmoothing())
+            *filters[sideIndex].lowShelf.coefficients = *Coefficients::makeLowShelf(currentSampleRate, lowFreq, 0.707f, dbToGain(lowGainDb));
+
+        if (! eqHighGainDb[sideIndex].isSmoothing())
+            *filters[sideIndex].highShelf.coefficients = *Coefficients::makeHighShelf(currentSampleRate, highFreq, 0.707f, dbToGain(highGainDb));
     }
 }
 
@@ -160,9 +188,19 @@ void BqtAudioProcessor::updateSaturationToneFilters()
 void BqtAudioProcessor::processEq(float* samples, int numSamples, int sideIndex)
 {
     const auto filterIndex = static_cast<size_t>(sideIndex);
+    const auto linkedSide = parameters.getRawParameterValue("eqLink")->load() > 0.5f ? 0 : sideIndex;
+    const auto prefix = sidePrefix(linkedSide);
+    const auto lowFreq = bqt::lowShelfFrequenciesHz[static_cast<size_t>(getChoice(parameters, prefix + "LowFreq"))];
+    const auto highFreq = bqt::highShelfFrequenciesHz[static_cast<size_t>(getChoice(parameters, prefix + "HighFreq"))];
 
     for (int sample = 0; sample < numSamples; ++sample)
     {
+        if (eqLowGainDb[filterIndex].isSmoothing())
+            *filters[filterIndex].lowShelf.coefficients = *Coefficients::makeLowShelf(currentSampleRate, lowFreq, 0.707f, dbToGain(eqLowGainDb[filterIndex].getNextValue()));
+
+        if (eqHighGainDb[filterIndex].isSmoothing())
+            *filters[filterIndex].highShelf.coefficients = *Coefficients::makeHighShelf(currentSampleRate, highFreq, 0.707f, dbToGain(eqHighGainDb[filterIndex].getNextValue()));
+
         auto value = samples[sample];
         value = filters[filterIndex].lowShelf.processSample(value);
         value = filters[filterIndex].highShelf.processSample(value);
@@ -175,14 +213,20 @@ void BqtAudioProcessor::processSide(float* samples, int numSamples, int sideInde
     const auto linkedSideIndex = parameters.getRawParameterValue("satLink")->load() > 0.5f ? 0 : sideIndex;
     const auto prefix = sidePrefix(linkedSideIndex);
     const auto driveDb = getFloat(parameters, prefix + "Drive");
-    const auto drive = driveDb / 24.0f;
-    const auto driveGain = dbToGain(driveDb);
-    const auto mix = getFloat(parameters, prefix + "Mix") / 100.0f;
-    const auto outputGain = dbToGain(getFloat(parameters, prefix + "OutputTrim"));
     const auto satType = static_cast<bqt::SaturationType>(getChoice(parameters, prefix + "SatType"));
     const auto autoGainEnabled = parameters.getRawParameterValue("autoGain")->load() > 0.5f;
-    const auto compensation = autoGainEnabled ? bqt::saturationAutoGain(drive, satType) : 1.0f;
     const auto dryBufferIndex = static_cast<size_t>(sideIndex);
+    const auto smoothIndex = static_cast<size_t>(sideIndex);
+
+    driveAmount[smoothIndex].setTargetValue(driveDb / 24.0f);
+    driveGain[smoothIndex].setTargetValue(dbToGain(driveDb));
+    saturationMix[smoothIndex].setTargetValue(getFloat(parameters, prefix + "Mix") / 100.0f);
+    outputTrimGain[smoothIndex].setTargetValue(dbToGain(getFloat(parameters, prefix + "OutputTrim")));
+
+    const auto drive = driveAmount[smoothIndex].skip(numSamples);
+    const auto currentDriveGain = driveGain[smoothIndex].skip(numSamples);
+    const auto mix = saturationMix[smoothIndex].skip(numSamples);
+    const auto compensation = autoGainEnabled ? bqt::saturationAutoGain(drive, satType) : 1.0f;
 
     if (drive > 0.0f && mix > 0.0f)
     {
@@ -192,7 +236,7 @@ void BqtAudioProcessor::processSide(float* samples, int numSamples, int sideInde
 
         dryBuffer.copyFrom(0, 0, samples, numSamples);
 
-        processSaturation(samples, numSamples, sideIndex, drive, driveGain, satType, compensation);
+        processSaturation(samples, numSamples, sideIndex, drive, currentDriveGain, satType, compensation);
 
         const auto* dry = dryBuffer.getReadPointer(0);
         if (autoGainEnabled)
@@ -220,15 +264,17 @@ void BqtAudioProcessor::processSide(float* samples, int numSamples, int sideInde
             samples[sample] = dry[sample] + (samples[sample] - dry[sample]) * mix;
     }
 
-    juce::FloatVectorOperations::multiply(samples, outputGain, numSamples);
+    for (int sample = 0; sample < numSamples; ++sample)
+        samples[sample] *= outputTrimGain[smoothIndex].getNextValue();
+
     updateMeter(sideIndex, samples, numSamples);
 }
 
-void BqtAudioProcessor::processSaturation(float* samples, int numSamples, int sideIndex, float drive, float driveGain, bqt::SaturationType satType, float compensation)
+void BqtAudioProcessor::processSaturation(float* samples, int numSamples, int sideIndex, float drive, float driveGainValue, bqt::SaturationType satType, float compensation)
 {
-    const auto processSample = [drive, driveGain, satType, compensation](float value)
+    const auto processSample = [drive, driveGainValue, satType, compensation](float value)
     {
-        value *= driveGain;
+        value *= driveGainValue;
         value = satType == bqt::SaturationType::density
             ? bqt::densitySaturate(value, drive)
             : bqt::transformerSaturate(value, drive);
@@ -327,13 +373,18 @@ void BqtAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
     const auto numSamples = buffer.getNumSamples();
     auto* left = buffer.getWritePointer(0);
     auto* right = buffer.getWritePointer(1);
-    const auto inputGain = dbToGain(getFloat(parameters, "inputTrim"));
     const auto eqMidSide = getChoice(parameters, "eqMode") == static_cast<int>(bqt::ChannelMode::midSide);
     const auto satMidSide = getChoice(parameters, "satMode") == static_cast<int>(bqt::ChannelMode::midSide);
     const auto eqBypassed = parameters.getRawParameterValue("eqBypass")->load() > 0.5f;
     const auto satBypassed = parameters.getRawParameterValue("satBypass")->load() > 0.5f;
 
-    buffer.applyGain(inputGain);
+    inputTrimGain.setTargetValue(dbToGain(getFloat(parameters, "inputTrim")));
+    for (int sample = 0; sample < numSamples; ++sample)
+    {
+        const auto gain = inputTrimGain.getNextValue();
+        left[sample] *= gain;
+        right[sample] *= gain;
+    }
 
     if (!eqBypassed && eqMidSide)
     {

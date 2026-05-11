@@ -18,6 +18,7 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
     configureCombo(osRealtime);
     configureCombo(osRender);
     configureSlider(inputTrim);
+    inputTrim.setDoubleClickReturnValue(true, 0.0);
     configureCombo(boom);
     addAndMakeVisible(autoGain);
     addAndMakeVisible(eqBypass);
@@ -86,6 +87,11 @@ void BqtAudioProcessorEditor::configureSide(SideControls& controls, int sideInde
     configureCombo(controls.satType);
     configureSlider(controls.mix);
     configureSlider(controls.outputTrim);
+    controls.lowGain.setDoubleClickReturnValue(true, 0.0);
+    controls.highGain.setDoubleClickReturnValue(true, 0.0);
+    controls.drive.setDoubleClickReturnValue(true, 0.0);
+    controls.mix.setDoubleClickReturnValue(true, 100.0);
+    controls.outputTrim.setDoubleClickReturnValue(true, 0.0);
     controls.lowFreq.addItemList(juce::StringArray { "74", "84", "98", "116", "131", "166", "230", "361" }, 1);
     controls.highFreq.addItemList(juce::StringArray { "1.6k", "1.8k", "2.1k", "2.5k", "3.4k", "4.8k", "7.1k", "18k" }, 1);
     controls.satType.addItemList(juce::StringArray { "Density", "Transformer" }, 1);

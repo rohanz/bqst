@@ -38,11 +38,15 @@ inline float densitySaturate(float sample, float drive01)
     if (drive01 <= 0.0f)
         return sample;
 
-    const auto drive = 1.0f + drive01 * 9.0f;
-    const auto shaped = std::tanh(sample * drive);
-    const auto blend = 0.25f + drive01 * 0.75f;
+    const auto evenBias = 0.035f + drive01 * 0.11f;
+    const auto oddWeight = 0.18f + drive01 * 0.42f;
+    const auto softKnee = 1.05f + drive01 * 1.65f;
+    const auto biased = sample + evenBias * sample * sample;
+    const auto shaped = std::tanh(biased * softKnee + oddWeight * sample * sample * sample);
+    const auto dcOffset = std::tanh(evenBias * 0.015f);
+    const auto blend = 0.18f + drive01 * 0.62f;
 
-    return sample * (1.0f - blend) + shaped * blend;
+    return sample * (1.0f - blend) + (shaped - dcOffset) * blend;
 }
 
 inline float transformerSaturate(float sample, float drive01)

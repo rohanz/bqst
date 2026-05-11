@@ -134,10 +134,14 @@ Drive range:
 
 The plugin is calibrated around a nominal analog-style operating level of 0 VU = -18 dBFS. Drive is explicit pre-saturation gain; Auto Gain then level-matches the wet path before Mix.
 
+Continuous controls use short smoothing ramps to reduce zipper noise during moves and automation. Discrete switches and selectors remain stepped.
+
 Density mode:
 
 - Tape-like density and peak softening.
-- Smooth harmonic build-up.
+- Softer onset than the Transformer mode.
+- Asymmetric low-drive behavior to emphasize 2nd harmonic density.
+- Gradually stronger 3rd harmonic content as Drive increases.
 - Mastering-friendly at low Drive.
 - Optional Boom A/B behavior can add low-frequency weight before or inside the saturation stage.
 - Optional Vintage behavior can soften the top end after saturation.

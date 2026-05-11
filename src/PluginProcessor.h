@@ -58,7 +58,7 @@ private:
     void updateSaturationToneFilters();
     void processEq(float* samples, int numSamples, int sideIndex);
     void processSide(float* samples, int numSamples, int sideIndex);
-    void processSaturation(float* samples, int numSamples, int sideIndex, float drive01, float driveGain, bqt::SaturationType satType, float compensation);
+    void processSaturation(float* samples, int numSamples, int sideIndex, float drive01, float driveGainValue, bqt::SaturationType satType, float compensation);
     void updateMeter(int sideIndex, const float* samples, int numSamples);
     int getActiveOversamplingIndex() const;
     void updateLatency();
@@ -67,6 +67,13 @@ private:
     std::array<SideFilters, 2> filters;
     std::array<std::array<std::unique_ptr<juce::dsp::Oversampling<float>>, 3>, 2> oversamplers;
     std::array<juce::AudioBuffer<float>, 2> dryBuffers;
+    juce::SmoothedValue<float, juce::ValueSmoothingTypes::Multiplicative> inputTrimGain;
+    std::array<juce::SmoothedValue<float>, 2> eqLowGainDb;
+    std::array<juce::SmoothedValue<float>, 2> eqHighGainDb;
+    std::array<juce::SmoothedValue<float>, 2> driveAmount;
+    std::array<juce::SmoothedValue<float, juce::ValueSmoothingTypes::Multiplicative>, 2> driveGain;
+    std::array<juce::SmoothedValue<float>, 2> saturationMix;
+    std::array<juce::SmoothedValue<float, juce::ValueSmoothingTypes::Multiplicative>, 2> outputTrimGain;
     std::array<std::atomic<float>, 2> meterLevels {};
     std::array<float, 2> meterRms {};
     double currentSampleRate = 44100.0;
