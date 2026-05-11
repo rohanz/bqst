@@ -39,13 +39,14 @@ inline float densitySaturate(float sample, float drive01)
         return sample;
 
     const auto push = drive01 * drive01;
-    const auto evenBias = 0.018f + drive01 * 0.065f + push * 0.025f;
-    const auto oddWeight = 0.07f + drive01 * 0.22f + push * 0.11f;
-    const auto softKnee = 0.72f + drive01 * 0.78f + push * 0.35f;
+    const auto evenBias = 0.014f + drive01 * 0.050f + push * 0.018f;
+    const auto oddWeight = 0.045f + drive01 * 0.145f + push * 0.085f;
+    const auto softKnee = 0.62f + drive01 * 0.58f + push * 0.28f;
     const auto biased = sample + evenBias * sample * sample;
-    const auto shaped = std::tanh(biased * softKnee + oddWeight * sample * sample * sample);
+    const auto driven = biased * softKnee + oddWeight * sample * sample * sample;
+    const auto shaped = std::tanh(driven) * (1.0f + 0.10f * drive01);
     const auto dcOffset = std::tanh(evenBias * 0.015f);
-    const auto blend = 0.08f + drive01 * 0.42f + push * 0.12f;
+    const auto blend = 0.07f + drive01 * 0.32f + push * 0.10f;
 
     return sample * (1.0f - blend) + (shaped - dcOffset) * blend;
 }
@@ -56,12 +57,12 @@ inline float transformerSaturate(float sample, float drive01)
         return sample;
 
     const auto push = drive01 * drive01;
-    const auto drive = 0.85f + drive01 * 2.1f + push * 0.65f;
-    const auto bias = 0.025f * drive01 + push * 0.015f;
+    const auto drive = 0.82f + drive01 * 1.65f + push * 0.58f;
+    const auto bias = 0.018f * drive01 + push * 0.010f;
     const auto biased = sample * drive + bias;
-    const auto shaped = std::tanh(biased) - std::tanh(bias);
-    const auto rounded = shaped - (0.04f * drive01 + 0.025f * push) * shaped * shaped * shaped;
-    const auto blend = 0.10f + drive01 * 0.45f + push * 0.10f;
+    const auto shaped = std::tanh(biased * 0.86f) / std::tanh(0.86f) - std::tanh(bias * 0.86f) / std::tanh(0.86f);
+    const auto rounded = shaped - (0.025f * drive01 + 0.014f * push) * shaped * shaped * shaped;
+    const auto blend = 0.09f + drive01 * 0.34f + push * 0.09f;
 
     return sample * (1.0f - blend) + rounded * blend;
 }

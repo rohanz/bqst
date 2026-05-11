@@ -174,10 +174,10 @@ Continuous controls use short smoothing ramps to reduce zipper noise during move
 
 Density mode:
 
-- Tape-like density and peak softening.
+- Tape-like density and smoother peak softening.
 - Softer onset than the Transformer mode.
 - Asymmetric low-drive behavior to emphasize 2nd harmonic density.
-- Gradually stronger 3rd harmonic content as Drive increases.
+- Gradually stronger 3rd harmonic content as Drive increases, but with a rounded onset so transient peaks do not clamp too abruptly.
 - Uses subtle high-frequency pre-emphasis before saturation and de-emphasis after saturation, so high-frequency edges round in a more tape-like way rather than just clipping broadband.
 - Mastering-friendly at low Drive.
 - Optional Boom A/B behavior can add low-frequency weight before or inside the saturation stage.
@@ -187,7 +187,7 @@ Density mode:
 Transformer mode:
 
 - British console / transformer-inspired saturation.
-- Smooth asymmetric behavior.
+- Smooth asymmetric behavior with rounded peak handling.
 - Low-mid weight and slightly rounded top when pushed.
 - Uses a small low-mid weighting before saturation and broad top rounding after saturation to avoid upper-mid crunch.
 

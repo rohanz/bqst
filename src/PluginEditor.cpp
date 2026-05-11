@@ -273,23 +273,23 @@ void BqtAudioProcessorEditor::resized()
         eqArea = eqArea.reduced(0, 4);
         sideControls[static_cast<size_t>(side)].eqSectionLabel.setBounds(eqArea.removeFromTop(22));
 
-        auto row1 = eqArea.removeFromTop(86);
+        auto row1 = eqArea.removeFromTop(eqArea.getHeight() / 2);
         auto highGainCell = row1.removeFromLeft(132);
         sideControls[static_cast<size_t>(side)].highGainLabel.setBounds(highGainCell.removeFromTop(18));
         sideControls[static_cast<size_t>(side)].highGain.setBounds(highGainCell);
         row1.removeFromLeft(12);
         auto highFreqCell = row1.removeFromLeft(120);
         sideControls[static_cast<size_t>(side)].highFreqLabel.setBounds(highFreqCell.removeFromTop(18));
-        sideControls[static_cast<size_t>(side)].highFreq.setBounds(highFreqCell.reduced(0, 18));
+        sideControls[static_cast<size_t>(side)].highFreq.setBounds(highFreqCell.removeFromTop(32).reduced(0, 3));
 
-        auto row2 = eqArea.removeFromTop(86);
+        auto row2 = eqArea;
         auto lowGainCell = row2.removeFromLeft(132);
         sideControls[static_cast<size_t>(side)].lowGainLabel.setBounds(lowGainCell.removeFromTop(18));
         sideControls[static_cast<size_t>(side)].lowGain.setBounds(lowGainCell);
         row2.removeFromLeft(12);
         auto lowFreqCell = row2.removeFromLeft(120);
         sideControls[static_cast<size_t>(side)].lowFreqLabel.setBounds(lowFreqCell.removeFromTop(18));
-        sideControls[static_cast<size_t>(side)].lowFreq.setBounds(lowFreqCell.reduced(0, 18));
+        sideControls[static_cast<size_t>(side)].lowFreq.setBounds(lowFreqCell.removeFromTop(32).reduced(0, 3));
 
         auto satArea = side == 0 ? satPanel.removeFromTop(satPanel.getHeight() / 2) : satPanel;
         satArea = satArea.reduced(0, 4);
