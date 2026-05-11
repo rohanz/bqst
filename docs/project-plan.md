@@ -39,8 +39,7 @@ Input
 -> Output
 ```
 
-Oversampling applies around the nonlinear saturation stage, not the linear EQ stage.
-When oversampling is enabled, BQT keeps the reported latency constant by delaying the dry or bypassed saturation path to match the oversampled wet path. This keeps Mix, Drive=0, Saturation Bypass, and global Bypass from causing phase or timing shifts while the host is compensating plugin latency.
+Oversampling wraps the full active processing chain: EQ routing, Bax shelves, saturation routing, nonlinear saturation, Mix, and output trim. This gives the high shelf more room near Nyquist and reduces saturation aliasing with one shared oversampling stage. Global Bypass delays the signal to match the reported oversampling latency so host latency compensation stays consistent.
 
 ## Controls
 

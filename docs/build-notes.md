@@ -65,14 +65,14 @@ Implemented in the first scaffold:
 - Shared Boom and Vintage saturation tone controls on the saturation module plate.
 - Auto Gain level-matches the wet saturation path before per-side Mix blending.
 - Continuous gain/color controls use short smoothing ramps to reduce zipper noise during moves and automation.
-- Dry/wet Mix compensates for oversampling latency to avoid phase offsets at partial Mix settings.
+- Oversampling wraps the full active EQ and saturation chain, so Dry/wet Mix is aligned inside the same oversampled path.
 - Sliders support Shift fine-drag and explicit double-click reset values.
 - Drive at 0 skips saturation and saturation autogain.
 - Per-side output trim.
 - Per-side saturation output meters in the editor.
 - VU meter calibration: 0 VU = -18 dBFS with 300 ms smoothing.
-- Realtime/render oversampling up to 8x around the saturation stage.
-- Oversampling latency reporting.
+- Realtime/render oversampling up to 8x around the full active processing chain.
+- Oversampling latency reporting with global-bypass delay matching.
 - Top-bar parameters for mode, oversampling, auto gain, and bypass.
 - Placeholder functional UI.
 

@@ -62,6 +62,7 @@ private:
 
     void updateFilters();
     void updateSaturationToneFilters();
+    void processChain(float* left, float* right, int numSamples);
     void processEq(float* samples, int numSamples, int sideIndex);
     void processSide(float* samples, int numSamples, int sideIndex);
     void processSaturation(float* samples, int numSamples, int sideIndex, float drive01, float driveGainValue, bqt::SaturationType satType, float compensation);
@@ -72,7 +73,7 @@ private:
 
     juce::AudioProcessorValueTreeState parameters;
     std::array<SideFilters, 2> filters;
-    std::array<std::array<std::unique_ptr<juce::dsp::Oversampling<float>>, 3>, 2> oversamplers;
+    std::array<std::unique_ptr<juce::dsp::Oversampling<float>>, 3> oversamplers;
     std::array<juce::AudioBuffer<float>, 2> dryBuffers;
     std::array<juce::dsp::DelayLine<float, juce::dsp::DelayLineInterpolationTypes::None>, 2> dryMixDelays;
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Multiplicative> inputTrimGain;
