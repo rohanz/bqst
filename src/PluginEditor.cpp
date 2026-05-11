@@ -11,20 +11,29 @@ juce::String sidePrefix(int sideIndex)
 BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
     : AudioProcessorEditor(&p), audioProcessor(p), meterA(p, 0), meterB(p, 1)
 {
-    setSize(980, 560);
+    setSize(1160, 560);
 
     configureCombo(eqMode);
     configureCombo(satMode);
     configureCombo(osRealtime);
     configureCombo(osRender);
+    configureSlider(inputTrim);
     configureCombo(boom);
     addAndMakeVisible(autoGain);
+    addAndMakeVisible(eqBypass);
+    addAndMakeVisible(satBypass);
+    addAndMakeVisible(eqLink);
+    addAndMakeVisible(satLink);
     addAndMakeVisible(vintage);
     addAndMakeVisible(bypass);
     addAndMakeVisible(meterA);
     addAndMakeVisible(meterB);
 
     autoGain.setButtonText("Auto Gain");
+    eqBypass.setButtonText("EQ Byp");
+    satBypass.setButtonText("Sat Byp");
+    eqLink.setButtonText("EQ Link");
+    satLink.setButtonText("Sat Link");
     vintage.setButtonText("Vintage");
     bypass.setButtonText("Bypass");
     eqMode.addItemList(juce::StringArray { "EQ L/R", "EQ M/S" }, 1);
@@ -37,8 +46,13 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
     satModeAttachment = std::make_unique<ComboBoxAttachment>(audioProcessor.state(), "satMode", satMode);
     osRealtimeAttachment = std::make_unique<ComboBoxAttachment>(audioProcessor.state(), "osRealtime", osRealtime);
     osRenderAttachment = std::make_unique<ComboBoxAttachment>(audioProcessor.state(), "osRender", osRender);
+    inputTrimAttachment = std::make_unique<SliderAttachment>(audioProcessor.state(), "inputTrim", inputTrim);
     boomAttachment = std::make_unique<ComboBoxAttachment>(audioProcessor.state(), "boom", boom);
     autoGainAttachment = std::make_unique<ButtonAttachment>(audioProcessor.state(), "autoGain", autoGain);
+    eqBypassAttachment = std::make_unique<ButtonAttachment>(audioProcessor.state(), "eqBypass", eqBypass);
+    satBypassAttachment = std::make_unique<ButtonAttachment>(audioProcessor.state(), "satBypass", satBypass);
+    eqLinkAttachment = std::make_unique<ButtonAttachment>(audioProcessor.state(), "eqLink", eqLink);
+    satLinkAttachment = std::make_unique<ButtonAttachment>(audioProcessor.state(), "satLink", satLink);
     vintageAttachment = std::make_unique<ButtonAttachment>(audioProcessor.state(), "vintage", vintage);
     bypassAttachment = std::make_unique<ButtonAttachment>(audioProcessor.state(), "bypass", bypass);
 
@@ -50,11 +64,15 @@ void BqtAudioProcessorEditor::configureSlider(juce::Slider& slider)
 {
     slider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
     slider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 72, 20);
+    slider.setVelocityBasedMode(true);
+    slider.setVelocityModeParameters(0.75, 1, 0.0, true, juce::ModifierKeys::shiftModifier);
+    slider.setTooltip("Drag to adjust. Hold Shift for fine movement. Double-click the value to type.");
     addAndMakeVisible(slider);
 }
 
 void BqtAudioProcessorEditor::configureCombo(juce::ComboBox& combo)
 {
+    combo.setTooltip("Click to choose a stepped setting.");
     addAndMakeVisible(combo);
 }
 
@@ -110,7 +128,8 @@ void BqtAudioProcessorEditor::VuMeter::timerCallback()
 {
     const auto raw = audioProcessor.getMeterLevel(side);
     const auto db = juce::Decibels::gainToDecibels(raw, -60.0f);
-    level = juce::jmap(juce::jlimit(-36.0f, 6.0f, db), -36.0f, 6.0f, 0.0f, 1.0f);
+    const auto vu = db + 18.0f;
+    level = juce::jmap(juce::jlimit(-20.0f, 3.0f, vu), -20.0f, 3.0f, 0.0f, 1.0f);
     repaint();
 }
 
@@ -155,9 +174,15 @@ void BqtAudioProcessorEditor::resized()
     osRealtime.setBounds(top.removeFromLeft(118));
     top.removeFromLeft(10);
     osRender.setBounds(top.removeFromLeft(118));
-    top.removeFromLeft(16);
-    autoGain.setBounds(top.removeFromLeft(110));
-    bypass.setBounds(top.removeFromLeft(90));
+    top.removeFromLeft(8);
+    inputTrim.setBounds(top.removeFromLeft(96));
+    top.removeFromLeft(8);
+    autoGain.setBounds(top.removeFromLeft(90));
+    eqBypass.setBounds(top.removeFromLeft(76));
+    satBypass.setBounds(top.removeFromLeft(78));
+    eqLink.setBounds(top.removeFromLeft(78));
+    satLink.setBounds(top.removeFromLeft(82));
+    bypass.setBounds(top.removeFromLeft(76));
 
     auto panel = bounds.reduced(0, 18);
     panel.removeFromTop(40);

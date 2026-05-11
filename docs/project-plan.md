@@ -49,7 +49,12 @@ Top utility bar:
 - Saturation Mode: L/R or M/S.
 - Realtime oversampling: Off, 2x, 4x, 8x.
 - Render oversampling: Off, 2x, 4x, 8x.
+- Input Trim: -18 dB to +18 dB.
 - Auto gain: On or Off.
+- EQ Bypass.
+- Saturation Bypass.
+- EQ Link.
+- Saturation Link.
 - Global bypass.
 
 EQ module:
@@ -106,7 +111,7 @@ High shelf:
 Initial gain range:
 
 ```text
--6 dB to +6 dB
+-6 dB to +6 dB in 0.1 dB steps
 ```
 
 Potential later addition:
@@ -120,6 +125,14 @@ Drive at exactly 0 should effectively bypass nonlinear processing for that side:
 - Skip waveshaping.
 - Skip saturation autogain.
 - Avoid subtle harmonic or level changes.
+
+Drive range:
+
+```text
+0 dB to +24 dB
+```
+
+The plugin is calibrated around a nominal analog-style operating level of 0 VU = -18 dBFS. Drive is explicit pre-saturation gain; Auto Gain then level-matches the wet path before Mix.
 
 Density mode:
 
@@ -145,7 +158,9 @@ Saturation mix:
 VU meters:
 
 - Located on the saturation module.
-- First version meters saturation module output level per side.
+- Meter saturation module output level per side.
+- Calibrated to 0 VU = -18 dBFS.
+- Use 300 ms VU-style smoothing.
 - Later versions may add switchable input/output/gain-reduction-style metering if useful.
 
 These modes are inspired by broad analog behaviors, not claims of exact hardware emulation.

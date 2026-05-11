@@ -56,8 +56,9 @@ private:
 
     void updateFilters();
     void updateSaturationToneFilters();
+    void processEq(float* samples, int numSamples, int sideIndex);
     void processSide(float* samples, int numSamples, int sideIndex);
-    void processSaturation(float* samples, int numSamples, int sideIndex, float drive, bqt::SaturationType satType, float compensation);
+    void processSaturation(float* samples, int numSamples, int sideIndex, float drive01, float driveGain, bqt::SaturationType satType, float compensation);
     void updateMeter(int sideIndex, const float* samples, int numSamples);
     int getActiveOversamplingIndex() const;
     void updateLatency();
@@ -67,6 +68,7 @@ private:
     std::array<std::array<std::unique_ptr<juce::dsp::Oversampling<float>>, 3>, 2> oversamplers;
     std::array<juce::AudioBuffer<float>, 2> dryBuffers;
     std::array<std::atomic<float>, 2> meterLevels {};
+    std::array<float, 2> meterRms {};
     double currentSampleRate = 44100.0;
     int currentLatencySamples = 0;
 

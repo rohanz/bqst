@@ -6,6 +6,7 @@ namespace
 constexpr auto sqrtHalf = 0.70710678118654752440f;
 constexpr auto numOversamplingFactors = 3;
 constexpr auto minRmsForMatching = 1.0e-5f;
+constexpr auto vuBallisticsSeconds = 0.3f;
 
 juce::String sidePrefix(int sideIndex)
 {
@@ -44,7 +45,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout BqtAudioProcessor::createPar
     params.push_back(std::make_unique<juce::AudioParameterChoice>("satMode", "Saturation Mode", juce::StringArray { "L/R", "M/S" }, 0));
     params.push_back(std::make_unique<juce::AudioParameterChoice>("osRealtime", "Realtime Oversampling", juce::StringArray { "Off", "2x", "4x", "8x" }, 0));
     params.push_back(std::make_unique<juce::AudioParameterChoice>("osRender", "Render Oversampling", juce::StringArray { "Off", "2x", "4x", "8x" }, 2));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("inputTrim", "Input Trim", juce::NormalisableRange<float>(-18.0f, 18.0f, 0.1f), 0.0f));
     params.push_back(std::make_unique<juce::AudioParameterBool>("autoGain", "Auto Gain", true));
+    params.push_back(std::make_unique<juce::AudioParameterBool>("eqBypass", "EQ Bypass", false));
+    params.push_back(std::make_unique<juce::AudioParameterBool>("satBypass", "Saturation Bypass", false));
+    params.push_back(std::make_unique<juce::AudioParameterBool>("eqLink", "EQ Link", false));
+    params.push_back(std::make_unique<juce::AudioParameterBool>("satLink", "Saturation Link", false));
     params.push_back(std::make_unique<juce::AudioParameterBool>("bypass", "Bypass", false));
     params.push_back(std::make_unique<juce::AudioParameterChoice>("boom", "Boom", juce::StringArray { "Off", "A", "B" }, 0));
     params.push_back(std::make_unique<juce::AudioParameterBool>("vintage", "Vintage", false));
@@ -58,7 +64,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout BqtAudioProcessor::createPar
         params.push_back(std::make_unique<juce::AudioParameterChoice>(prefix + "LowFreq", label + " Low Frequency", juce::StringArray { "74", "84", "98", "116", "131", "166", "230", "361" }, 3));
         params.push_back(std::make_unique<juce::AudioParameterFloat>(prefix + "HighGain", label + " High Gain", juce::NormalisableRange<float>(-6.0f, 6.0f, 0.1f), 0.0f));
         params.push_back(std::make_unique<juce::AudioParameterChoice>(prefix + "HighFreq", label + " High Frequency", juce::StringArray { "1.6k", "1.8k", "2.1k", "2.5k", "3.4k", "4.8k", "7.1k", "18k" }, 4));
-        params.push_back(std::make_unique<juce::AudioParameterFloat>(prefix + "Drive", label + " Drive", juce::NormalisableRange<float>(0.0f, 10.0f, 0.01f), 0.0f));
+        params.push_back(std::make_unique<juce::AudioParameterFloat>(prefix + "Drive", label + " Drive", juce::NormalisableRange<float>(0.0f, 24.0f, 0.1f), 0.0f));
         params.push_back(std::make_unique<juce::AudioParameterChoice>(prefix + "SatType", label + " Saturation Type", juce::StringArray { "Density", "Transformer" }, 0));
         params.push_back(std::make_unique<juce::AudioParameterFloat>(prefix + "Mix", label + " Saturation Mix", juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 100.0f));
         params.push_back(std::make_unique<juce::AudioParameterFloat>(prefix + "OutputTrim", label + " Output Trim", juce::NormalisableRange<float>(-12.0f, 12.0f, 0.1f), 0.0f));
@@ -105,6 +111,7 @@ void BqtAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
     updateFilters();
     updateSaturationToneFilters();
     updateLatency();
+    meterRms = {};
 }
 
 void BqtAudioProcessor::releaseResources()
@@ -121,7 +128,8 @@ void BqtAudioProcessor::updateFilters()
 {
     for (int side = 0; side < 2; ++side)
     {
-        const auto prefix = sidePrefix(side);
+        const auto linkedSide = parameters.getRawParameterValue("eqLink")->load() > 0.5f ? 0 : side;
+        const auto prefix = sidePrefix(linkedSide);
         const auto lowGain = dbToGain(getFloat(parameters, prefix + "LowGain"));
         const auto highGain = dbToGain(getFloat(parameters, prefix + "HighGain"));
         const auto lowFreq = bqt::lowShelfFrequenciesHz[static_cast<size_t>(getChoice(parameters, prefix + "LowFreq"))];
@@ -149,26 +157,42 @@ void BqtAudioProcessor::updateSaturationToneFilters()
     }
 }
 
+void BqtAudioProcessor::processEq(float* samples, int numSamples, int sideIndex)
+{
+    const auto filterIndex = static_cast<size_t>(sideIndex);
+
+    for (int sample = 0; sample < numSamples; ++sample)
+    {
+        auto value = samples[sample];
+        value = filters[filterIndex].lowShelf.processSample(value);
+        value = filters[filterIndex].highShelf.processSample(value);
+        samples[sample] = value;
+    }
+}
+
 void BqtAudioProcessor::processSide(float* samples, int numSamples, int sideIndex)
 {
-    const auto prefix = sidePrefix(sideIndex);
-    const auto drive = getFloat(parameters, prefix + "Drive") / 10.0f;
+    const auto linkedSideIndex = parameters.getRawParameterValue("satLink")->load() > 0.5f ? 0 : sideIndex;
+    const auto prefix = sidePrefix(linkedSideIndex);
+    const auto driveDb = getFloat(parameters, prefix + "Drive");
+    const auto drive = driveDb / 24.0f;
+    const auto driveGain = dbToGain(driveDb);
     const auto mix = getFloat(parameters, prefix + "Mix") / 100.0f;
     const auto outputGain = dbToGain(getFloat(parameters, prefix + "OutputTrim"));
     const auto satType = static_cast<bqt::SaturationType>(getChoice(parameters, prefix + "SatType"));
     const auto autoGainEnabled = parameters.getRawParameterValue("autoGain")->load() > 0.5f;
     const auto compensation = autoGainEnabled ? bqt::saturationAutoGain(drive, satType) : 1.0f;
-    const auto filterIndex = static_cast<size_t>(sideIndex);
+    const auto dryBufferIndex = static_cast<size_t>(sideIndex);
 
     if (drive > 0.0f && mix > 0.0f)
     {
-        auto& dryBuffer = dryBuffers[filterIndex];
+        auto& dryBuffer = dryBuffers[dryBufferIndex];
         if (dryBuffer.getNumSamples() < numSamples)
             dryBuffer.setSize(1, numSamples, false, false, true);
 
         dryBuffer.copyFrom(0, 0, samples, numSamples);
 
-        processSaturation(samples, numSamples, sideIndex, drive, satType, compensation);
+        processSaturation(samples, numSamples, sideIndex, drive, driveGain, satType, compensation);
 
         const auto* dry = dryBuffer.getReadPointer(0);
         if (autoGainEnabled)
@@ -200,10 +224,11 @@ void BqtAudioProcessor::processSide(float* samples, int numSamples, int sideInde
     updateMeter(sideIndex, samples, numSamples);
 }
 
-void BqtAudioProcessor::processSaturation(float* samples, int numSamples, int sideIndex, float drive, bqt::SaturationType satType, float compensation)
+void BqtAudioProcessor::processSaturation(float* samples, int numSamples, int sideIndex, float drive, float driveGain, bqt::SaturationType satType, float compensation)
 {
-    const auto processSample = [drive, satType, compensation](float value)
+    const auto processSample = [drive, driveGain, satType, compensation](float value)
     {
+        value *= driveGain;
         value = satType == bqt::SaturationType::density
             ? bqt::densitySaturate(value, drive)
             : bqt::transformerSaturate(value, drive);
@@ -243,14 +268,18 @@ void BqtAudioProcessor::processSaturation(float* samples, int numSamples, int si
 
 void BqtAudioProcessor::updateMeter(int sideIndex, const float* samples, int numSamples)
 {
-    auto peak = 0.0f;
+    auto energy = 0.0f;
     for (int sample = 0; sample < numSamples; ++sample)
-        peak = juce::jmax(peak, std::abs(samples[sample]));
+        energy += samples[sample] * samples[sample];
+
+    const auto blockRms = std::sqrt(energy / static_cast<float>(numSamples));
+    const auto blockSeconds = static_cast<float>(numSamples / currentSampleRate);
+    const auto release = std::exp(-blockSeconds / vuBallisticsSeconds);
+    const auto attack = 1.0f - release;
 
     const auto index = static_cast<size_t>(sideIndex);
-    const auto previous = meterLevels[index].load();
-    const auto smoothed = peak > previous ? peak : previous * 0.92f + peak * 0.08f;
-    meterLevels[index].store(smoothed);
+    meterRms[index] = meterRms[index] * release + blockRms * attack;
+    meterLevels[index].store(meterRms[index]);
 }
 
 float BqtAudioProcessor::getMeterLevel(int sideIndex) const
@@ -298,10 +327,15 @@ void BqtAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
     const auto numSamples = buffer.getNumSamples();
     auto* left = buffer.getWritePointer(0);
     auto* right = buffer.getWritePointer(1);
+    const auto inputGain = dbToGain(getFloat(parameters, "inputTrim"));
     const auto eqMidSide = getChoice(parameters, "eqMode") == static_cast<int>(bqt::ChannelMode::midSide);
     const auto satMidSide = getChoice(parameters, "satMode") == static_cast<int>(bqt::ChannelMode::midSide);
+    const auto eqBypassed = parameters.getRawParameterValue("eqBypass")->load() > 0.5f;
+    const auto satBypassed = parameters.getRawParameterValue("satBypass")->load() > 0.5f;
 
-    if (eqMidSide)
+    buffer.applyGain(inputGain);
+
+    if (!eqBypassed && eqMidSide)
     {
         for (int i = 0; i < numSamples; ++i)
         {
@@ -312,20 +346,13 @@ void BqtAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
         }
     }
 
-    for (int sample = 0; sample < numSamples; ++sample)
+    if (!eqBypassed)
     {
-        auto value = left[sample];
-        value = filters[0].lowShelf.processSample(value);
-        value = filters[0].highShelf.processSample(value);
-        left[sample] = value;
-
-        value = right[sample];
-        value = filters[1].lowShelf.processSample(value);
-        value = filters[1].highShelf.processSample(value);
-        right[sample] = value;
+        processEq(left, numSamples, 0);
+        processEq(right, numSamples, 1);
     }
 
-    if (eqMidSide)
+    if (!eqBypassed && eqMidSide)
     {
         for (int i = 0; i < numSamples; ++i)
         {
@@ -336,7 +363,7 @@ void BqtAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
         }
     }
 
-    if (satMidSide)
+    if (!satBypassed && satMidSide)
     {
         for (int i = 0; i < numSamples; ++i)
         {
@@ -347,10 +374,18 @@ void BqtAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
         }
     }
 
-    processSide(left, numSamples, 0);
-    processSide(right, numSamples, 1);
+    if (!satBypassed)
+    {
+        processSide(left, numSamples, 0);
+        processSide(right, numSamples, 1);
+    }
+    else
+    {
+        updateMeter(0, left, numSamples);
+        updateMeter(1, right, numSamples);
+    }
 
-    if (satMidSide)
+    if (!satBypassed && satMidSide)
     {
         for (int i = 0; i < numSamples; ++i)
         {
