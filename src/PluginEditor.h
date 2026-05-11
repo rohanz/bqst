@@ -26,6 +26,7 @@ private:
         juce::ComboBox highFreq;
         juce::Slider drive;
         juce::ComboBox satType;
+        juce::Slider mix;
         juce::Slider outputTrim;
 
         std::unique_ptr<SliderAttachment> lowGainAttachment;
@@ -34,7 +35,22 @@ private:
         std::unique_ptr<ComboBoxAttachment> highFreqAttachment;
         std::unique_ptr<SliderAttachment> driveAttachment;
         std::unique_ptr<ComboBoxAttachment> satTypeAttachment;
+        std::unique_ptr<SliderAttachment> mixAttachment;
         std::unique_ptr<SliderAttachment> outputTrimAttachment;
+    };
+
+    class VuMeter final : public juce::Component, private juce::Timer
+    {
+    public:
+        VuMeter(BqtAudioProcessor& processor, int sideIndex);
+        void paint(juce::Graphics& g) override;
+
+    private:
+        void timerCallback() override;
+
+        BqtAudioProcessor& audioProcessor;
+        int side = 0;
+        float level = 0.0f;
     };
 
     void configureSlider(juce::Slider& slider);
@@ -42,17 +58,25 @@ private:
     void configureSide(SideControls& controls, int sideIndex);
 
     BqtAudioProcessor& audioProcessor;
-    juce::ComboBox mode;
+    juce::ComboBox eqMode;
+    juce::ComboBox satMode;
     juce::ComboBox osRealtime;
     juce::ComboBox osRender;
+    juce::ComboBox boom;
     juce::ToggleButton autoGain;
+    juce::ToggleButton vintage;
     juce::ToggleButton bypass;
     std::array<SideControls, 2> sideControls;
+    VuMeter meterA;
+    VuMeter meterB;
 
-    std::unique_ptr<ComboBoxAttachment> modeAttachment;
+    std::unique_ptr<ComboBoxAttachment> eqModeAttachment;
+    std::unique_ptr<ComboBoxAttachment> satModeAttachment;
     std::unique_ptr<ComboBoxAttachment> osRealtimeAttachment;
     std::unique_ptr<ComboBoxAttachment> osRenderAttachment;
+    std::unique_ptr<ComboBoxAttachment> boomAttachment;
     std::unique_ptr<ButtonAttachment> autoGainAttachment;
+    std::unique_ptr<ButtonAttachment> vintageAttachment;
     std::unique_ptr<ButtonAttachment> bypassAttachment;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(BqtAudioProcessorEditor)

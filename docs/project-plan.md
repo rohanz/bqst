@@ -18,11 +18,13 @@ BQT stands for Bax / Q / Tape-or-Transformer. It is planned as a mastering-frien
 
 ```text
 Input
--> Mode: L/R pass-through or M/S encode
+-> EQ Mode: L/R pass-through or M/S encode
 -> Side A Bax EQ
 -> Side B Bax EQ
+-> M/S decode if EQ Mode requires it
 -> EQ module output
 
+-> Saturation Mode: L/R pass-through or M/S encode
 -> Side A saturation if Drive > 0
 -> Side A saturation autogain if enabled and Drive > 0
 -> Side A saturation mix
@@ -33,7 +35,7 @@ Input
 -> Side B saturation mix
 -> Side B saturation output trim
 
--> M/S decode if needed
+-> M/S decode if Saturation Mode requires it
 -> Output
 ```
 
@@ -43,7 +45,8 @@ Oversampling applies around the nonlinear saturation stage, not the linear EQ st
 
 Top utility bar:
 
-- Mode: L/R or M/S.
+- EQ Mode: L/R or M/S.
+- Saturation Mode: L/R or M/S.
 - Realtime oversampling: Off, 2x, 4x, 8x.
 - Render oversampling: Off, 2x, 4x, 8x.
 - Auto gain: On or Off.
@@ -78,7 +81,7 @@ Saturation module shared controls:
 - Boom: Off, A, B.
 - Vintage: On or Off.
 
-Side labels depend on the global mode:
+Side labels depend on each module mode:
 
 - L/R mode: Side A = Left, Side B = Right.
 - M/S mode: Side A = Mid, Side B = Side.

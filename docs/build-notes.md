@@ -38,11 +38,14 @@ Implemented in the first scaffold:
 
 - JUCE/CMake plugin target.
 - Stereo VST3 processor.
-- L/R and M/S routing.
+- Independent L/R and M/S routing for the EQ and saturation modules.
 - Per-side low/high Bax-style shelves.
 - Per-side Density and Transformer saturation choices.
+- Per-side saturation Mix controls.
+- Shared Boom and Vintage saturation tone controls.
 - Drive at 0 skips saturation and saturation autogain.
 - Per-side output trim.
+- Per-side saturation output meters in the editor.
 - Realtime/render oversampling up to 8x around the saturation stage.
 - Oversampling latency reporting.
 - Top-bar parameters for mode, oversampling, auto gain, and bypass.

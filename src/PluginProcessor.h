@@ -1,5 +1,8 @@
 #pragma once
 
+#include <array>
+#include <atomic>
+
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_dsp/juce_dsp.h>
 
@@ -35,6 +38,7 @@ public:
     void setStateInformation(const void* data, int sizeInBytes) override;
 
     juce::AudioProcessorValueTreeState& state() { return parameters; }
+    float getMeterLevel(int sideIndex) const;
 
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
@@ -46,17 +50,23 @@ private:
     {
         Filter lowShelf;
         Filter highShelf;
+        Filter boom;
+        Filter vintage;
     };
 
     void updateFilters();
+    void updateSaturationToneFilters();
     void processSide(float* samples, int numSamples, int sideIndex);
     void processSaturation(float* samples, int numSamples, int sideIndex, float drive, bqt::SaturationType satType, float compensation);
+    void updateMeter(int sideIndex, const float* samples, int numSamples);
     int getActiveOversamplingIndex() const;
     void updateLatency();
 
     juce::AudioProcessorValueTreeState parameters;
     std::array<SideFilters, 2> filters;
     std::array<std::array<std::unique_ptr<juce::dsp::Oversampling<float>>, 3>, 2> oversamplers;
+    std::array<juce::AudioBuffer<float>, 2> dryBuffers;
+    std::array<std::atomic<float>, 2> meterLevels {};
     double currentSampleRate = 44100.0;
     int currentLatencySamples = 0;
 
