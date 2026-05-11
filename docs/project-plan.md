@@ -115,6 +115,8 @@ Initial gain range:
 -6 dB to +6 dB in 0.1 dB steps
 ```
 
+The EQ uses broad, low-Q shelving curves rather than surgical shelves. High shelf points are clamped safely below Nyquist at lower sample rates, so the 18 kHz setting remains stable at 44.1/48 kHz but will sound subtle because it is an air-band shelf close to the top of the audible range.
+
 Potential later addition:
 
 - High-pass and low-pass filters, including very high low-pass positions, can be added after the core EQ/saturation plugin is working.

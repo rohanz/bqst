@@ -8,6 +8,7 @@ constexpr auto numOversamplingFactors = 3;
 constexpr auto minRmsForMatching = 1.0e-5f;
 constexpr auto vuBallisticsSeconds = 0.3f;
 constexpr auto parameterSmoothingSeconds = 0.02;
+constexpr auto baxShelfQ = 0.48f;
 
 juce::String sidePrefix(int sideIndex)
 {
@@ -27,6 +28,11 @@ float getFloat(juce::AudioProcessorValueTreeState& state, const juce::String& id
 int getChoice(juce::AudioProcessorValueTreeState& state, const juce::String& id)
 {
     return static_cast<int>(state.getRawParameterValue(id)->load());
+}
+
+float clampShelfFrequency(double sampleRate, float frequency)
+{
+    return juce::jlimit(10.0f, static_cast<float>(sampleRate * 0.42), frequency);
 }
 } // namespace
 
@@ -169,18 +175,18 @@ void BqtAudioProcessor::updateFilters()
         const auto prefix = sidePrefix(linkedSide);
         const auto lowGainDb = getFloat(parameters, prefix + "LowGain");
         const auto highGainDb = getFloat(parameters, prefix + "HighGain");
-        const auto lowFreq = bqt::lowShelfFrequenciesHz[static_cast<size_t>(getChoice(parameters, prefix + "LowFreq"))];
-        const auto highFreq = bqt::highShelfFrequenciesHz[static_cast<size_t>(getChoice(parameters, prefix + "HighFreq"))];
+        const auto lowFreq = clampShelfFrequency(currentSampleRate, bqt::lowShelfFrequenciesHz[static_cast<size_t>(getChoice(parameters, prefix + "LowFreq"))]);
+        const auto highFreq = clampShelfFrequency(currentSampleRate, bqt::highShelfFrequenciesHz[static_cast<size_t>(getChoice(parameters, prefix + "HighFreq"))]);
 
         const auto sideIndex = static_cast<size_t>(side);
         eqLowGainDb[sideIndex].setTargetValue(lowGainDb);
         eqHighGainDb[sideIndex].setTargetValue(highGainDb);
 
         if (! eqLowGainDb[sideIndex].isSmoothing())
-            *filters[sideIndex].lowShelf.coefficients = *Coefficients::makeLowShelf(currentSampleRate, lowFreq, 0.707f, dbToGain(lowGainDb));
+            *filters[sideIndex].lowShelf.coefficients = *Coefficients::makeLowShelf(currentSampleRate, lowFreq, baxShelfQ, dbToGain(lowGainDb));
 
         if (! eqHighGainDb[sideIndex].isSmoothing())
-            *filters[sideIndex].highShelf.coefficients = *Coefficients::makeHighShelf(currentSampleRate, highFreq, 0.707f, dbToGain(highGainDb));
+            *filters[sideIndex].highShelf.coefficients = *Coefficients::makeHighShelf(currentSampleRate, highFreq, baxShelfQ, dbToGain(highGainDb));
     }
 }
 
@@ -209,16 +215,16 @@ void BqtAudioProcessor::processEq(float* samples, int numSamples, int sideIndex)
     const auto filterIndex = static_cast<size_t>(sideIndex);
     const auto linkedSide = parameters.getRawParameterValue("eqLink")->load() > 0.5f ? 0 : sideIndex;
     const auto prefix = sidePrefix(linkedSide);
-    const auto lowFreq = bqt::lowShelfFrequenciesHz[static_cast<size_t>(getChoice(parameters, prefix + "LowFreq"))];
-    const auto highFreq = bqt::highShelfFrequenciesHz[static_cast<size_t>(getChoice(parameters, prefix + "HighFreq"))];
+    const auto lowFreq = clampShelfFrequency(currentSampleRate, bqt::lowShelfFrequenciesHz[static_cast<size_t>(getChoice(parameters, prefix + "LowFreq"))]);
+    const auto highFreq = clampShelfFrequency(currentSampleRate, bqt::highShelfFrequenciesHz[static_cast<size_t>(getChoice(parameters, prefix + "HighFreq"))]);
 
     for (int sample = 0; sample < numSamples; ++sample)
     {
         if (eqLowGainDb[filterIndex].isSmoothing())
-            *filters[filterIndex].lowShelf.coefficients = *Coefficients::makeLowShelf(currentSampleRate, lowFreq, 0.707f, dbToGain(eqLowGainDb[filterIndex].getNextValue()));
+            *filters[filterIndex].lowShelf.coefficients = *Coefficients::makeLowShelf(currentSampleRate, lowFreq, baxShelfQ, dbToGain(eqLowGainDb[filterIndex].getNextValue()));
 
         if (eqHighGainDb[filterIndex].isSmoothing())
-            *filters[filterIndex].highShelf.coefficients = *Coefficients::makeHighShelf(currentSampleRate, highFreq, 0.707f, dbToGain(eqHighGainDb[filterIndex].getNextValue()));
+            *filters[filterIndex].highShelf.coefficients = *Coefficients::makeHighShelf(currentSampleRate, highFreq, baxShelfQ, dbToGain(eqHighGainDb[filterIndex].getNextValue()));
 
         auto value = samples[sample];
         value = filters[filterIndex].lowShelf.processSample(value);
