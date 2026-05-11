@@ -115,7 +115,7 @@ Initial gain range:
 -6 dB to +6 dB in 0.1 dB steps
 ```
 
-The EQ uses broad, low-Q shelving curves rather than surgical shelves. High shelf points are clamped safely below Nyquist at lower sample rates, so the 18 kHz setting remains stable at 44.1/48 kHz but will sound subtle because it is an air-band shelf close to the top of the audible range.
+The EQ uses broad, low-Q shelving curves rather than surgical shelves. The current shelf Q is deliberately gentle so the transition spreads over multiple octaves, closer to published mastering Bax-style curve families than to a normal parametric EQ shelf. High shelf points are clamped safely below Nyquist at lower sample rates, so the 18 kHz setting remains stable at 44.1/48 kHz but will sound subtle because it is an air-band shelf close to the top of the audible range.
 
 ## Bereich03 BAX-EQ Reference
 
@@ -138,12 +138,12 @@ Important reference points from the page:
 
 Graph observations:
 
-- The high shelf graph shows very broad shelves that rise gradually over multiple octaves and reach the final shelf mostly in the upper treble.
-- The low shelf graph shows broad low-frequency boosts that remain flat into the sub range and transition back to flat through the low mids.
+- The high shelf graph shows very broad shelves that rise gradually over multiple octaves and reach the final shelf mostly in the upper treble. BQT borrows this broad transition behavior, not the exact frequencies.
+- The low shelf graph shows broad low-frequency boosts that remain flat into the sub range and transition back to flat through the low mids. BQT borrows this broad transition behavior, not the exact frequencies.
 - The gain graphs show relatively small, mastering-oriented gain steps rather than large tone-shaping boosts.
 - The published THD graph is extremely clean for an analog EQ, so this EQ reference should inform BQT's linear EQ curves, not the saturation section.
 
-BQT currently keeps independent Side A and Side B controls because that was part of the concept. It also currently has only low/high shelves, not the Bereich03 mid bell. Potential later changes:
+BQT currently keeps independent Side A and Side B controls because that was part of the concept. It also currently has only low/high shelves, not the Bereich03 mid bell. Potential later changes if we want workflow parity rather than just curve inspiration:
 
 - Add a selectable "BAX-EQ positions" frequency set using 35, 47, 62, 82, 120, 210 Hz and 1.2, 2.5, 4.7, 8, 11, 18 kHz.
 - Add a mid bell only if we want the EQ unit to become a three-band mastering EQ rather than a pure Bax shelf unit.
