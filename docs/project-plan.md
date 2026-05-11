@@ -168,7 +168,7 @@ Drive range:
 0 dB to +18 dB
 ```
 
-The plugin is calibrated around a nominal analog-style operating level of 0 VU = -18 dBFS. Drive is an explicit user-facing intensity range, but the internal waveshaper drive is deliberately scaled lower so useful saturation arrives gradually rather than getting crunchy too fast. The upper end of the Drive control uses stronger nonlinear shaping so maximum settings can get obviously saturated without making low and mid settings too touchy. The saturation stage also uses a small low-frequency pre/de-emphasis pair around the nonlinear section, which gives loud kick fundamentals more headroom before the waveshaper while restoring the broad low-end balance afterward. Auto Gain then level-matches the wet path before Mix.
+The plugin is calibrated around a nominal analog-style operating level of 0 VU = -18 dBFS. Drive is an explicit user-facing intensity range, but the internal waveshaper drive is scaled so useful saturation starts at moderate settings without getting crunchy too fast. The upper end of the Drive control uses stronger nonlinear shaping so maximum settings can get obviously saturated without making low and mid settings too touchy. The saturation stage also uses a small low-frequency pre/de-emphasis pair around the nonlinear section, which gives loud kick fundamentals more headroom before the waveshaper while restoring the broad low-end balance afterward. Auto Gain then level-matches the wet path before Mix.
 
 Continuous controls use short smoothing ramps to reduce zipper noise during moves and automation. Discrete switches and selectors remain stepped.
 
