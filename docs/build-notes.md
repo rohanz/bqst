@@ -49,6 +49,7 @@ Implemented in the first scaffold:
 - Shared Boom and Vintage saturation tone controls on the saturation module plate.
 - Auto Gain level-matches the wet saturation path before per-side Mix blending.
 - Continuous gain/color controls use short smoothing ramps to reduce zipper noise during moves and automation.
+- Dry/wet Mix compensates for oversampling latency to avoid phase offsets at partial Mix settings.
 - Sliders support Shift fine-drag and explicit double-click reset values.
 - Drive at 0 skips saturation and saturation autogain.
 - Per-side output trim.

@@ -94,6 +94,13 @@ void BqtAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
     for (auto& dryBuffer : dryBuffers)
         dryBuffer.setSize(1, samplesPerBlock, false, false, true);
 
+    for (auto& delay : dryMixDelays)
+    {
+        delay.prepare(spec);
+        delay.setMaximumDelayInSamples(256);
+        delay.reset();
+    }
+
     inputTrimGain.reset(sampleRate, parameterSmoothingSeconds);
     inputTrimGain.setCurrentAndTargetValue(1.0f);
 
@@ -239,6 +246,20 @@ void BqtAudioProcessor::processSide(float* samples, int numSamples, int sideInde
         processSaturation(samples, numSamples, sideIndex, drive, currentDriveGain, satType, compensation);
 
         const auto* dry = dryBuffer.getReadPointer(0);
+        auto delayedDry = dryBuffer.getWritePointer(0);
+        const auto oversamplingIndex = getActiveOversamplingIndex();
+        const auto dryDelaySamples = oversamplingIndex >= 0 && oversamplers[0][static_cast<size_t>(oversamplingIndex)] != nullptr
+            ? static_cast<int>(std::round(oversamplers[0][static_cast<size_t>(oversamplingIndex)]->getLatencyInSamples()))
+            : 0;
+
+        auto& dryDelay = dryMixDelays[dryBufferIndex];
+        dryDelay.setDelay(static_cast<float>(dryDelaySamples));
+        for (int sample = 0; sample < numSamples; ++sample)
+        {
+            dryDelay.pushSample(0, dry[sample]);
+            delayedDry[sample] = dryDelay.popSample(0);
+        }
+
         if (autoGainEnabled)
         {
             auto dryEnergy = 0.0f;
@@ -246,7 +267,7 @@ void BqtAudioProcessor::processSide(float* samples, int numSamples, int sideInde
 
             for (int sample = 0; sample < numSamples; ++sample)
             {
-                dryEnergy += dry[sample] * dry[sample];
+                dryEnergy += delayedDry[sample] * delayedDry[sample];
                 wetEnergy += samples[sample] * samples[sample];
             }
 
@@ -261,7 +282,7 @@ void BqtAudioProcessor::processSide(float* samples, int numSamples, int sideInde
         }
 
         for (int sample = 0; sample < numSamples; ++sample)
-            samples[sample] = dry[sample] + (samples[sample] - dry[sample]) * mix;
+            samples[sample] = delayedDry[sample] + (samples[sample] - delayedDry[sample]) * mix;
     }
 
     for (int sample = 0; sample < numSamples; ++sample)

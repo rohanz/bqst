@@ -67,6 +67,7 @@ private:
     std::array<SideFilters, 2> filters;
     std::array<std::array<std::unique_ptr<juce::dsp::Oversampling<float>>, 3>, 2> oversamplers;
     std::array<juce::AudioBuffer<float>, 2> dryBuffers;
+    std::array<juce::dsp::DelayLine<float, juce::dsp::DelayLineInterpolationTypes::None>, 2> dryMixDelays;
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Multiplicative> inputTrimGain;
     std::array<juce::SmoothedValue<float>, 2> eqLowGainDb;
     std::array<juce::SmoothedValue<float>, 2> eqHighGainDb;
