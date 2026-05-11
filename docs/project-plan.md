@@ -80,6 +80,7 @@ Saturation module:
 - Side B mix.
 - Side B output trim.
 - Side B VU meter.
+- Current prototype uses a dropdown for saturation type. Final faceplate should use a hardware-style two-position selector or two buttons with lamps next to Density and Transformer to show the selected mode.
 
 Saturation module shared controls:
 
