@@ -69,8 +69,8 @@ void BqtAudioProcessorEditor::configureSlider(juce::Slider& slider)
 {
     slider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
     slider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 72, 20);
-    slider.setVelocityBasedMode(true);
-    slider.setVelocityModeParameters(0.75, 1, 0.0, true, juce::ModifierKeys::shiftModifier);
+    slider.setVelocityBasedMode(false);
+    slider.setVelocityModeParameters(0.35, 1, 0.0, true, juce::ModifierKeys::shiftModifier);
     slider.setTooltip("Drag to adjust. Hold Shift for fine movement. Double-click the value to type.");
     addAndMakeVisible(slider);
 }
