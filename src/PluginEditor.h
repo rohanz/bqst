@@ -20,13 +20,23 @@ private:
 
     struct SideControls
     {
+        juce::Label eqSectionLabel;
+        juce::Label satSectionLabel;
+        juce::Label lowGainLabel;
         juce::Slider lowGain;
+        juce::Label lowFreqLabel;
         juce::ComboBox lowFreq;
+        juce::Label highGainLabel;
         juce::Slider highGain;
+        juce::Label highFreqLabel;
         juce::ComboBox highFreq;
+        juce::Label driveLabel;
         juce::Slider drive;
+        juce::Label satTypeLabel;
         juce::ComboBox satType;
+        juce::Label mixLabel;
         juce::Slider mix;
+        juce::Label outputTrimLabel;
         juce::Slider outputTrim;
 
         std::unique_ptr<SliderAttachment> lowGainAttachment;
@@ -55,6 +65,7 @@ private:
 
     void configureSlider(juce::Slider& slider);
     void configureCombo(juce::ComboBox& combo);
+    void configureLabel(juce::Label& label, const juce::String& text, juce::Justification justification = juce::Justification::centred);
     void configureSide(SideControls& controls, int sideIndex);
 
     BqtAudioProcessor& audioProcessor;
@@ -62,6 +73,7 @@ private:
     juce::ComboBox satMode;
     juce::ComboBox osRealtime;
     juce::ComboBox osRender;
+    juce::Label inputTrimLabel;
     juce::Slider inputTrim;
     juce::ComboBox boom;
     juce::ToggleButton autoGain;

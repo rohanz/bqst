@@ -17,6 +17,7 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
     configureCombo(satMode);
     configureCombo(osRealtime);
     configureCombo(osRender);
+    configureLabel(inputTrimLabel, "Input", juce::Justification::centredLeft);
     configureSlider(inputTrim);
     inputTrim.setDoubleClickReturnValue(true, 0.0);
     configureCombo(boom);
@@ -77,15 +78,35 @@ void BqtAudioProcessorEditor::configureCombo(juce::ComboBox& combo)
     addAndMakeVisible(combo);
 }
 
+void BqtAudioProcessorEditor::configureLabel(juce::Label& label, const juce::String& text, juce::Justification justification)
+{
+    label.setText(text, juce::dontSendNotification);
+    label.setJustificationType(justification);
+    label.setColour(juce::Label::textColourId, juce::Colour(0xff1f1f1f));
+    label.setFont(juce::FontOptions(12.0f, juce::Font::bold));
+    addAndMakeVisible(label);
+}
+
 void BqtAudioProcessorEditor::configureSide(SideControls& controls, int sideIndex)
 {
+    const auto sideText = sideIndex == 0 ? "A  LEFT / MID" : "B  RIGHT / SIDE";
+    configureLabel(controls.eqSectionLabel, sideText, juce::Justification::centredLeft);
+    configureLabel(controls.satSectionLabel, sideText, juce::Justification::centredLeft);
+    configureLabel(controls.highGainLabel, "High Gain");
     configureSlider(controls.lowGain);
+    configureLabel(controls.highFreqLabel, "High Freq");
     configureCombo(controls.lowFreq);
+    configureLabel(controls.lowGainLabel, "Low Gain");
     configureSlider(controls.highGain);
+    configureLabel(controls.lowFreqLabel, "Low Freq");
     configureCombo(controls.highFreq);
+    configureLabel(controls.driveLabel, "Drive");
     configureSlider(controls.drive);
+    configureLabel(controls.satTypeLabel, "Type");
     configureCombo(controls.satType);
+    configureLabel(controls.mixLabel, "Mix");
     configureSlider(controls.mix);
+    configureLabel(controls.outputTrimLabel, "Output");
     configureSlider(controls.outputTrim);
     controls.lowGain.setDoubleClickReturnValue(true, 0.0);
     controls.highGain.setDoubleClickReturnValue(true, 0.0);
@@ -181,6 +202,7 @@ void BqtAudioProcessorEditor::resized()
     top.removeFromLeft(10);
     osRender.setBounds(top.removeFromLeft(118));
     top.removeFromLeft(8);
+    inputTrimLabel.setBounds(top.removeFromLeft(42));
     inputTrim.setBounds(top.removeFromLeft(96));
     top.removeFromLeft(8);
     autoGain.setBounds(top.removeFromLeft(90));
@@ -204,28 +226,46 @@ void BqtAudioProcessorEditor::resized()
     {
         auto eqArea = side == 0 ? eqPanel.removeFromTop(eqPanel.getHeight() / 2) : eqPanel;
         eqArea = eqArea.reduced(0, 4);
+        sideControls[static_cast<size_t>(side)].eqSectionLabel.setBounds(eqArea.removeFromTop(22));
 
-        auto row1 = eqArea.removeFromTop(92);
-        sideControls[static_cast<size_t>(side)].highGain.setBounds(row1.removeFromLeft(132));
+        auto row1 = eqArea.removeFromTop(86);
+        auto highGainCell = row1.removeFromLeft(132);
+        sideControls[static_cast<size_t>(side)].highGainLabel.setBounds(highGainCell.removeFromTop(18));
+        sideControls[static_cast<size_t>(side)].highGain.setBounds(highGainCell);
         row1.removeFromLeft(12);
-        sideControls[static_cast<size_t>(side)].highFreq.setBounds(row1.removeFromLeft(120).reduced(0, 36));
+        auto highFreqCell = row1.removeFromLeft(120);
+        sideControls[static_cast<size_t>(side)].highFreqLabel.setBounds(highFreqCell.removeFromTop(18));
+        sideControls[static_cast<size_t>(side)].highFreq.setBounds(highFreqCell.reduced(0, 18));
 
-        auto row2 = eqArea.removeFromTop(92);
-        sideControls[static_cast<size_t>(side)].lowGain.setBounds(row2.removeFromLeft(132));
+        auto row2 = eqArea.removeFromTop(86);
+        auto lowGainCell = row2.removeFromLeft(132);
+        sideControls[static_cast<size_t>(side)].lowGainLabel.setBounds(lowGainCell.removeFromTop(18));
+        sideControls[static_cast<size_t>(side)].lowGain.setBounds(lowGainCell);
         row2.removeFromLeft(12);
-        sideControls[static_cast<size_t>(side)].lowFreq.setBounds(row2.removeFromLeft(120).reduced(0, 36));
+        auto lowFreqCell = row2.removeFromLeft(120);
+        sideControls[static_cast<size_t>(side)].lowFreqLabel.setBounds(lowFreqCell.removeFromTop(18));
+        sideControls[static_cast<size_t>(side)].lowFreq.setBounds(lowFreqCell.reduced(0, 18));
 
         auto satArea = side == 0 ? satPanel.removeFromTop(satPanel.getHeight() / 2) : satPanel;
         satArea = satArea.reduced(0, 4);
+        sideControls[static_cast<size_t>(side)].satSectionLabel.setBounds(satArea.removeFromTop(22));
 
-        auto satRow = satArea.removeFromTop(132);
-        sideControls[static_cast<size_t>(side)].drive.setBounds(satRow.removeFromLeft(104));
+        auto satRow = satArea.removeFromTop(110);
+        auto driveCell = satRow.removeFromLeft(104);
+        sideControls[static_cast<size_t>(side)].driveLabel.setBounds(driveCell.removeFromTop(18));
+        sideControls[static_cast<size_t>(side)].drive.setBounds(driveCell);
         satRow.removeFromLeft(8);
-        sideControls[static_cast<size_t>(side)].mix.setBounds(satRow.removeFromLeft(104));
+        auto mixCell = satRow.removeFromLeft(104);
+        sideControls[static_cast<size_t>(side)].mixLabel.setBounds(mixCell.removeFromTop(18));
+        sideControls[static_cast<size_t>(side)].mix.setBounds(mixCell);
         satRow.removeFromLeft(8);
-        sideControls[static_cast<size_t>(side)].outputTrim.setBounds(satRow.removeFromLeft(104));
+        auto outputCell = satRow.removeFromLeft(104);
+        sideControls[static_cast<size_t>(side)].outputTrimLabel.setBounds(outputCell.removeFromTop(18));
+        sideControls[static_cast<size_t>(side)].outputTrim.setBounds(outputCell);
         satRow.removeFromLeft(8);
-        sideControls[static_cast<size_t>(side)].satType.setBounds(satRow.removeFromLeft(116).reduced(0, 44));
+        auto typeCell = satRow.removeFromLeft(116);
+        sideControls[static_cast<size_t>(side)].satTypeLabel.setBounds(typeCell.removeFromTop(18));
+        sideControls[static_cast<size_t>(side)].satType.setBounds(typeCell.reduced(0, 44));
 
         auto meterBounds = satArea.removeFromTop(58);
         if (side == 0)
