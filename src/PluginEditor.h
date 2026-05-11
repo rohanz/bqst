@@ -4,7 +4,7 @@
 
 #include "PluginProcessor.h"
 
-class BqtAudioProcessorEditor final : public juce::AudioProcessorEditor
+class BqtAudioProcessorEditor final : public juce::AudioProcessorEditor, private juce::Timer
 {
 public:
     explicit BqtAudioProcessorEditor(BqtAudioProcessor&);
@@ -67,6 +67,8 @@ private:
     void configureCombo(juce::ComboBox& combo);
     void configureLabel(juce::Label& label, const juce::String& text, juce::Justification justification = juce::Justification::centred);
     void configureSide(SideControls& controls, int sideIndex);
+    void timerCallback() override;
+    void updateLinkedControlStates();
 
     BqtAudioProcessor& audioProcessor;
     juce::ComboBox eqMode;

@@ -38,13 +38,13 @@ inline float densitySaturate(float sample, float drive01)
     if (drive01 <= 0.0f)
         return sample;
 
-    const auto evenBias = 0.035f + drive01 * 0.11f;
-    const auto oddWeight = 0.18f + drive01 * 0.42f;
-    const auto softKnee = 1.05f + drive01 * 1.65f;
+    const auto evenBias = 0.018f + drive01 * 0.065f;
+    const auto oddWeight = 0.07f + drive01 * 0.22f;
+    const auto softKnee = 0.72f + drive01 * 0.78f;
     const auto biased = sample + evenBias * sample * sample;
     const auto shaped = std::tanh(biased * softKnee + oddWeight * sample * sample * sample);
     const auto dcOffset = std::tanh(evenBias * 0.015f);
-    const auto blend = 0.18f + drive01 * 0.62f;
+    const auto blend = 0.08f + drive01 * 0.42f;
 
     return sample * (1.0f - blend) + (shaped - dcOffset) * blend;
 }
@@ -54,12 +54,14 @@ inline float transformerSaturate(float sample, float drive01)
     if (drive01 <= 0.0f)
         return sample;
 
-    const auto drive = 1.0f + drive01 * 7.0f;
-    const auto biased = sample * drive + 0.08f * drive01;
-    const auto shaped = std::tanh(biased) - std::tanh(0.08f * drive01);
-    const auto softened = shaped * (1.0f - 0.08f * drive01);
+    const auto drive = 0.85f + drive01 * 2.1f;
+    const auto bias = 0.025f * drive01;
+    const auto biased = sample * drive + bias;
+    const auto shaped = std::tanh(biased) - std::tanh(bias);
+    const auto rounded = shaped - 0.04f * drive01 * shaped * shaped * shaped;
+    const auto blend = 0.10f + drive01 * 0.45f;
 
-    return sample * (1.0f - drive01) + softened * drive01;
+    return sample * (1.0f - blend) + rounded * blend;
 }
 
 inline float saturationAutoGain(float drive01, SaturationType type)
@@ -67,7 +69,7 @@ inline float saturationAutoGain(float drive01, SaturationType type)
     if (drive01 <= 0.0f)
         return 1.0f;
 
-    const auto amount = type == SaturationType::density ? 0.38f : 0.30f;
+    const auto amount = type == SaturationType::density ? 0.16f : 0.14f;
     return 1.0f / (1.0f + drive01 * amount);
 }
 } // namespace bqt

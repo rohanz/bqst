@@ -60,6 +60,9 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
 
     for (int side = 0; side < 2; ++side)
         configureSide(sideControls[static_cast<size_t>(side)], side);
+
+    startTimerHz(12);
+    updateLinkedControlStates();
 }
 
 void BqtAudioProcessorEditor::configureSlider(juce::Slider& slider)
@@ -93,13 +96,13 @@ void BqtAudioProcessorEditor::configureSide(SideControls& controls, int sideInde
     configureLabel(controls.eqSectionLabel, sideText, juce::Justification::centredLeft);
     configureLabel(controls.satSectionLabel, sideText, juce::Justification::centredLeft);
     configureLabel(controls.highGainLabel, "High Gain");
-    configureSlider(controls.lowGain);
-    configureLabel(controls.highFreqLabel, "High Freq");
-    configureCombo(controls.lowFreq);
-    configureLabel(controls.lowGainLabel, "Low Gain");
     configureSlider(controls.highGain);
-    configureLabel(controls.lowFreqLabel, "Low Freq");
+    configureLabel(controls.highFreqLabel, "High Freq");
     configureCombo(controls.highFreq);
+    configureLabel(controls.lowGainLabel, "Low Gain");
+    configureSlider(controls.lowGain);
+    configureLabel(controls.lowFreqLabel, "Low Freq");
+    configureCombo(controls.lowFreq);
     configureLabel(controls.driveLabel, "Drive");
     configureSlider(controls.drive);
     configureLabel(controls.satTypeLabel, "Type");
@@ -126,6 +129,48 @@ void BqtAudioProcessorEditor::configureSide(SideControls& controls, int sideInde
     controls.satTypeAttachment = std::make_unique<ComboBoxAttachment>(audioProcessor.state(), prefix + "SatType", controls.satType);
     controls.mixAttachment = std::make_unique<SliderAttachment>(audioProcessor.state(), prefix + "Mix", controls.mix);
     controls.outputTrimAttachment = std::make_unique<SliderAttachment>(audioProcessor.state(), prefix + "OutputTrim", controls.outputTrim);
+}
+
+void BqtAudioProcessorEditor::timerCallback()
+{
+    updateLinkedControlStates();
+}
+
+void BqtAudioProcessorEditor::updateLinkedControlStates()
+{
+    const auto eqLinked = audioProcessor.state().getRawParameterValue("eqLink")->load() > 0.5f;
+    const auto satLinked = audioProcessor.state().getRawParameterValue("satLink")->load() > 0.5f;
+    auto& right = sideControls[1];
+
+    auto setEqSlave = [eqLinked](juce::Component& component)
+    {
+        component.setEnabled(! eqLinked);
+        component.setAlpha(eqLinked ? 0.38f : 1.0f);
+    };
+
+    auto setSatSlave = [satLinked](juce::Component& component)
+    {
+        component.setEnabled(! satLinked);
+        component.setAlpha(satLinked ? 0.38f : 1.0f);
+    };
+
+    setEqSlave(right.lowGain);
+    setEqSlave(right.lowFreq);
+    setEqSlave(right.highGain);
+    setEqSlave(right.highFreq);
+    setEqSlave(right.lowGainLabel);
+    setEqSlave(right.lowFreqLabel);
+    setEqSlave(right.highGainLabel);
+    setEqSlave(right.highFreqLabel);
+
+    setSatSlave(right.drive);
+    setSatSlave(right.satType);
+    setSatSlave(right.mix);
+    setSatSlave(right.outputTrim);
+    setSatSlave(right.driveLabel);
+    setSatSlave(right.satTypeLabel);
+    setSatSlave(right.mixLabel);
+    setSatSlave(right.outputTrimLabel);
 }
 
 BqtAudioProcessorEditor::VuMeter::VuMeter(BqtAudioProcessor& p, int sideIndex)

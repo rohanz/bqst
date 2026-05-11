@@ -65,7 +65,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout BqtAudioProcessor::createPar
         params.push_back(std::make_unique<juce::AudioParameterChoice>(prefix + "LowFreq", label + " Low Frequency", juce::StringArray { "74", "84", "98", "116", "131", "166", "230", "361" }, 3));
         params.push_back(std::make_unique<juce::AudioParameterFloat>(prefix + "HighGain", label + " High Gain", juce::NormalisableRange<float>(-6.0f, 6.0f, 0.1f), 0.0f));
         params.push_back(std::make_unique<juce::AudioParameterChoice>(prefix + "HighFreq", label + " High Frequency", juce::StringArray { "1.6k", "1.8k", "2.1k", "2.5k", "3.4k", "4.8k", "7.1k", "18k" }, 4));
-        params.push_back(std::make_unique<juce::AudioParameterFloat>(prefix + "Drive", label + " Drive", juce::NormalisableRange<float>(0.0f, 24.0f, 0.1f), 0.0f));
+        params.push_back(std::make_unique<juce::AudioParameterFloat>(prefix + "Drive", label + " Drive", juce::NormalisableRange<float>(0.0f, 18.0f, 0.1f), 0.0f));
         params.push_back(std::make_unique<juce::AudioParameterChoice>(prefix + "SatType", label + " Saturation Type", juce::StringArray { "Density", "Transformer" }, 0));
         params.push_back(std::make_unique<juce::AudioParameterFloat>(prefix + "Mix", label + " Saturation Mix", juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 100.0f));
         params.push_back(std::make_unique<juce::AudioParameterFloat>(prefix + "OutputTrim", label + " Output Trim", juce::NormalisableRange<float>(-12.0f, 12.0f, 0.1f), 0.0f));
@@ -180,15 +180,15 @@ void BqtAudioProcessor::updateSaturationToneFilters()
 {
     const auto boomChoice = getChoice(parameters, "boom");
     const auto vintageEnabled = parameters.getRawParameterValue("vintage")->load() > 0.5f;
-    const auto boomGainDb = boomChoice == 1 ? 0.8f : (boomChoice == 2 ? 1.5f : 0.0f);
-    const auto boomFreq = boomChoice == 2 ? 95.0f : 70.0f;
-    const auto vintageGainDb = vintageEnabled ? -1.25f : 0.0f;
+    const auto boomGainDb = boomChoice == 1 ? 2.4f : (boomChoice == 2 ? 2.4f : 0.0f);
+    const auto boomFreq = boomChoice == 2 ? 210.0f : 55.0f;
+    const auto vintageGainDb = vintageEnabled ? -4.2f : 0.0f;
 
     for (int side = 0; side < 2; ++side)
     {
         const auto sideIndex = static_cast<size_t>(side);
-        *filters[sideIndex].boom.coefficients = *Coefficients::makeLowShelf(currentSampleRate, boomFreq, 0.65f, dbToGain(boomGainDb));
-        *filters[sideIndex].vintage.coefficients = *Coefficients::makeHighShelf(currentSampleRate, 9000.0f, 0.55f, dbToGain(vintageGainDb));
+        *filters[sideIndex].boom.coefficients = *Coefficients::makeLowShelf(currentSampleRate, boomFreq, 0.50f, dbToGain(boomGainDb));
+        *filters[sideIndex].vintage.coefficients = *Coefficients::makeHighShelf(currentSampleRate, 12000.0f, 0.42f, dbToGain(vintageGainDb));
     }
 }
 
@@ -225,8 +225,8 @@ void BqtAudioProcessor::processSide(float* samples, int numSamples, int sideInde
     const auto dryBufferIndex = static_cast<size_t>(sideIndex);
     const auto smoothIndex = static_cast<size_t>(sideIndex);
 
-    driveAmount[smoothIndex].setTargetValue(driveDb / 24.0f);
-    driveGain[smoothIndex].setTargetValue(dbToGain(driveDb));
+    driveAmount[smoothIndex].setTargetValue(driveDb / 18.0f);
+    driveGain[smoothIndex].setTargetValue(dbToGain(driveDb * 0.45f));
     saturationMix[smoothIndex].setTargetValue(getFloat(parameters, prefix + "Mix") / 100.0f);
     outputTrimGain[smoothIndex].setTargetValue(dbToGain(getFloat(parameters, prefix + "OutputTrim")));
 

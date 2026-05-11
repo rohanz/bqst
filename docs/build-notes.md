@@ -56,7 +56,8 @@ Implemented in the first scaffold:
 - Per-side low/high Bax-style shelves in 0.1 dB gain steps.
 - Per-side Density and Transformer saturation choices.
 - Density mode uses a tape-density-inspired soft asymmetric curve rather than a plain tanh clipper.
-- Saturation Drive from 0 dB to +24 dB.
+- Saturation Drive from 0 dB to +18 dB, with reduced internal drive scaling for gentler onset.
+- Boom/Vintage curves are approximated from the Density graph images.
 - Per-side saturation Mix controls.
 - Shared Boom and Vintage saturation tone controls on the saturation module plate.
 - Auto Gain level-matches the wet saturation path before per-side Mix blending.
