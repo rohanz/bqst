@@ -310,7 +310,7 @@ void BqtAudioProcessorEditor::resized()
         satRow.removeFromLeft(8);
         auto typeCell = satRow.removeFromLeft(116);
         sideControls[static_cast<size_t>(side)].satTypeLabel.setBounds(typeCell.removeFromTop(18));
-        sideControls[static_cast<size_t>(side)].satType.setBounds(typeCell.reduced(0, 44));
+        sideControls[static_cast<size_t>(side)].satType.setBounds(typeCell.removeFromTop(32).reduced(0, 3));
 
         auto meterBounds = satArea.removeFromTop(58);
         if (side == 0)
