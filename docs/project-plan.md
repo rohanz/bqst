@@ -1,6 +1,6 @@
 # BQT Project Plan
 
-BQT stands for Bax / Q / Tape-or-Transformer. It is planned as a mastering-friendly dual Baxandall-style EQ plus dual saturation plugin.
+BQT stands for Bax / Q / Tape-or-Transformer. It is planned as a mastering-friendly Baxandall-style EQ feeding a dedicated saturation module.
 
 ## Product Shape
 
@@ -9,7 +9,10 @@ BQT stands for Bax / Q / Tape-or-Transformer. It is planned as a mastering-frien
 - Language: C++17 or C++20.
 - First DAW target: REAPER for fast validation.
 - Validation target: pluginval once installed.
-- Visual direction: two-slot 500-series rack panel with a compact utility bar above it.
+- Visual direction: a 500-series rack containing two separate wide modules in series.
+- Left module: 2-slot Bax EQ.
+- Right module: 2-slot saturation processor.
+- A compact utility bar sits above the rack for mode, oversampling, and global options.
 
 ## Core Signal Flow
 
@@ -17,14 +20,18 @@ BQT stands for Bax / Q / Tape-or-Transformer. It is planned as a mastering-frien
 Input
 -> Mode: L/R pass-through or M/S encode
 -> Side A Bax EQ
+-> Side B Bax EQ
+-> EQ module output
+
 -> Side A saturation if Drive > 0
 -> Side A saturation autogain if enabled and Drive > 0
--> Side A output trim
+-> Side A saturation mix
+-> Side A saturation output trim
 
--> Side B Bax EQ
 -> Side B saturation if Drive > 0
 -> Side B saturation autogain if enabled and Drive > 0
--> Side B output trim
+-> Side B saturation mix
+-> Side B saturation output trim
 
 -> M/S decode if needed
 -> Output
@@ -42,25 +49,39 @@ Top utility bar:
 - Auto gain: On or Off.
 - Global bypass.
 
-Left/Mid side:
+EQ module:
 
-- Low gain.
-- Low frequency selector.
-- High gain.
-- High frequency selector.
-- Drive.
-- Saturation type: Density or Transformer.
-- Output trim.
+- Side A low gain.
+- Side A low frequency selector.
+- Side A high gain.
+- Side A high frequency selector.
+- Side B low gain.
+- Side B low frequency selector.
+- Side B high gain.
+- Side B high frequency selector.
 
-Right/Side side:
+Saturation module:
 
-- Low gain.
-- Low frequency selector.
-- High gain.
-- High frequency selector.
-- Drive.
-- Saturation type: Density or Transformer.
-- Output trim.
+- Side A drive.
+- Side A saturation type: Density or Transformer.
+- Side A mix.
+- Side A output trim.
+- Side A VU meter.
+- Side B drive.
+- Side B saturation type: Density or Transformer.
+- Side B mix.
+- Side B output trim.
+- Side B VU meter.
+
+Saturation module shared controls:
+
+- Boom: Off, A, B.
+- Vintage: On or Off.
+
+Side labels depend on the global mode:
+
+- L/R mode: Side A = Left, Side B = Right.
+- M/S mode: Side A = Mid, Side B = Side.
 
 ## Bax Frequency Positions
 
@@ -101,12 +122,26 @@ Density mode:
 - Tape-like density and peak softening.
 - Smooth harmonic build-up.
 - Mastering-friendly at low Drive.
+- Optional Boom A/B behavior can add low-frequency weight before or inside the saturation stage.
+- Optional Vintage behavior can soften the top end after saturation.
 
 Transformer mode:
 
 - British console / transformer-inspired saturation.
 - Smooth asymmetric behavior.
 - Low-mid weight and slightly rounded top when pushed.
+
+Saturation mix:
+
+- 0% returns the EQ-only signal for that side.
+- 100% returns the fully saturated signal.
+- Mix is per side, not global.
+
+VU meters:
+
+- Located on the saturation module.
+- First version meters saturation module output level per side.
+- Later versions may add switchable input/output/gain-reduction-style metering if useful.
 
 These modes are inspired by broad analog behaviors, not claims of exact hardware emulation.
 
@@ -120,7 +155,7 @@ These modes are inspired by broad analog behaviors, not claims of exact hardware
 6. Add Drive=0 true saturation bypass and optional autogain.
 7. Add realtime/render oversampling choices up to 8x.
 8. Build a plain functional UI.
-9. Replace with the two-slot 500-series UI.
+9. Replace with the UI as a 500-series rack: 2-slot EQ module on the left, 2-slot saturation module on the right.
 10. Validate with pluginval and DAW testing.
 
 ## Current Local Tooling Notes
