@@ -12,11 +12,20 @@ endif()
 
 add_subdirectory(external/JUCE)
 
+juce_add_binary_data(BqtAssets
+    SOURCES
+        assets/gui/knob-large-skirted.png
+        assets/gui/knob-small-pointer.png
+        assets/gui/vu-frame.png
+        assets/fonts/Chillax-Regular.otf
+        assets/fonts/Chillax-Semibold.otf
+)
+
 juce_add_plugin(BQT
     COMPANY_NAME "Rohan"
     PLUGIN_MANUFACTURER_CODE RohK
     PLUGIN_CODE Bqt1
-    FORMATS VST3
+    FORMATS VST3 Standalone
     PRODUCT_NAME "BQT"
     IS_SYNTH FALSE
     NEEDS_MIDI_INPUT FALSE
@@ -44,6 +53,7 @@ target_compile_definitions(BQT
 
 target_link_libraries(BQT
     PRIVATE
+        BqtAssets
         juce::juce_audio_utils
         juce::juce_dsp
     PUBLIC

@@ -6,7 +6,9 @@ namespace
 constexpr auto sqrtHalf = 0.70710678118654752440f;
 constexpr auto numOversamplingFactors = 3;
 constexpr auto minRmsForMatching = 1.0e-5f;
-constexpr auto vuBallisticsSeconds = 0.3f;
+constexpr auto vuRiseTo99Seconds = 0.3f;
+constexpr auto vuTimeConstantSeconds = vuRiseTo99Seconds / 4.605170186f;
+constexpr auto vuSineAverageToRms = 1.110720735f;
 constexpr auto parameterSmoothingSeconds = 0.02;
 constexpr auto baxShelfQ = 0.38f;
 constexpr auto saturationDriveScale = 0.40f;
@@ -173,8 +175,7 @@ void BqtAudioProcessor::updateFilters()
 {
     for (int side = 0; side < 2; ++side)
     {
-        const auto linkedSide = parameters.getRawParameterValue("eqLink")->load() > 0.5f ? 0 : side;
-        const auto prefix = sidePrefix(linkedSide);
+        const auto prefix = sidePrefix(side);
         const auto lowGainDb = getFloat(parameters, prefix + "LowGain");
         const auto highGainDb = getFloat(parameters, prefix + "HighGain");
         const auto lowFreq = clampShelfFrequency(currentSampleRate, bqt::lowShelfFrequenciesHz[static_cast<size_t>(getChoice(parameters, prefix + "LowFreq"))]);
@@ -213,8 +214,7 @@ void BqtAudioProcessor::updateSaturationToneFilters()
 void BqtAudioProcessor::processEq(float* samples, int numSamples, int sideIndex)
 {
     const auto filterIndex = static_cast<size_t>(sideIndex);
-    const auto linkedSide = parameters.getRawParameterValue("eqLink")->load() > 0.5f ? 0 : sideIndex;
-    const auto prefix = sidePrefix(linkedSide);
+    const auto prefix = sidePrefix(sideIndex);
     const auto lowFreq = clampShelfFrequency(currentSampleRate, bqt::lowShelfFrequenciesHz[static_cast<size_t>(getChoice(parameters, prefix + "LowFreq"))]);
     const auto highFreq = clampShelfFrequency(currentSampleRate, bqt::highShelfFrequenciesHz[static_cast<size_t>(getChoice(parameters, prefix + "HighFreq"))]);
 
@@ -235,8 +235,7 @@ void BqtAudioProcessor::processEq(float* samples, int numSamples, int sideIndex)
 
 void BqtAudioProcessor::processSide(float* samples, int numSamples, int sideIndex)
 {
-    const auto linkedSideIndex = parameters.getRawParameterValue("satLink")->load() > 0.5f ? 0 : sideIndex;
-    const auto prefix = sidePrefix(linkedSideIndex);
+    const auto prefix = sidePrefix(sideIndex);
     const auto driveDb = getFloat(parameters, prefix + "Drive");
     const auto satType = static_cast<bqt::SaturationType>(getChoice(parameters, prefix + "SatType"));
     const auto autoGainEnabled = parameters.getRawParameterValue("autoGain")->load() > 0.5f;
@@ -344,17 +343,17 @@ void BqtAudioProcessor::applyLatencyDelay(float* samples, int numSamples, int si
 
 void BqtAudioProcessor::updateMeter(int sideIndex, const float* samples, int numSamples)
 {
-    auto energy = 0.0f;
+    auto rectifiedSum = 0.0f;
     for (int sample = 0; sample < numSamples; ++sample)
-        energy += samples[sample] * samples[sample];
+        rectifiedSum += std::abs(samples[sample]);
 
-    const auto blockRms = std::sqrt(energy / static_cast<float>(numSamples));
+    const auto blockAverage = (rectifiedSum / static_cast<float>(numSamples)) * vuSineAverageToRms;
     const auto blockSeconds = static_cast<float>(numSamples / currentSampleRate);
-    const auto release = std::exp(-blockSeconds / vuBallisticsSeconds);
+    const auto release = std::exp(-blockSeconds / vuTimeConstantSeconds);
     const auto attack = 1.0f - release;
 
     const auto index = static_cast<size_t>(sideIndex);
-    meterRms[index] = meterRms[index] * release + blockRms * attack;
+    meterRms[index] = meterRms[index] * release + blockAverage * attack;
     meterLevels[index].store(meterRms[index]);
 }
 

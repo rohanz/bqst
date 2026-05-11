@@ -25,24 +25,25 @@ private:
         juce::Label lowGainLabel;
         juce::Slider lowGain;
         juce::Label lowFreqLabel;
-        juce::ComboBox lowFreq;
+        juce::Slider lowFreq;
         juce::Label highGainLabel;
         juce::Slider highGain;
         juce::Label highFreqLabel;
-        juce::ComboBox highFreq;
+        juce::Slider highFreq;
         juce::Label driveLabel;
         juce::Slider drive;
         juce::Label satTypeLabel;
         juce::ComboBox satType;
+        juce::TextButton satTypeButton;
         juce::Label mixLabel;
         juce::Slider mix;
         juce::Label outputTrimLabel;
         juce::Slider outputTrim;
 
         std::unique_ptr<SliderAttachment> lowGainAttachment;
-        std::unique_ptr<ComboBoxAttachment> lowFreqAttachment;
+        std::unique_ptr<SliderAttachment> lowFreqAttachment;
         std::unique_ptr<SliderAttachment> highGainAttachment;
-        std::unique_ptr<ComboBoxAttachment> highFreqAttachment;
+        std::unique_ptr<SliderAttachment> highFreqAttachment;
         std::unique_ptr<SliderAttachment> driveAttachment;
         std::unique_ptr<ComboBoxAttachment> satTypeAttachment;
         std::unique_ptr<SliderAttachment> mixAttachment;
@@ -74,6 +75,10 @@ private:
         void positionComboBoxText(juce::ComboBox& box, juce::Label& label) override;
         void drawToggleButton(juce::Graphics& g, juce::ToggleButton& button, bool shouldDrawButtonAsHighlighted,
                               bool shouldDrawButtonAsDown) override;
+        void drawButtonBackground(juce::Graphics& g, juce::Button& button, const juce::Colour& backgroundColour,
+                                  bool shouldDrawButtonAsHighlighted, bool shouldDrawButtonAsDown) override;
+        void drawButtonText(juce::Graphics& g, juce::TextButton& button, bool shouldDrawButtonAsHighlighted,
+                            bool shouldDrawButtonAsDown) override;
     };
 
     void configureSlider(juce::Slider& slider);
