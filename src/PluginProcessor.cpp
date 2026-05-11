@@ -57,8 +57,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout BqtAudioProcessor::createPar
     params.push_back(std::make_unique<juce::AudioParameterBool>("autoGain", "Auto Gain", true));
     params.push_back(std::make_unique<juce::AudioParameterBool>("eqBypass", "EQ Bypass", false));
     params.push_back(std::make_unique<juce::AudioParameterBool>("satBypass", "Saturation Bypass", false));
-    params.push_back(std::make_unique<juce::AudioParameterBool>("eqLink", "EQ Link", false));
-    params.push_back(std::make_unique<juce::AudioParameterBool>("satLink", "Saturation Link", false));
+    params.push_back(std::make_unique<juce::AudioParameterBool>("eqLink", "EQ Link", true));
+    params.push_back(std::make_unique<juce::AudioParameterBool>("satLink", "Saturation Link", true));
     params.push_back(std::make_unique<juce::AudioParameterBool>("bypass", "Bypass", false));
     params.push_back(std::make_unique<juce::AudioParameterChoice>("boom", "Boom", juce::StringArray { "Off", "A", "B" }, 0));
     params.push_back(std::make_unique<juce::AudioParameterBool>("vintage", "Vintage", false));

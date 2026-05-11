@@ -54,8 +54,8 @@ Top utility bar:
 - Auto gain: On or Off.
 - EQ Bypass.
 - Saturation Bypass.
-- EQ Link.
-- Saturation Link.
+- EQ Link: On by default.
+- Saturation Link: On by default.
 - Global bypass.
 
 EQ module:
