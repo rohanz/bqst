@@ -18,6 +18,18 @@ The development artifact is written to:
 build/BQT_artefacts/VST3/BQT.vst3
 ```
 
+Rohan's current Ableton-scanned VST3 folder is:
+
+```text
+/Users/rohan/Library/CloudStorage/OneDrive-Personal/dailystuff/music/vst3
+```
+
+Copy test builds there with:
+
+```sh
+cp -R build/BQT_artefacts/VST3/BQT.vst3 /Users/rohan/Library/CloudStorage/OneDrive-Personal/dailystuff/music/vst3/
+```
+
 Automatic copying into `~/Library/Audio/Plug-Ins/VST3` is disabled for now. This avoids permission issues during normal sandboxed development and keeps builds local to the project.
 
 ## Validate
