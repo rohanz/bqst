@@ -39,7 +39,7 @@ Input
 -> Output
 ```
 
-Oversampling wraps the full active processing chain: EQ routing, Bax shelves, saturation routing, nonlinear saturation, Mix, and output trim. This gives the high shelf more room near Nyquist and reduces saturation aliasing with one shared oversampling stage. Global Bypass delays the signal to match the reported oversampling latency so host latency compensation stays consistent.
+Oversampling wraps the full active processing chain: EQ routing, Bax shelves, saturation routing, nonlinear saturation, Mix, and output trim. This gives the high shelf more room near Nyquist and reduces saturation aliasing with one shared oversampling stage. Global Bypass delays the signal to match the reported oversampling latency so host latency compensation stays consistent, and uses a short crossfade to avoid hard-switch clicks.
 
 ## Controls
 
@@ -84,9 +84,8 @@ Saturation module:
 
 Saturation module shared controls:
 
-- Boom: Off, A, B.
 - Vintage: On or Off.
-- These controls live on the saturation module plate, not the top utility bar.
+- This control lives on the saturation module plate, not the top utility bar.
 
 Side labels depend on each module mode:
 
@@ -180,9 +179,8 @@ Density mode:
 - Gradually stronger 3rd harmonic content as Drive increases, but with a rounded onset so transient peaks do not clamp too abruptly.
 - Uses subtle high-frequency pre-emphasis before saturation and de-emphasis after saturation, so high-frequency edges round in a more tape-like way rather than just clipping broadband.
 - Mastering-friendly at low Drive.
-- Optional Boom A/B behavior can add low-frequency weight before or inside the saturation stage.
 - Optional Vintage behavior can soften the top end after saturation.
-- Boom and Vintage are approximated from the Density graph images: Boom A is sub-focused, Boom B reaches farther into low mids, and Vintage is a broad high-frequency softening curve. Boom is intentionally modest so it adds weight without making kick drums clip the saturator too quickly.
+- Vintage is approximated from the Density graph images as a broad high-frequency softening curve.
 
 Transformer mode:
 

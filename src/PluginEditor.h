@@ -77,7 +77,6 @@ private:
     juce::ComboBox osRender;
     juce::Label inputTrimLabel;
     juce::Slider inputTrim;
-    juce::ComboBox boom;
     juce::ToggleButton autoGain;
     juce::ToggleButton eqBypass;
     juce::ToggleButton satBypass;
@@ -94,7 +93,6 @@ private:
     std::unique_ptr<ComboBoxAttachment> osRealtimeAttachment;
     std::unique_ptr<ComboBoxAttachment> osRenderAttachment;
     std::unique_ptr<SliderAttachment> inputTrimAttachment;
-    std::unique_ptr<ComboBoxAttachment> boomAttachment;
     std::unique_ptr<ButtonAttachment> autoGainAttachment;
     std::unique_ptr<ButtonAttachment> eqBypassAttachment;
     std::unique_ptr<ButtonAttachment> satBypassAttachment;

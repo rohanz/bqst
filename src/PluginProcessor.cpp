@@ -60,7 +60,6 @@ juce::AudioProcessorValueTreeState::ParameterLayout BqtAudioProcessor::createPar
     params.push_back(std::make_unique<juce::AudioParameterBool>("eqLink", "EQ Link", true));
     params.push_back(std::make_unique<juce::AudioParameterBool>("satLink", "Saturation Link", true));
     params.push_back(std::make_unique<juce::AudioParameterBool>("bypass", "Bypass", false));
-    params.push_back(std::make_unique<juce::AudioParameterChoice>("boom", "Boom", juce::StringArray { "Off", "A", "B" }, 0));
     params.push_back(std::make_unique<juce::AudioParameterBool>("vintage", "Vintage", false));
 
     for (int side = 0; side < 2; ++side)
@@ -90,7 +89,6 @@ void BqtAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
     {
         side.lowShelf.prepare(spec);
         side.highShelf.prepare(spec);
-        side.boom.prepare(spec);
         side.vintage.prepare(spec);
         side.densityPreEmphasis.prepare(spec);
         side.densityDeEmphasis.prepare(spec);
@@ -100,7 +98,6 @@ void BqtAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
         side.transformerTop.prepare(spec);
         side.lowShelf.reset();
         side.highShelf.reset();
-        side.boom.reset();
         side.vintage.reset();
         side.densityPreEmphasis.reset();
         side.densityDeEmphasis.reset();
@@ -112,6 +109,7 @@ void BqtAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
 
     for (auto& dryBuffer : dryBuffers)
         dryBuffer.setSize(1, samplesPerBlock * 8, false, false, true);
+    bypassDryBuffer.setSize(2, samplesPerBlock, false, false, true);
 
     for (auto& delay : dryMixDelays)
     {
@@ -122,6 +120,8 @@ void BqtAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
 
     inputTrimGain.reset(sampleRate, parameterSmoothingSeconds);
     inputTrimGain.setCurrentAndTargetValue(1.0f);
+    globalBypassMix.reset(sampleRate, parameterSmoothingSeconds);
+    globalBypassMix.setCurrentAndTargetValue(0.0f);
 
     for (int side = 0; side < 2; ++side)
     {
@@ -194,16 +194,12 @@ void BqtAudioProcessor::updateFilters()
 
 void BqtAudioProcessor::updateSaturationToneFilters()
 {
-    const auto boomChoice = getChoice(parameters, "boom");
     const auto vintageEnabled = parameters.getRawParameterValue("vintage")->load() > 0.5f;
-    const auto boomGainDb = boomChoice == 1 ? 1.4f : (boomChoice == 2 ? 1.4f : 0.0f);
-    const auto boomFreq = boomChoice == 2 ? 210.0f : 55.0f;
     const auto vintageGainDb = vintageEnabled ? -4.2f : 0.0f;
 
     for (int side = 0; side < 2; ++side)
     {
         const auto sideIndex = static_cast<size_t>(side);
-        *filters[sideIndex].boom.coefficients = *Coefficients::makeLowShelf(currentSampleRate, boomFreq, 0.50f, dbToGain(boomGainDb));
         *filters[sideIndex].vintage.coefficients = *Coefficients::makeHighShelf(currentSampleRate, 12000.0f, 0.42f, dbToGain(vintageGainDb));
         *filters[sideIndex].densityPreEmphasis.coefficients = *Coefficients::makeHighShelf(currentSampleRate, 6200.0f, 0.55f, dbToGain(0.7f));
         *filters[sideIndex].densityDeEmphasis.coefficients = *Coefficients::makeHighShelf(currentSampleRate, 6200.0f, 0.55f, dbToGain(-0.9f));
@@ -313,7 +309,7 @@ void BqtAudioProcessor::processSaturation(float* samples, int numSamples, int si
 
     for (int sample = 0; sample < numSamples; ++sample)
     {
-        auto value = filters[static_cast<size_t>(sideIndex)].boom.processSample(samples[sample]);
+        auto value = samples[sample];
         value = filters[static_cast<size_t>(sideIndex)].saturationLowGuardPre.processSample(value);
         if (satType == bqt::SaturationType::density)
             value = filters[static_cast<size_t>(sideIndex)].densityPreEmphasis.processSample(value);
@@ -480,14 +476,29 @@ void BqtAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
     currentSampleRate = hostSampleRate;
     updateLatency();
 
-    if (parameters.getRawParameterValue("bypass")->load() > 0.5f)
+    const auto numSamples = buffer.getNumSamples();
+    const auto bypassEnabled = parameters.getRawParameterValue("bypass")->load() > 0.5f;
+    globalBypassMix.setTargetValue(bypassEnabled ? 1.0f : 0.0f);
+    const auto needsBypassCrossfade = bypassEnabled || globalBypassMix.isSmoothing() || globalBypassMix.getCurrentValue() > 0.0f;
+
+    if (needsBypassCrossfade)
     {
-        applyLatencyDelay(buffer.getWritePointer(0), buffer.getNumSamples(), 0);
-        applyLatencyDelay(buffer.getWritePointer(1), buffer.getNumSamples(), 1);
-        return;
+        if (bypassDryBuffer.getNumSamples() < numSamples)
+            bypassDryBuffer.setSize(2, numSamples, false, false, true);
+
+        bypassDryBuffer.copyFrom(0, 0, buffer, 0, 0, numSamples);
+        bypassDryBuffer.copyFrom(1, 0, buffer, 1, 0, numSamples);
+        applyLatencyDelay(bypassDryBuffer.getWritePointer(0), numSamples, 0);
+        applyLatencyDelay(bypassDryBuffer.getWritePointer(1), numSamples, 1);
+
+        if (bypassEnabled && !globalBypassMix.isSmoothing() && globalBypassMix.getCurrentValue() >= 1.0f)
+        {
+            buffer.copyFrom(0, 0, bypassDryBuffer, 0, 0, numSamples);
+            buffer.copyFrom(1, 0, bypassDryBuffer, 1, 0, numSamples);
+            return;
+        }
     }
 
-    const auto numSamples = buffer.getNumSamples();
     const auto oversamplingIndex = getActiveOversamplingIndex();
 
     if (oversamplingIndex >= 0)
@@ -501,10 +512,26 @@ void BqtAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
                      static_cast<int>(upsampledBlock.getNumSamples()));
         oversampler.processSamplesDown(block);
         currentSampleRate = hostSampleRate;
-        return;
+    }
+    else
+    {
+        processChain(buffer.getWritePointer(0), buffer.getWritePointer(1), numSamples);
     }
 
-    processChain(buffer.getWritePointer(0), buffer.getWritePointer(1), numSamples);
+    if (needsBypassCrossfade)
+    {
+        auto* left = buffer.getWritePointer(0);
+        auto* right = buffer.getWritePointer(1);
+        const auto* dryLeft = bypassDryBuffer.getReadPointer(0);
+        const auto* dryRight = bypassDryBuffer.getReadPointer(1);
+
+        for (int sample = 0; sample < numSamples; ++sample)
+        {
+            const auto bypassMix = globalBypassMix.getNextValue();
+            left[sample] = left[sample] + (dryLeft[sample] - left[sample]) * bypassMix;
+            right[sample] = right[sample] + (dryRight[sample] - right[sample]) * bypassMix;
+        }
+    }
 }
 
 void BqtAudioProcessor::getStateInformation(juce::MemoryBlock& destData)

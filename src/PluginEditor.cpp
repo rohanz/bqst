@@ -20,7 +20,6 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
     configureLabel(inputTrimLabel, "Input", juce::Justification::centredLeft);
     configureSlider(inputTrim);
     inputTrim.setDoubleClickReturnValue(true, 0.0);
-    configureCombo(boom);
     addAndMakeVisible(autoGain);
     addAndMakeVisible(eqBypass);
     addAndMakeVisible(satBypass);
@@ -42,14 +41,12 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
     satMode.addItemList(juce::StringArray { "Sat L/R", "Sat M/S" }, 1);
     osRealtime.addItemList(juce::StringArray { "RT Off", "RT 2x", "RT 4x", "RT 8x" }, 1);
     osRender.addItemList(juce::StringArray { "RN Off", "RN 2x", "RN 4x", "RN 8x" }, 1);
-    boom.addItemList(juce::StringArray { "Boom Off", "Boom A", "Boom B" }, 1);
 
     eqModeAttachment = std::make_unique<ComboBoxAttachment>(audioProcessor.state(), "eqMode", eqMode);
     satModeAttachment = std::make_unique<ComboBoxAttachment>(audioProcessor.state(), "satMode", satMode);
     osRealtimeAttachment = std::make_unique<ComboBoxAttachment>(audioProcessor.state(), "osRealtime", osRealtime);
     osRenderAttachment = std::make_unique<ComboBoxAttachment>(audioProcessor.state(), "osRender", osRender);
     inputTrimAttachment = std::make_unique<SliderAttachment>(audioProcessor.state(), "inputTrim", inputTrim);
-    boomAttachment = std::make_unique<ComboBoxAttachment>(audioProcessor.state(), "boom", boom);
     autoGainAttachment = std::make_unique<ButtonAttachment>(audioProcessor.state(), "autoGain", autoGain);
     eqBypassAttachment = std::make_unique<ButtonAttachment>(audioProcessor.state(), "eqBypass", eqBypass);
     satBypassAttachment = std::make_unique<ButtonAttachment>(audioProcessor.state(), "satBypass", satBypass);
@@ -263,7 +260,6 @@ void BqtAudioProcessorEditor::resized()
     auto satPanel = panel.reduced(32, 8);
 
     auto satShared = satPanel.removeFromTop(48);
-    boom.setBounds(satShared.removeFromLeft(132).reduced(8, 8));
     vintage.setBounds(satShared.removeFromLeft(118).reduced(8, 8));
     satPanel.removeFromTop(4);
 

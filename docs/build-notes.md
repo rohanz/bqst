@@ -60,9 +60,9 @@ Implemented in the first scaffold:
 - Density mode includes tape-style high pre/de-emphasis around saturation for smoother high-frequency transient rounding.
 - Transformer mode includes low-mid weighting and post-saturation top rounding to avoid forward upper-mid crunch.
 - Saturation Drive from 0 dB to +18 dB, with reduced internal drive scaling for gentler onset.
-- Boom/Vintage curves are approximated from the Density graph images.
+- Vintage curve is approximated from the Density graph images.
 - Per-side saturation Mix controls.
-- Shared Boom and Vintage saturation tone controls on the saturation module plate.
+- Shared Vintage saturation tone control on the saturation module plate.
 - Auto Gain level-matches the wet saturation path before per-side Mix blending.
 - Continuous gain/color controls use short smoothing ramps to reduce zipper noise during moves and automation.
 - Oversampling wraps the full active EQ and saturation chain, so Dry/wet Mix is aligned inside the same oversampled path.
@@ -73,6 +73,7 @@ Implemented in the first scaffold:
 - VU meter calibration: 0 VU = -18 dBFS with 300 ms smoothing.
 - Realtime/render oversampling up to 8x around the full active processing chain.
 - Oversampling latency reporting with global-bypass delay matching.
+- Global bypass uses a short dry/wet crossfade to avoid clicky hard switching.
 - Top-bar parameters for mode, oversampling, auto gain, and bypass.
 - Placeholder functional UI.
 

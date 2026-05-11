@@ -50,7 +50,6 @@ private:
     {
         Filter lowShelf;
         Filter highShelf;
-        Filter boom;
         Filter vintage;
         Filter densityPreEmphasis;
         Filter densityDeEmphasis;
@@ -75,8 +74,10 @@ private:
     std::array<SideFilters, 2> filters;
     std::array<std::unique_ptr<juce::dsp::Oversampling<float>>, 3> oversamplers;
     std::array<juce::AudioBuffer<float>, 2> dryBuffers;
+    juce::AudioBuffer<float> bypassDryBuffer;
     std::array<juce::dsp::DelayLine<float, juce::dsp::DelayLineInterpolationTypes::None>, 2> dryMixDelays;
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Multiplicative> inputTrimGain;
+    juce::SmoothedValue<float> globalBypassMix;
     std::array<juce::SmoothedValue<float>, 2> eqLowGainDb;
     std::array<juce::SmoothedValue<float>, 2> eqHighGainDb;
     std::array<juce::SmoothedValue<float>, 2> driveAmount;
