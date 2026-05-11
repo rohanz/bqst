@@ -1,0 +1,10 @@
+build/
+cmake-build-*/
+.DS_Store
+*.jucer
+*.xcodeproj
+*.xcworkspace
+DerivedData/
+*.vst3
+*.component
+*.aaxplugin
