@@ -142,6 +142,7 @@ Density mode:
 - Softer onset than the Transformer mode.
 - Asymmetric low-drive behavior to emphasize 2nd harmonic density.
 - Gradually stronger 3rd harmonic content as Drive increases.
+- Uses subtle high-frequency pre-emphasis before saturation and de-emphasis after saturation, so high-frequency edges round in a more tape-like way rather than just clipping broadband.
 - Mastering-friendly at low Drive.
 - Optional Boom A/B behavior can add low-frequency weight before or inside the saturation stage.
 - Optional Vintage behavior can soften the top end after saturation.
@@ -152,6 +153,7 @@ Transformer mode:
 - British console / transformer-inspired saturation.
 - Smooth asymmetric behavior.
 - Low-mid weight and slightly rounded top when pushed.
+- Uses a small low-mid weighting before saturation and broad top rounding after saturation to avoid upper-mid crunch.
 
 Saturation mix:
 

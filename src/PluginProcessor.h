@@ -52,6 +52,10 @@ private:
         Filter highShelf;
         Filter boom;
         Filter vintage;
+        Filter densityPreEmphasis;
+        Filter densityDeEmphasis;
+        Filter transformerWeight;
+        Filter transformerTop;
     };
 
     void updateFilters();

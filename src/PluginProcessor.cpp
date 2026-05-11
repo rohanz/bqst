@@ -85,10 +85,18 @@ void BqtAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
         side.highShelf.prepare(spec);
         side.boom.prepare(spec);
         side.vintage.prepare(spec);
+        side.densityPreEmphasis.prepare(spec);
+        side.densityDeEmphasis.prepare(spec);
+        side.transformerWeight.prepare(spec);
+        side.transformerTop.prepare(spec);
         side.lowShelf.reset();
         side.highShelf.reset();
         side.boom.reset();
         side.vintage.reset();
+        side.densityPreEmphasis.reset();
+        side.densityDeEmphasis.reset();
+        side.transformerWeight.reset();
+        side.transformerTop.reset();
     }
 
     for (auto& dryBuffer : dryBuffers)
@@ -189,6 +197,10 @@ void BqtAudioProcessor::updateSaturationToneFilters()
         const auto sideIndex = static_cast<size_t>(side);
         *filters[sideIndex].boom.coefficients = *Coefficients::makeLowShelf(currentSampleRate, boomFreq, 0.50f, dbToGain(boomGainDb));
         *filters[sideIndex].vintage.coefficients = *Coefficients::makeHighShelf(currentSampleRate, 12000.0f, 0.42f, dbToGain(vintageGainDb));
+        *filters[sideIndex].densityPreEmphasis.coefficients = *Coefficients::makeHighShelf(currentSampleRate, 6200.0f, 0.55f, dbToGain(0.7f));
+        *filters[sideIndex].densityDeEmphasis.coefficients = *Coefficients::makeHighShelf(currentSampleRate, 6200.0f, 0.55f, dbToGain(-0.9f));
+        *filters[sideIndex].transformerWeight.coefficients = *Coefficients::makePeakFilter(currentSampleRate, 240.0f, 0.75f, dbToGain(0.35f));
+        *filters[sideIndex].transformerTop.coefficients = *Coefficients::makeHighShelf(currentSampleRate, 8200.0f, 0.50f, dbToGain(-0.6f));
     }
 }
 
@@ -309,14 +321,31 @@ void BqtAudioProcessor::processSaturation(float* samples, int numSamples, int si
         for (int sample = 0; sample < numSamples; ++sample)
         {
             auto value = filters[static_cast<size_t>(sideIndex)].boom.processSample(samples[sample]);
+            if (satType == bqt::SaturationType::density)
+                value = filters[static_cast<size_t>(sideIndex)].densityPreEmphasis.processSample(value);
+            else
+                value = filters[static_cast<size_t>(sideIndex)].transformerWeight.processSample(value);
+
             value = processSample(value);
+            if (satType == bqt::SaturationType::density)
+                value = filters[static_cast<size_t>(sideIndex)].densityDeEmphasis.processSample(value);
+            else
+                value = filters[static_cast<size_t>(sideIndex)].transformerTop.processSample(value);
+
             samples[sample] = filters[static_cast<size_t>(sideIndex)].vintage.processSample(value);
         }
         return;
     }
 
     for (int sample = 0; sample < numSamples; ++sample)
-        samples[sample] = filters[static_cast<size_t>(sideIndex)].boom.processSample(samples[sample]);
+    {
+        auto value = filters[static_cast<size_t>(sideIndex)].boom.processSample(samples[sample]);
+        if (satType == bqt::SaturationType::density)
+            value = filters[static_cast<size_t>(sideIndex)].densityPreEmphasis.processSample(value);
+        else
+            value = filters[static_cast<size_t>(sideIndex)].transformerWeight.processSample(value);
+        samples[sample] = value;
+    }
 
     auto& oversampler = *oversamplers[static_cast<size_t>(sideIndex)][static_cast<size_t>(oversamplingIndex)];
     juce::dsp::AudioBlock<float> block(&samples, 1, static_cast<size_t>(numSamples));
@@ -330,7 +359,15 @@ void BqtAudioProcessor::processSaturation(float* samples, int numSamples, int si
     oversampler.processSamplesDown(block);
 
     for (int sample = 0; sample < numSamples; ++sample)
-        samples[sample] = filters[static_cast<size_t>(sideIndex)].vintage.processSample(samples[sample]);
+    {
+        auto value = samples[sample];
+        if (satType == bqt::SaturationType::density)
+            value = filters[static_cast<size_t>(sideIndex)].densityDeEmphasis.processSample(value);
+        else
+            value = filters[static_cast<size_t>(sideIndex)].transformerTop.processSample(value);
+
+        samples[sample] = filters[static_cast<size_t>(sideIndex)].vintage.processSample(value);
+    }
 }
 
 void BqtAudioProcessor::updateMeter(int sideIndex, const float* samples, int numSamples)
