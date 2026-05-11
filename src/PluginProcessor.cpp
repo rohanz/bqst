@@ -96,7 +96,6 @@ void BqtAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
         side.densityDeEmphasis.prepare(spec);
         side.saturationLowGuardPre.prepare(spec);
         side.saturationLowGuardPost.prepare(spec);
-        side.saturationAirDamping.prepare(spec);
         side.transformerWeight.prepare(spec);
         side.transformerTop.prepare(spec);
         side.lowShelf.reset();
@@ -107,7 +106,6 @@ void BqtAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
         side.densityDeEmphasis.reset();
         side.saturationLowGuardPre.reset();
         side.saturationLowGuardPost.reset();
-        side.saturationAirDamping.reset();
         side.transformerWeight.reset();
         side.transformerTop.reset();
     }
@@ -214,7 +212,6 @@ void BqtAudioProcessor::updateSaturationToneFilters()
         *filters[sideIndex].densityDeEmphasis.coefficients = *Coefficients::makeHighShelf(currentSampleRate, 6200.0f, 0.55f, dbToGain(-0.9f));
         *filters[sideIndex].saturationLowGuardPre.coefficients = *Coefficients::makeLowShelf(currentSampleRate, 95.0f, 0.55f, dbToGain(-2.2f));
         *filters[sideIndex].saturationLowGuardPost.coefficients = *Coefficients::makeLowShelf(currentSampleRate, 95.0f, 0.55f, dbToGain(2.2f));
-        *filters[sideIndex].saturationAirDamping.coefficients = *Coefficients::makeHighShelf(currentSampleRate, 8500.0f, 0.45f, dbToGain(-0.5f));
         *filters[sideIndex].transformerWeight.coefficients = *Coefficients::makePeakFilter(currentSampleRate, 240.0f, 0.75f, dbToGain(0.35f));
         *filters[sideIndex].transformerTop.coefficients = *Coefficients::makeHighShelf(currentSampleRate, 8200.0f, 0.50f, dbToGain(-0.6f));
     }
@@ -262,8 +259,6 @@ void BqtAudioProcessor::processSide(float* samples, int numSamples, int sideInde
     const auto currentDriveGain = driveGain[smoothIndex].skip(numSamples);
     const auto mix = saturationMix[smoothIndex].skip(numSamples);
     const auto compensation = autoGainEnabled ? bqt::saturationAutoGain(drive, satType) : 1.0f;
-    const auto airDampingDb = -0.5f - drive * drive * (satType == bqt::SaturationType::density ? 2.2f : 2.6f);
-    *filters[smoothIndex].saturationAirDamping.coefficients = *Coefficients::makeHighShelf(currentSampleRate, 8500.0f, 0.45f, dbToGain(airDampingDb));
 
     if (drive > 0.0f && mix > 0.0f)
     {
@@ -356,7 +351,6 @@ void BqtAudioProcessor::processSaturation(float* samples, int numSamples, int si
                 value = filters[static_cast<size_t>(sideIndex)].transformerTop.processSample(value);
 
             value = filters[static_cast<size_t>(sideIndex)].saturationLowGuardPost.processSample(value);
-            value = filters[static_cast<size_t>(sideIndex)].saturationAirDamping.processSample(value);
             samples[sample] = filters[static_cast<size_t>(sideIndex)].vintage.processSample(value);
         }
         return;
@@ -393,7 +387,6 @@ void BqtAudioProcessor::processSaturation(float* samples, int numSamples, int si
             value = filters[static_cast<size_t>(sideIndex)].transformerTop.processSample(value);
 
         value = filters[static_cast<size_t>(sideIndex)].saturationLowGuardPost.processSample(value);
-        value = filters[static_cast<size_t>(sideIndex)].saturationAirDamping.processSample(value);
         samples[sample] = filters[static_cast<size_t>(sideIndex)].vintage.processSample(value);
     }
 }

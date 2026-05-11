@@ -56,7 +56,6 @@ private:
         Filter densityDeEmphasis;
         Filter saturationLowGuardPre;
         Filter saturationLowGuardPost;
-        Filter saturationAirDamping;
         Filter transformerWeight;
         Filter transformerTop;
     };
