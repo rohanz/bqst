@@ -43,11 +43,12 @@ Implemented in the first scaffold:
 - Per-side Density and Transformer saturation choices.
 - Drive at 0 skips saturation and saturation autogain.
 - Per-side output trim.
-- Top-bar parameters for realtime/render oversampling and auto gain.
+- Realtime/render oversampling up to 8x around the saturation stage.
+- Oversampling latency reporting.
+- Top-bar parameters for mode, oversampling, auto gain, and bypass.
 - Placeholder functional UI.
 
 Not implemented yet:
 
-- Actual oversampling DSP around saturation.
 - Final 2-slot 500-series visual design.
 - DAW listening tests.

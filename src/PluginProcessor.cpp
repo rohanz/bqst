@@ -4,6 +4,7 @@
 namespace
 {
 constexpr auto sqrtHalf = 0.70710678118654752440f;
+constexpr auto numOversamplingFactors = 3;
 
 juce::String sidePrefix(int sideIndex)
 {
@@ -74,7 +75,23 @@ void BqtAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
         side.highShelf.reset();
     }
 
+    for (auto& sideOversamplers : oversamplers)
+    {
+        for (int factorIndex = 0; factorIndex < numOversamplingFactors; ++factorIndex)
+        {
+            sideOversamplers[static_cast<size_t>(factorIndex)] = std::make_unique<juce::dsp::Oversampling<float>>(
+                1,
+                static_cast<size_t>(factorIndex + 1),
+                juce::dsp::Oversampling<float>::filterHalfBandPolyphaseIIR,
+                true,
+                true);
+            sideOversamplers[static_cast<size_t>(factorIndex)]->initProcessing(static_cast<size_t>(samplesPerBlock));
+            sideOversamplers[static_cast<size_t>(factorIndex)]->reset();
+        }
+    }
+
     updateFilters();
+    updateLatency();
 }
 
 void BqtAudioProcessor::releaseResources()
@@ -111,29 +128,83 @@ void BqtAudioProcessor::processSide(float* samples, int numSamples, int sideInde
     const auto satType = static_cast<bqt::SaturationType>(getChoice(parameters, prefix + "SatType"));
     const auto autoGainEnabled = parameters.getRawParameterValue("autoGain")->load() > 0.5f;
     const auto compensation = autoGainEnabled ? bqt::saturationAutoGain(drive, satType) : 1.0f;
+    const auto filterIndex = static_cast<size_t>(sideIndex);
 
     for (int sample = 0; sample < numSamples; ++sample)
     {
         auto value = samples[sample];
-        const auto filterIndex = static_cast<size_t>(sideIndex);
         value = filters[filterIndex].lowShelf.processSample(value);
         value = filters[filterIndex].highShelf.processSample(value);
+        samples[sample] = value;
+    }
 
-        if (drive > 0.0f)
-        {
-            value = satType == bqt::SaturationType::density
-                ? bqt::densitySaturate(value, drive)
-                : bqt::transformerSaturate(value, drive);
-            value *= compensation;
-        }
+    if (drive > 0.0f)
+        processSaturation(samples, numSamples, sideIndex, drive, satType, compensation);
 
-        samples[sample] = value * outputGain;
+    juce::FloatVectorOperations::multiply(samples, outputGain, numSamples);
+}
+
+void BqtAudioProcessor::processSaturation(float* samples, int numSamples, int sideIndex, float drive, bqt::SaturationType satType, float compensation)
+{
+    const auto processSample = [drive, satType, compensation](float value)
+    {
+        value = satType == bqt::SaturationType::density
+            ? bqt::densitySaturate(value, drive)
+            : bqt::transformerSaturate(value, drive);
+        return value * compensation;
+    };
+
+    const auto oversamplingIndex = getActiveOversamplingIndex();
+
+    if (oversamplingIndex < 0)
+    {
+        for (int sample = 0; sample < numSamples; ++sample)
+            samples[sample] = processSample(samples[sample]);
+        return;
+    }
+
+    auto& oversampler = *oversamplers[static_cast<size_t>(sideIndex)][static_cast<size_t>(oversamplingIndex)];
+    juce::dsp::AudioBlock<float> block(&samples, 1, static_cast<size_t>(numSamples));
+    const auto upsampledBlock = oversampler.processSamplesUp(block);
+    auto* upsampledSamples = upsampledBlock.getChannelPointer(0);
+    const auto upsampledCount = static_cast<int>(upsampledBlock.getNumSamples());
+
+    for (int sample = 0; sample < upsampledCount; ++sample)
+        upsampledSamples[sample] = processSample(upsampledSamples[sample]);
+
+    oversampler.processSamplesDown(block);
+}
+
+int BqtAudioProcessor::getActiveOversamplingIndex() const
+{
+    const auto parameterId = isNonRealtime() ? "osRender" : "osRealtime";
+    const auto choice = static_cast<int>(parameters.getRawParameterValue(parameterId)->load());
+
+    if (choice <= 0)
+        return -1;
+
+    return juce::jlimit(0, numOversamplingFactors - 1, choice - 1);
+}
+
+void BqtAudioProcessor::updateLatency()
+{
+    const auto oversamplingIndex = getActiveOversamplingIndex();
+    auto latency = 0;
+
+    if (oversamplingIndex >= 0 && oversamplers[0][static_cast<size_t>(oversamplingIndex)] != nullptr)
+        latency = static_cast<int>(std::round(oversamplers[0][static_cast<size_t>(oversamplingIndex)]->getLatencyInSamples()));
+
+    if (latency != currentLatencySamples)
+    {
+        currentLatencySamples = latency;
+        setLatencySamples(currentLatencySamples);
     }
 }
 
 void BqtAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
 {
     juce::ScopedNoDenormals noDenormals;
+    updateLatency();
 
     if (parameters.getRawParameterValue("bypass")->load() > 0.5f)
         return;

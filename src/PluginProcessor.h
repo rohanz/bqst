@@ -50,10 +50,15 @@ private:
 
     void updateFilters();
     void processSide(float* samples, int numSamples, int sideIndex);
+    void processSaturation(float* samples, int numSamples, int sideIndex, float drive, bqt::SaturationType satType, float compensation);
+    int getActiveOversamplingIndex() const;
+    void updateLatency();
 
     juce::AudioProcessorValueTreeState parameters;
     std::array<SideFilters, 2> filters;
+    std::array<std::array<std::unique_ptr<juce::dsp::Oversampling<float>>, 3>, 2> oversamplers;
     double currentSampleRate = 44100.0;
+    int currentLatencySamples = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(BqtAudioProcessor)
 };
