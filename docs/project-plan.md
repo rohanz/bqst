@@ -168,7 +168,7 @@ Drive range:
 0 dB to +18 dB
 ```
 
-The plugin is calibrated around a nominal analog-style operating level of 0 VU = -18 dBFS. Drive is an explicit user-facing intensity range, but the internal waveshaper drive is deliberately scaled lower so useful saturation arrives gradually rather than getting crunchy too fast. Auto Gain then level-matches the wet path before Mix.
+The plugin is calibrated around a nominal analog-style operating level of 0 VU = -18 dBFS. Drive is an explicit user-facing intensity range, but the internal waveshaper drive is deliberately scaled lower so useful saturation arrives gradually rather than getting crunchy too fast. The saturation stage also uses a small low-frequency pre/de-emphasis pair around the nonlinear section, which gives loud kick fundamentals more headroom before the waveshaper while restoring the broad low-end balance afterward. Auto Gain then level-matches the wet path before Mix.
 
 Continuous controls use short smoothing ramps to reduce zipper noise during moves and automation. Discrete switches and selectors remain stepped.
 
@@ -182,7 +182,7 @@ Density mode:
 - Mastering-friendly at low Drive.
 - Optional Boom A/B behavior can add low-frequency weight before or inside the saturation stage.
 - Optional Vintage behavior can soften the top end after saturation.
-- Boom and Vintage are approximated from the Density graph images: Boom A is sub-focused, Boom B reaches farther into low mids, and Vintage is a broad high-frequency softening curve.
+- Boom and Vintage are approximated from the Density graph images: Boom A is sub-focused, Boom B reaches farther into low mids, and Vintage is a broad high-frequency softening curve. Boom is intentionally modest so it adds weight without making kick drums clip the saturator too quickly.
 
 Transformer mode:
 

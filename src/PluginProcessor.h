@@ -54,6 +54,8 @@ private:
         Filter vintage;
         Filter densityPreEmphasis;
         Filter densityDeEmphasis;
+        Filter saturationLowGuardPre;
+        Filter saturationLowGuardPost;
         Filter transformerWeight;
         Filter transformerTop;
     };
