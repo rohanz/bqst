@@ -8,7 +8,7 @@ class BqtAudioProcessorEditor final : public juce::AudioProcessorEditor, private
 {
 public:
     explicit BqtAudioProcessorEditor(BqtAudioProcessor&);
-    ~BqtAudioProcessorEditor() override = default;
+    ~BqtAudioProcessorEditor() override;
 
     void paint(juce::Graphics&) override;
     void resized() override;
@@ -63,13 +63,28 @@ private:
         float level = 0.0f;
     };
 
+    class HardwareLookAndFeel final : public juce::LookAndFeel_V4
+    {
+    public:
+        HardwareLookAndFeel();
+        void drawRotarySlider(juce::Graphics& g, int x, int y, int width, int height, float sliderPos,
+                              float rotaryStartAngle, float rotaryEndAngle, juce::Slider& slider) override;
+        void drawComboBox(juce::Graphics& g, int width, int height, bool isButtonDown, int buttonX, int buttonY,
+                          int buttonW, int buttonH, juce::ComboBox& box) override;
+        void positionComboBoxText(juce::ComboBox& box, juce::Label& label) override;
+        void drawToggleButton(juce::Graphics& g, juce::ToggleButton& button, bool shouldDrawButtonAsHighlighted,
+                              bool shouldDrawButtonAsDown) override;
+    };
+
     void configureSlider(juce::Slider& slider);
     void configureCombo(juce::ComboBox& combo);
     void configureLabel(juce::Label& label, const juce::String& text, juce::Justification justification = juce::Justification::centred);
     void configureSide(SideControls& controls, int sideIndex);
     void timerCallback() override;
     void updateLinkedControlStates();
+    void updateDynamicTooltips();
 
+    HardwareLookAndFeel hardwareLookAndFeel;
     BqtAudioProcessor& audioProcessor;
     juce::ComboBox eqMode;
     juce::ComboBox satMode;
