@@ -40,6 +40,7 @@ Input
 ```
 
 Oversampling applies around the nonlinear saturation stage, not the linear EQ stage.
+When oversampling is enabled, BQT keeps the reported latency constant by delaying the dry or bypassed saturation path to match the oversampled wet path. This keeps Mix, Drive=0, Saturation Bypass, and global Bypass from causing phase or timing shifts while the host is compensating plugin latency.
 
 ## Controls
 
@@ -47,7 +48,7 @@ Top utility bar:
 
 - EQ Mode: L/R or M/S.
 - Saturation Mode: L/R or M/S.
-- Realtime oversampling: Off, 2x, 4x, 8x.
+- Realtime oversampling: Off, 2x, 4x, 8x. Default is 2x because the saturation stage benefits from alias reduction during normal use.
 - Render oversampling: Off, 2x, 4x, 8x.
 - Input Trim: -18 dB to +18 dB.
 - Auto gain: On or Off.
@@ -168,7 +169,7 @@ Drive range:
 0 dB to +18 dB
 ```
 
-The plugin is calibrated around a nominal analog-style operating level of 0 VU = -18 dBFS. Drive is an explicit user-facing intensity range, but the internal waveshaper drive is deliberately scaled lower so useful saturation arrives gradually rather than getting crunchy too fast. The upper end of the Drive control uses stronger nonlinear shaping so maximum settings can get obviously saturated without making low and mid settings too touchy. The saturation stage also uses a small low-frequency pre/de-emphasis pair around the nonlinear section, which gives loud kick fundamentals more headroom before the waveshaper while restoring the broad low-end balance afterward. Auto Gain then level-matches the wet path before Mix.
+The plugin is calibrated around a nominal analog-style operating level of 0 VU = -18 dBFS. Drive is an explicit user-facing intensity range, but the internal waveshaper drive is deliberately scaled lower so useful saturation arrives gradually rather than getting crunchy too fast. The upper end of the Drive control uses stronger nonlinear shaping so maximum settings can get obviously saturated without making low and mid settings too touchy. The saturation stage also uses a small low-frequency pre/de-emphasis pair around the nonlinear section, which gives loud kick fundamentals more headroom before the waveshaper while restoring the broad low-end balance afterward. A drive-dependent high-frequency damping stage after the nonlinear section reduces brittle 8 kHz+ edge when loud low-frequency transients hit the saturation hard. Auto Gain then level-matches the wet path before Mix.
 
 Continuous controls use short smoothing ramps to reduce zipper noise during moves and automation. Discrete switches and selectors remain stepped.
 

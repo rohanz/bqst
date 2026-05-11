@@ -56,6 +56,7 @@ private:
         Filter densityDeEmphasis;
         Filter saturationLowGuardPre;
         Filter saturationLowGuardPost;
+        Filter saturationAirDamping;
         Filter transformerWeight;
         Filter transformerTop;
     };
@@ -65,6 +66,7 @@ private:
     void processEq(float* samples, int numSamples, int sideIndex);
     void processSide(float* samples, int numSamples, int sideIndex);
     void processSaturation(float* samples, int numSamples, int sideIndex, float drive01, float driveGainValue, bqt::SaturationType satType, float compensation);
+    void applyLatencyDelay(float* samples, int numSamples, int sideIndex);
     void updateMeter(int sideIndex, const float* samples, int numSamples);
     int getActiveOversamplingIndex() const;
     void updateLatency();

@@ -51,7 +51,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout BqtAudioProcessor::createPar
 
     params.push_back(std::make_unique<juce::AudioParameterChoice>("eqMode", "EQ Mode", juce::StringArray { "L/R", "M/S" }, 0));
     params.push_back(std::make_unique<juce::AudioParameterChoice>("satMode", "Saturation Mode", juce::StringArray { "L/R", "M/S" }, 0));
-    params.push_back(std::make_unique<juce::AudioParameterChoice>("osRealtime", "Realtime Oversampling", juce::StringArray { "Off", "2x", "4x", "8x" }, 0));
+    params.push_back(std::make_unique<juce::AudioParameterChoice>("osRealtime", "Realtime Oversampling", juce::StringArray { "Off", "2x", "4x", "8x" }, 1));
     params.push_back(std::make_unique<juce::AudioParameterChoice>("osRender", "Render Oversampling", juce::StringArray { "Off", "2x", "4x", "8x" }, 2));
     params.push_back(std::make_unique<juce::AudioParameterFloat>("inputTrim", "Input Trim", juce::NormalisableRange<float>(-18.0f, 18.0f, 0.1f), 0.0f));
     params.push_back(std::make_unique<juce::AudioParameterBool>("autoGain", "Auto Gain", true));
@@ -96,6 +96,7 @@ void BqtAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
         side.densityDeEmphasis.prepare(spec);
         side.saturationLowGuardPre.prepare(spec);
         side.saturationLowGuardPost.prepare(spec);
+        side.saturationAirDamping.prepare(spec);
         side.transformerWeight.prepare(spec);
         side.transformerTop.prepare(spec);
         side.lowShelf.reset();
@@ -106,6 +107,7 @@ void BqtAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
         side.densityDeEmphasis.reset();
         side.saturationLowGuardPre.reset();
         side.saturationLowGuardPost.reset();
+        side.saturationAirDamping.reset();
         side.transformerWeight.reset();
         side.transformerTop.reset();
     }
@@ -116,7 +118,7 @@ void BqtAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
     for (auto& delay : dryMixDelays)
     {
         delay.prepare(spec);
-        delay.setMaximumDelayInSamples(256);
+        delay.setMaximumDelayInSamples(4096);
         delay.reset();
     }
 
@@ -212,6 +214,7 @@ void BqtAudioProcessor::updateSaturationToneFilters()
         *filters[sideIndex].densityDeEmphasis.coefficients = *Coefficients::makeHighShelf(currentSampleRate, 6200.0f, 0.55f, dbToGain(-0.9f));
         *filters[sideIndex].saturationLowGuardPre.coefficients = *Coefficients::makeLowShelf(currentSampleRate, 95.0f, 0.55f, dbToGain(-2.2f));
         *filters[sideIndex].saturationLowGuardPost.coefficients = *Coefficients::makeLowShelf(currentSampleRate, 95.0f, 0.55f, dbToGain(2.2f));
+        *filters[sideIndex].saturationAirDamping.coefficients = *Coefficients::makeHighShelf(currentSampleRate, 8500.0f, 0.45f, dbToGain(-0.5f));
         *filters[sideIndex].transformerWeight.coefficients = *Coefficients::makePeakFilter(currentSampleRate, 240.0f, 0.75f, dbToGain(0.35f));
         *filters[sideIndex].transformerTop.coefficients = *Coefficients::makeHighShelf(currentSampleRate, 8200.0f, 0.50f, dbToGain(-0.6f));
     }
@@ -259,6 +262,8 @@ void BqtAudioProcessor::processSide(float* samples, int numSamples, int sideInde
     const auto currentDriveGain = driveGain[smoothIndex].skip(numSamples);
     const auto mix = saturationMix[smoothIndex].skip(numSamples);
     const auto compensation = autoGainEnabled ? bqt::saturationAutoGain(drive, satType) : 1.0f;
+    const auto airDampingDb = -0.5f - drive * drive * (satType == bqt::SaturationType::density ? 2.2f : 2.6f);
+    *filters[smoothIndex].saturationAirDamping.coefficients = *Coefficients::makeHighShelf(currentSampleRate, 8500.0f, 0.45f, dbToGain(airDampingDb));
 
     if (drive > 0.0f && mix > 0.0f)
     {
@@ -309,6 +314,10 @@ void BqtAudioProcessor::processSide(float* samples, int numSamples, int sideInde
         for (int sample = 0; sample < numSamples; ++sample)
             samples[sample] = delayedDry[sample] + (samples[sample] - delayedDry[sample]) * mix;
     }
+    else
+    {
+        applyLatencyDelay(samples, numSamples, sideIndex);
+    }
 
     for (int sample = 0; sample < numSamples; ++sample)
         samples[sample] *= outputTrimGain[smoothIndex].getNextValue();
@@ -347,6 +356,7 @@ void BqtAudioProcessor::processSaturation(float* samples, int numSamples, int si
                 value = filters[static_cast<size_t>(sideIndex)].transformerTop.processSample(value);
 
             value = filters[static_cast<size_t>(sideIndex)].saturationLowGuardPost.processSample(value);
+            value = filters[static_cast<size_t>(sideIndex)].saturationAirDamping.processSample(value);
             samples[sample] = filters[static_cast<size_t>(sideIndex)].vintage.processSample(value);
         }
         return;
@@ -383,7 +393,23 @@ void BqtAudioProcessor::processSaturation(float* samples, int numSamples, int si
             value = filters[static_cast<size_t>(sideIndex)].transformerTop.processSample(value);
 
         value = filters[static_cast<size_t>(sideIndex)].saturationLowGuardPost.processSample(value);
+        value = filters[static_cast<size_t>(sideIndex)].saturationAirDamping.processSample(value);
         samples[sample] = filters[static_cast<size_t>(sideIndex)].vintage.processSample(value);
+    }
+}
+
+void BqtAudioProcessor::applyLatencyDelay(float* samples, int numSamples, int sideIndex)
+{
+    if (currentLatencySamples <= 0)
+        return;
+
+    auto& delay = dryMixDelays[static_cast<size_t>(sideIndex)];
+    delay.setDelay(static_cast<float>(currentLatencySamples));
+
+    for (int sample = 0; sample < numSamples; ++sample)
+    {
+        delay.pushSample(0, samples[sample]);
+        samples[sample] = delay.popSample(0);
     }
 }
 
@@ -440,7 +466,11 @@ void BqtAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
     updateLatency();
 
     if (parameters.getRawParameterValue("bypass")->load() > 0.5f)
+    {
+        applyLatencyDelay(buffer.getWritePointer(0), buffer.getNumSamples(), 0);
+        applyLatencyDelay(buffer.getWritePointer(1), buffer.getNumSamples(), 1);
         return;
+    }
 
     updateFilters();
     updateSaturationToneFilters();
@@ -507,6 +537,8 @@ void BqtAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
     }
     else
     {
+        applyLatencyDelay(left, numSamples, 0);
+        applyLatencyDelay(right, numSamples, 1);
         updateMeter(0, left, numSamples);
         updateMeter(1, right, numSamples);
     }
