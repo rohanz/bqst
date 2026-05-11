@@ -42,7 +42,8 @@ Implemented in the first scaffold:
 - Per-side low/high Bax-style shelves.
 - Per-side Density and Transformer saturation choices.
 - Per-side saturation Mix controls.
-- Shared Boom and Vintage saturation tone controls.
+- Shared Boom and Vintage saturation tone controls on the saturation module plate.
+- Auto Gain level-matches the wet saturation path before per-side Mix blending.
 - Drive at 0 skips saturation and saturation autogain.
 - Per-side output trim.
 - Per-side saturation output meters in the editor.

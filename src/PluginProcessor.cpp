@@ -5,6 +5,7 @@ namespace
 {
 constexpr auto sqrtHalf = 0.70710678118654752440f;
 constexpr auto numOversamplingFactors = 3;
+constexpr auto minRmsForMatching = 1.0e-5f;
 
 juce::String sidePrefix(int sideIndex)
 {
@@ -170,6 +171,27 @@ void BqtAudioProcessor::processSide(float* samples, int numSamples, int sideInde
         processSaturation(samples, numSamples, sideIndex, drive, satType, compensation);
 
         const auto* dry = dryBuffer.getReadPointer(0);
+        if (autoGainEnabled)
+        {
+            auto dryEnergy = 0.0f;
+            auto wetEnergy = 0.0f;
+
+            for (int sample = 0; sample < numSamples; ++sample)
+            {
+                dryEnergy += dry[sample] * dry[sample];
+                wetEnergy += samples[sample] * samples[sample];
+            }
+
+            const auto dryRms = std::sqrt(dryEnergy / static_cast<float>(numSamples));
+            const auto wetRms = std::sqrt(wetEnergy / static_cast<float>(numSamples));
+
+            if (dryRms > minRmsForMatching && wetRms > minRmsForMatching)
+            {
+                const auto wetMatchGain = juce::jlimit(0.25f, 4.0f, dryRms / wetRms);
+                juce::FloatVectorOperations::multiply(samples, wetMatchGain, numSamples);
+            }
+        }
+
         for (int sample = 0; sample < numSamples; ++sample)
             samples[sample] = dry[sample] + (samples[sample] - dry[sample]) * mix;
     }

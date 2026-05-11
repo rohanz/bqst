@@ -156,16 +156,18 @@ void BqtAudioProcessorEditor::resized()
     top.removeFromLeft(10);
     osRender.setBounds(top.removeFromLeft(118));
     top.removeFromLeft(16);
-    boom.setBounds(top.removeFromLeft(92));
-    top.removeFromLeft(12);
     autoGain.setBounds(top.removeFromLeft(110));
-    vintage.setBounds(top.removeFromLeft(96));
     bypass.setBounds(top.removeFromLeft(90));
 
     auto panel = bounds.reduced(0, 18);
     panel.removeFromTop(40);
     auto eqPanel = panel.removeFromLeft(panel.getWidth() / 2).reduced(22, 8);
     auto satPanel = panel.reduced(32, 8);
+
+    auto satShared = satPanel.removeFromTop(48);
+    boom.setBounds(satShared.removeFromLeft(132).reduced(8, 8));
+    vintage.setBounds(satShared.removeFromLeft(118).reduced(8, 8));
+    satPanel.removeFromTop(4);
 
     for (int side = 0; side < 2; ++side)
     {

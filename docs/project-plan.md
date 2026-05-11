@@ -80,6 +80,7 @@ Saturation module shared controls:
 
 - Boom: Off, A, B.
 - Vintage: On or Off.
+- These controls live on the saturation module plate, not the top utility bar.
 
 Side labels depend on each module mode:
 
@@ -139,6 +140,7 @@ Saturation mix:
 - 0% returns the EQ-only signal for that side.
 - 100% returns the fully saturated signal.
 - Mix is per side, not global.
+- With Auto Gain enabled, the wet saturation path is RMS-matched to the dry EQ output before Mix is applied, so changing Mix should mostly reveal tone rather than volume.
 
 VU meters:
 
