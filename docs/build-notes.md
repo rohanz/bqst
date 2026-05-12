@@ -30,40 +30,47 @@ Copy test builds there with:
 cp -R build/BQST_artefacts/VST3/BQST.vst3 /Users/rohan/Library/CloudStorage/OneDrive-Personal/dailystuff/music/vst3/
 ```
 
-## Build Release VST3
+## Build Release
 
 ```sh
 cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release
 cmake --build build-release --config Release
 ```
 
-The release artifact is written to:
+The release artifacts are written to:
 
 ```text
 build-release/BQST_artefacts/Release/VST3/BQST.vst3
+build-release/BQST_artefacts/Release/AU/BQST.component
 ```
 
 Install the release build with:
 
 ```sh
-rm -rf /Users/rohan/Library/CloudStorage/OneDrive-Personal/dailystuff/music/vst3/BQST.vst3
-cp -R build-release/BQST_artefacts/Release/VST3/BQST.vst3 /Users/rohan/Library/CloudStorage/OneDrive-Personal/dailystuff/music/vst3/
-codesign --force --deep -s - /Users/rohan/Library/CloudStorage/OneDrive-Personal/dailystuff/music/vst3/BQST.vst3
+scripts/install-local.sh
 ```
 
 Automatic copying into `~/Library/Audio/Plug-Ins/VST3` is disabled for now. This avoids permission issues during normal sandboxed development and keeps builds local to the project.
+
+The local install script copies:
+
+```text
+VST3 -> /Users/rohan/Library/CloudStorage/OneDrive-Personal/dailystuff/music/vst3/BQST.vst3
+AU   -> ~/Library/Audio/Plug-Ins/Components/BQST.component
+```
 
 ## Validate
 
 ```sh
 /Applications/pluginval.app/Contents/MacOS/pluginval --validate build-release/BQST_artefacts/Release/VST3/BQST.vst3 --strictness-level 10
+/Applications/pluginval.app/Contents/MacOS/pluginval --validate ~/Library/Audio/Plug-Ins/Components/BQST.component --strictness-level 10
 ```
 
 This may need to run outside the sandbox because pluginval opens plugin bundles and editors.
 
 ## Current Build Status
 
-The project configures and builds Debug and Release VST3 artifacts.
+The project configures and builds Debug and Release VST3, AU, and Standalone artifacts.
 
 The Release VST3 has passed pluginval strictness level 10.
 

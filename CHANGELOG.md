@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.0
+
+- Bumped the plugin version to 1.0.0.
+- Added AU build output alongside VST3 and Standalone.
+- Added a simple user manual in `docs/manual.md`.
+- Split the editor implementation into focused files for setup, interaction/undo, layout/painting, and presets.
+
 ## 0.1.2
 
 - Added a preset strip above the main utility bar.

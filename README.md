@@ -1,6 +1,6 @@
 # BQST
 
-BQST is a JUCE/C++ VST3 plugin: a dual Baxandall-style mastering EQ feeding a two-mode saturation module.
+BQST is a JUCE/C++ audio plugin: a dual Baxandall-style mastering EQ feeding a two-mode saturation module.
 
 Current build:
 
@@ -18,4 +18,5 @@ Useful docs:
 
 - [docs/project-plan.md](docs/project-plan.md) for design and DSP notes.
 - [docs/build-notes.md](docs/build-notes.md) for build, install, and validation commands.
+- [docs/manual.md](docs/manual.md) for user-facing controls and workflow.
 - [CHANGELOG.md](CHANGELOG.md) for release notes.
