@@ -34,6 +34,13 @@ private:
     juce::String text;
 };
 
+class BqtBypassOverlay final : public juce::Component
+{
+public:
+    BqtBypassOverlay();
+    void paint(juce::Graphics& g) override;
+};
+
 class BqtVuMeter final : public juce::Component, private juce::Timer
 {
 public:

@@ -60,8 +60,8 @@ private:
     public:
         explicit RackComponent(BqtAudioProcessorEditor& editorToUse) : editor(editorToUse) {}
         void paint(juce::Graphics& g) override { editor.paintRack(g); }
-        void paintOverChildren(juce::Graphics& g) override;
         void setBypassed(bool shouldBeBypassed);
+        bool isBypassed() const { return bypassed; }
 
     private:
         BqtAudioProcessorEditor& editor;
@@ -73,6 +73,7 @@ private:
     void configureLabel(juce::Label& label, const juce::String& text, juce::Justification justification = juce::Justification::centred);
     void configureSide(SideControls& controls, int sideIndex);
     void paintRack(juce::Graphics& g);
+    void updateRackBypassVisualState();
     void timerCallback() override;
     void sliderValueChanged(juce::Slider* slider) override;
     void sliderDragStarted(juce::Slider* slider) override;
@@ -125,6 +126,7 @@ private:
     std::array<SideControls, 2> sideControls;
     BqtVuMeter meterA;
     BqtVuMeter meterB;
+    BqtBypassOverlay bypassOverlay;
 
     std::unique_ptr<ComboBoxAttachment> eqModeAttachment;
     std::unique_ptr<ComboBoxAttachment> satModeAttachment;

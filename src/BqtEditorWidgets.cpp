@@ -29,6 +29,20 @@ void BqtReadoutBubble::paint(juce::Graphics& g)
     g.drawText(text, getLocalBounds().reduced(8, 2), juce::Justification::centred);
 }
 
+BqtBypassOverlay::BqtBypassOverlay()
+{
+    setInterceptsMouseClicks(false, false);
+}
+
+void BqtBypassOverlay::paint(juce::Graphics& g)
+{
+    const auto bounds = getLocalBounds().toFloat();
+    g.setColour(juce::Colours::black.withAlpha(0.28f));
+    g.fillRect(bounds);
+    g.setColour(juce::Colour(0xff8a8a8a).withAlpha(0.16f));
+    g.fillRect(bounds);
+}
+
 BqtHardwareLookAndFeel::BqtHardwareLookAndFeel()
 {
     setColour(juce::Slider::textBoxTextColourId, juce::Colour(ink));

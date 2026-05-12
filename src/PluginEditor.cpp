@@ -46,6 +46,9 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
     rackComponent.addAndMakeVisible(meterB);
     meterA.setInterceptsMouseClicks(false, false);
     meterB.setInterceptsMouseClicks(false, false);
+    addAndMakeVisible(bypassOverlay);
+    bypassOverlay.setVisible(false);
+    bypassOverlay.setInterceptsMouseClicks(false, false);
     addAndMakeVisible(readoutBubble);
     readoutBubble.setVisible(false);
     readoutBubble.setInterceptsMouseClicks(false, false);
@@ -589,6 +592,7 @@ void BqtAudioProcessorEditor::timerCallback()
         controls.satTypeButton.setToggleState(controls.satType.getSelectedItemIndex() == 1, juce::dontSendNotification);
 
     updateLinkedControlStates();
+    updateRackBypassVisualState();
     updateDynamicTooltips();
 
     if (activeReadoutSlider != nullptr)
@@ -941,11 +945,17 @@ void BqtAudioProcessorEditor::showReadout(juce::Component& target, const juce::S
     const auto font = juce::Font(faceFont(16.5f, true));
     const auto width = static_cast<int>(std::ceil(getTextWidth(font, text) + 22.0f));
     constexpr int height = 31;
-    const auto editorTargetBounds = getLocalArea(&target, target.getLocalBounds());
-    auto bounds = juce::Rectangle<int>(width, height).withCentre({ editorTargetBounds.getCentreX(), editorTargetBounds.getY() - 8 });
+    const auto uiScale = static_cast<float>(getWidth()) / static_cast<float>(baseEditorWidth);
+    auto editorTargetBounds = getLocalArea(&target, target.getLocalBounds()).toFloat();
+    if (uiScale > 0.0f)
+        editorTargetBounds = editorTargetBounds / uiScale;
+
+    auto bounds = juce::Rectangle<int>(width, height)
+                      .withCentre({ static_cast<int>(std::round(editorTargetBounds.getCentreX())),
+                                    static_cast<int>(std::round(editorTargetBounds.getY() - 8.0f)) });
 
     if (bounds.getY() < 4)
-        bounds.setY(editorTargetBounds.getBottom() + 8);
+        bounds.setY(static_cast<int>(std::round(editorTargetBounds.getBottom() + 8.0f)));
 
     readoutBubble.setText(text);
     readoutBubble.setBounds(bounds.constrainedWithin({ 0, 0, baseEditorWidth, baseEditorHeight }));
@@ -989,6 +999,15 @@ void BqtAudioProcessorEditor::updateLinkedControlStates()
     keepVisible(right.satTypeLabel);
     keepVisible(right.mixLabel);
     keepVisible(right.outputTrimLabel);
+}
+
+void BqtAudioProcessorEditor::updateRackBypassVisualState()
+{
+    const auto bypassed = rackComponent.isBypassed();
+
+    bypassOverlay.setVisible(bypassed);
+    bypassOverlay.toFront(false);
+    bypassOverlay.repaint();
 }
 
 void BqtAudioProcessorEditor::paint(juce::Graphics& g)
@@ -1230,26 +1249,13 @@ void BqtAudioProcessorEditor::paintRack(juce::Graphics& g)
     }
 }
 
-void BqtAudioProcessorEditor::RackComponent::paintOverChildren(juce::Graphics& g)
-{
-    if (! bypassed)
-        return;
-
-    const auto rack = getLocalBounds().toFloat();
-
-    g.setColour(juce::Colours::black.withAlpha(0.26f));
-    g.fillRect(rack);
-    g.setColour(juce::Colours::white.withAlpha(0.10f));
-    g.fillRect(rack);
-}
-
 void BqtAudioProcessorEditor::RackComponent::setBypassed(bool shouldBeBypassed)
 {
     if (bypassed == shouldBeBypassed)
         return;
 
     bypassed = shouldBeBypassed;
-    repaint();
+    editor.updateRackBypassVisualState();
 }
 
 void BqtAudioProcessorEditor::resized()
@@ -1271,7 +1277,7 @@ void BqtAudioProcessorEditor::resized()
                              static_cast<juce::Component*>(&satBypass), static_cast<juce::Component*>(&eqLink),
                              static_cast<juce::Component*>(&satLink),
                              static_cast<juce::Component*>(&bypass), static_cast<juce::Component*>(&sizeSelect),
-                             static_cast<juce::Component*>(&readoutBubble) })
+                             static_cast<juce::Component*>(&bypassOverlay), static_cast<juce::Component*>(&readoutBubble) })
         applyUiScale(*component);
 
     auto bounds = juce::Rectangle<int>(0, 0, baseEditorWidth, baseEditorHeight).reduced(outerEditorMargin);
@@ -1346,6 +1352,7 @@ void BqtAudioProcessorEditor::resized()
     auto rackFloat = getRackFaceBounds(bounds.toFloat());
     auto rack = rackFloat.toNearestInt();
     rackComponent.setBounds(rack);
+    bypassOverlay.setBounds(rack);
     auto rackLocal = juce::Rectangle<int>(0, 0, rack.getWidth(), rack.getHeight());
     auto eqPanel = rackLocal.removeFromLeft(rackLocal.getWidth() / 2).reduced(24, 26);
     auto satPanel = rackLocal.reduced(24, 26);
@@ -1439,5 +1446,6 @@ void BqtAudioProcessorEditor::resized()
 
     vintage.toFront(false);
     main.satTypeButton.toFront(false);
+    bypassOverlay.toFront(false);
     readoutBubble.toFront(false);
 }
