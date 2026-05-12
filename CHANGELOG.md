@@ -5,9 +5,13 @@
 - Added a preset strip above the main utility bar.
 - Added factory presets: Default, Clean Bax Lift, Cream Glue, Grit Console Push, Wide Air MS, and Subtle Master Polish.
 - Added user preset saving as `.bqstpreset` XML files.
-- User presets default to `~/Library/Application Support/BQST/Presets`.
+- User presets default to `~/Library/BQST/Presets`.
 - Added previous/next preset buttons and preset hover help.
 - Expanded fixed UI size options to 75%, 100%, 125%, and 150%.
+- Updated factory preset values from user-tuned preset files and added Cream Sheen.
+- Root-level user presets now appear directly under User instead of User > User.
+- Presets now ignore utility/session controls: realtime/render oversampling, EQ/Sat in state, and global bypass.
+- Split editor drawing support into dedicated style/widget files for easier maintenance.
 
 ## 0.1.1
 

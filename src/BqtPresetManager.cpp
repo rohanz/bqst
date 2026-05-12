@@ -19,36 +19,52 @@ constexpr FactoryPreset factoryPresets[] {
     { "Default", "General", {} },
     { "Clean Bax Lift", "Master",
       {
+          { "aDrive", 3.0f }, { "bDrive", 3.0f },
           { "aHighGain", 1.2f }, { "bHighGain", 1.2f },
           { "aHighFreq", 5.0f }, { "bHighFreq", 5.0f },
-          { "aLowGain", 0.7f },  { "bLowGain", 0.7f },
+          { "aLowGain", 1.4f },  { "bLowGain", 1.4f },
           { "aLowFreq", 3.0f },  { "bLowFreq", 3.0f },
       } },
     { "Cream Glue", "Saturation",
       {
-          { "aDrive", 5.0f }, { "bDrive", 5.0f },
-          { "aMix", 72.0f },  { "bMix", 72.0f },
+          { "aDrive", 10.3f }, { "bDrive", 10.3f },
+          { "aMix", 74.4f },  { "bMix", 74.4f },
           { "aSatType", 0.0f }, { "bSatType", 0.0f },
           { "vintage", 1.0f },
       } },
     { "Grit Console Push", "Saturation",
       {
-          { "aDrive", 7.5f }, { "bDrive", 7.5f },
+          { "aDrive", 8.8f }, { "bDrive", 8.8f },
+          { "aHighGain", 0.2f }, { "bHighGain", 0.2f },
+          { "aLowGain", 0.4f }, { "bLowGain", 0.4f },
           { "aMix", 58.0f },  { "bMix", 58.0f },
           { "aSatType", 1.0f }, { "bSatType", 1.0f },
           { "aOutputTrim", -0.8f }, { "bOutputTrim", -0.8f },
       } },
+    { "Cream Sheen", "Saturation",
+      {
+          { "aDrive", 7.4f }, { "bDrive", 7.4f },
+          { "aHighFreq", 6.0f }, { "bHighFreq", 6.0f },
+          { "aHighGain", 1.1f }, { "bHighGain", 1.1f },
+          { "aLowGain", 0.6f }, { "bLowGain", 0.6f },
+          { "aMix", 58.0f }, { "bMix", 58.0f },
+          { "aSatType", 0.0f }, { "bSatType", 0.0f },
+      } },
     { "Wide Air MS", "Master",
       {
           { "eqMode", 1.0f },
-          { "aHighGain", 0.4f }, { "bHighGain", 1.5f },
+          { "eqLink", 0.0f },
+          { "aHighGain", 0.5f }, { "bHighGain", 2.6f },
           { "aHighFreq", 5.0f }, { "bHighFreq", 7.0f },
-          { "aLowGain", 0.2f },  { "bLowGain", -0.3f },
+          { "aLowFreq", 4.0f }, { "bLowFreq", 7.0f },
+          { "aLowGain", 1.7f },  { "bLowGain", 0.7f },
       } },
     { "Subtle Master Polish", "Master",
       {
           { "aHighGain", 0.6f }, { "bHighGain", 0.6f },
           { "aHighFreq", 6.0f }, { "bHighFreq", 6.0f },
+          { "aLowFreq", 1.0f }, { "bLowFreq", 1.0f },
+          { "aLowGain", 0.8f }, { "bLowGain", 0.8f },
           { "aDrive", 3.2f },    { "bDrive", 3.2f },
           { "aMix", 45.0f },     { "bMix", 45.0f },
           { "aSatType", 0.0f },  { "bSatType", 0.0f },
@@ -57,11 +73,9 @@ constexpr FactoryPreset factoryPresets[] {
 
 constexpr ParameterValue defaultValues[] {
     { "eqMode", 0.0f }, { "satMode", 0.0f },
-    { "osRealtime", 1.0f }, { "osRender", 2.0f },
     { "inputTrim", 0.0f }, { "autoGain", 1.0f },
-    { "eqBypass", 0.0f }, { "satBypass", 0.0f },
     { "eqLink", 1.0f }, { "satLink", 1.0f },
-    { "bypass", 0.0f }, { "vintage", 0.0f },
+    { "vintage", 0.0f },
     { "aLowGain", 0.0f }, { "aLowFreq", 3.0f },
     { "aHighGain", 0.0f }, { "aHighFreq", 4.0f },
     { "aDrive", 0.0f }, { "aSatType", 0.0f },
@@ -77,6 +91,19 @@ void setValueNotifyingHost(juce::RangedAudioParameter& parameter, float rawValue
     parameter.beginChangeGesture();
     parameter.setValueNotifyingHost(parameter.convertTo0to1(rawValue));
     parameter.endChangeGesture();
+}
+
+bool shouldStoreInPreset(const juce::String& parameterId)
+{
+    static const juce::StringArray utilityParameters {
+        "osRealtime",
+        "osRender",
+        "eqBypass",
+        "satBypass",
+        "bypass",
+    };
+
+    return ! utilityParameters.contains(parameterId);
 }
 } // namespace
 
@@ -114,7 +141,7 @@ void BqtPresetManager::refresh()
     {
         auto relativeParent = file.getParentDirectory().getRelativePathFrom(directory);
         if (relativeParent == "." || relativeParent.isEmpty())
-            relativeParent = "User";
+            relativeParent = {};
 
         presets.add({ file.getFileNameWithoutExtension(), relativeParent.replaceCharacter(juce::File::getSeparatorChar(), '/'), false, file });
     }
@@ -133,7 +160,16 @@ bool BqtPresetManager::loadPreset(int index)
 
     if (auto xml = juce::parseXML(presets.getReference(index).file))
     {
-        state.replaceState(juce::ValueTree::fromXml(*xml));
+        for (auto* child : xml->getChildIterator())
+        {
+            if (! child->hasTagName("PARAM"))
+                continue;
+
+            const auto id = child->getStringAttribute("id");
+            if (shouldStoreInPreset(id))
+                setParameter(id, static_cast<float>(child->getDoubleAttribute("value")));
+        }
+
         return true;
     }
 
@@ -144,6 +180,15 @@ bool BqtPresetManager::saveUserPreset(const juce::File& file) const
 {
     if (auto xml = state.copyState().createXml())
     {
+        for (int i = xml->getNumChildElements(); --i >= 0;)
+        {
+            if (auto* child = xml->getChildElement(i))
+            {
+                if (child->hasTagName("PARAM") && ! shouldStoreInPreset(child->getStringAttribute("id")))
+                    xml->removeChildElement(child, true);
+            }
+        }
+
         const auto target = file.withFileExtension(".bqstpreset");
         target.getParentDirectory().createDirectory();
         return xml->writeTo(target);

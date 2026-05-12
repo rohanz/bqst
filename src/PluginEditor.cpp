@@ -1,100 +1,13 @@
 #include "PluginEditor.h"
 
-#include "BinaryData.h"
+#include "BqtEditorStyle.h"
 
 #include <array>
 #include <cmath>
 
 namespace
 {
-constexpr auto panelPink = 0xffffadcb;
-constexpr auto panelPinkDark = 0xfff095bd;
-constexpr auto ink = 0xff111111;
-constexpr auto cream = 0xfffff4ed;
-constexpr auto panelText = 0xfffff1df;
-constexpr auto lampOn = 0xfffaf7f2;
-constexpr auto lampOff = 0xff6d6d6d;
-constexpr auto totalSlots = 4.0f;
-constexpr auto slotWidthInches = 1.5f;
-constexpr auto panelHeightInches = 5.25f;
-constexpr auto screwInsetYInches = (5.25f - 4.938f) * 0.5f;
-constexpr auto baseEditorWidth = 900;
-constexpr auto baseEditorHeight = 874;
-constexpr auto fixedEditorScale = 1.25f;
-const juce::StringArray lowFreqLabels { "74", "84", "98", "116", "131", "166", "230", "361" };
-const juce::StringArray highFreqLabels { "1.6k", "1.8k", "2.1k", "2.5k", "3.4k", "4.8k", "7.1k", "18k" };
-
-juce::String indexedLabel(const juce::StringArray& labels, double value)
-{
-    return labels[juce::jlimit(0, labels.size() - 1, static_cast<int>(std::round(value)))];
-}
-
-juce::String sidePrefix(int sideIndex)
-{
-    return sideIndex == 0 ? "a" : "b";
-}
-
-juce::FontOptions faceFont(float height, bool bold = true)
-{
-    static auto regular = juce::Typeface::createSystemTypefaceFor(BinaryData::ChillaxRegular_otf,
-                                                                  BinaryData::ChillaxRegular_otfSize);
-    static auto semibold = juce::Typeface::createSystemTypefaceFor(BinaryData::ChillaxSemibold_otf,
-                                                                   BinaryData::ChillaxSemibold_otfSize);
-    return juce::FontOptions(bold && semibold != nullptr ? semibold : regular).withHeight(height);
-}
-
-juce::Rectangle<float> getRackFaceBounds(juce::Rectangle<float> available)
-{
-    available = available.reduced(4.0f, 0.0f);
-    const auto targetRatio = (totalSlots * slotWidthInches) / panelHeightInches;
-    auto width = available.getWidth();
-    auto height = width / targetRatio;
-
-    if (height > available.getHeight())
-    {
-        height = available.getHeight();
-        width = height * targetRatio;
-    }
-
-    return juce::Rectangle<float>(width, height).withCentre(available.getCentre());
-}
-
-void drawPanelText(juce::Graphics& g, const juce::String& text, juce::Rectangle<float> bounds,
-                   juce::Justification justification, float height, bool bold = true)
-{
-    g.setFont(juce::Font(faceFont(height, bold)));
-    g.setColour(juce::Colour(panelText));
-    g.drawText(text, bounds.toNearestInt(), justification);
-}
-
-float getTextWidth(const juce::Font& font, const juce::String& text)
-{
-    juce::GlyphArrangement glyphs;
-    glyphs.addLineOfText(font, text, 0.0f, 0.0f);
-    return glyphs.getBoundingBox(0, -1, true).getWidth();
-}
-
-void drawRotatedImageKnob(juce::Graphics& g, const juce::Image& image, juce::Rectangle<float> bounds, float angle,
-                          float scale = 1.0f)
-{
-    if (! image.isValid())
-        return;
-
-    auto knob = bounds;
-    const auto side = juce::jmin(knob.getWidth(), knob.getHeight()) * scale;
-    knob = juce::Rectangle<float>(side, side).withCentre(knob.getCentre());
-
-    const auto centre = knob.getCentre();
-    const auto transform = juce::AffineTransform::translation(static_cast<float>(-image.getWidth()) * 0.5f,
-                                                              static_cast<float>(-image.getHeight()) * 0.5f)
-                               .scaled(knob.getWidth() / static_cast<float>(image.getWidth()),
-                                       knob.getHeight() / static_cast<float>(image.getHeight()))
-                               .rotated(angle)
-                               .translated(centre.x, centre.y);
-
-    g.setImageResamplingQuality(juce::Graphics::highResamplingQuality);
-    g.drawImageTransformed(image, transform, false);
-}
+using namespace bqst::ui;
 } // namespace
 
 BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
@@ -109,7 +22,7 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
     configureCombo(osRender);
     configureCombo(sizeSelect);
     configureLabel(inputTrimLabel, "input", juce::Justification::centredLeft);
-    inputTrimLabel.setColour(juce::Label::textColourId, juce::Colour(cream).withAlpha(0.84f));
+    inputTrimLabel.setColour(juce::Label::textColourId, juce::Colour(panelText));
     inputTrimLabel.setFont(faceFont(19.5f));
     configureSlider(inputTrim);
     inputTrim.getProperties().set("bqtTopInputKnob", true);
@@ -501,12 +414,19 @@ void BqtAudioProcessorEditor::showPresetMenu()
     for (const auto& preset : presets)
     {
         auto& categories = preset.factory ? factoryCategories : userCategories;
-        if (! categories.contains(preset.category))
+        if (preset.category.isNotEmpty() && ! categories.contains(preset.category))
             categories.add(preset.category);
     }
 
     auto addCategoryMenus = [&presets, this](juce::PopupMenu& parent, const juce::StringArray& categories, bool factory)
     {
+        for (int i = 0; i < presets.size(); ++i)
+        {
+            const auto& preset = presets.getReference(i);
+            if (preset.factory == factory && preset.category.isEmpty())
+                parent.addItem(i + 1, preset.name, true, i == selectedPresetIndex);
+        }
+
         for (const auto& category : categories)
         {
             juce::PopupMenu categoryMenu;
@@ -983,27 +903,6 @@ void BqtAudioProcessorEditor::hideReadout()
     readoutBubble.setVisible(false);
 }
 
-void BqtAudioProcessorEditor::ReadoutBubble::setText(juce::String newText)
-{
-    if (text == newText)
-        return;
-
-    text = std::move(newText);
-    repaint();
-}
-
-void BqtAudioProcessorEditor::ReadoutBubble::paint(juce::Graphics& g)
-{
-    const auto bounds = getLocalBounds().toFloat();
-    g.setColour(juce::Colour(0xff111111));
-    g.fillRoundedRectangle(bounds.reduced(1.0f), 3.0f);
-    g.setColour(juce::Colour(panelText).withAlpha(0.72f));
-    g.drawRoundedRectangle(bounds.reduced(1.0f), 3.0f, 1.0f);
-    g.setColour(juce::Colour(panelText));
-    g.setFont(juce::Font(faceFont(16.5f, true)));
-    g.drawText(text, getLocalBounds().reduced(8, 2), juce::Justification::centred);
-}
-
 void BqtAudioProcessorEditor::updateDynamicTooltips()
 {
 }
@@ -1037,552 +936,6 @@ void BqtAudioProcessorEditor::updateLinkedControlStates()
     keepVisible(right.outputTrimLabel);
 }
 
-BqtAudioProcessorEditor::HardwareLookAndFeel::HardwareLookAndFeel()
-{
-    setColour(juce::Slider::textBoxTextColourId, juce::Colour(ink));
-    setColour(juce::Slider::textBoxBackgroundColourId, juce::Colours::transparentBlack);
-    setColour(juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
-    setColour(juce::ComboBox::textColourId, juce::Colour(ink));
-    setColour(juce::ComboBox::backgroundColourId, juce::Colour(cream));
-    setColour(juce::ComboBox::outlineColourId, juce::Colour(ink));
-    setColour(juce::PopupMenu::backgroundColourId, juce::Colour(cream));
-    setColour(juce::PopupMenu::textColourId, juce::Colour(ink));
-}
-
-void BqtAudioProcessorEditor::HardwareLookAndFeel::drawRotarySlider(juce::Graphics& g, int x, int y, int width, int height,
-                                                                    float sliderPos, float rotaryStartAngle,
-                                                                    float rotaryEndAngle, juce::Slider& slider)
-{
-    const auto bounds = juce::Rectangle<float>(static_cast<float>(x), static_cast<float>(y),
-                                               static_cast<float>(width), static_cast<float>(height)).reduced(8.0f);
-    const auto textBox = slider.getTextBoxHeight() > 0 ? 22.0f : 0.0f;
-    auto knobArea = bounds;
-    knobArea.removeFromBottom(textBox);
-    const auto radius = juce::jmin(knobArea.getWidth(), knobArea.getHeight()) * 0.46f;
-    const auto centre = knobArea.getCentre();
-    const auto angle = rotaryStartAngle + sliderPos * (rotaryEndAngle - rotaryStartAngle);
-    const auto knob = juce::Rectangle<float>(radius * 2.0f, radius * 2.0f).withCentre(centre);
-
-    if (slider.getProperties().contains("bqtLargeCreamKnob") && static_cast<bool>(slider.getProperties()["bqtLargeCreamKnob"]))
-    {
-        static auto image = juce::ImageCache::getFromMemory(BinaryData::knoblargeskirted_png,
-                                                            BinaryData::knoblargeskirted_pngSize);
-        drawRotatedImageKnob(g, image, knobArea, angle, 1.18f);
-        return;
-    }
-
-    if (slider.getProperties().contains("bqtSmallCreamKnob") && static_cast<bool>(slider.getProperties()["bqtSmallCreamKnob"]))
-    {
-        static auto image = juce::ImageCache::getFromMemory(BinaryData::knobsmallpointer_png,
-                                                            BinaryData::knobsmallpointer_pngSize);
-        drawRotatedImageKnob(g, image, knobArea, angle, 1.08f);
-        return;
-    }
-
-    if (slider.getProperties().contains("bqtKnobCombo") && static_cast<bool>(slider.getProperties()["bqtKnobCombo"]))
-    {
-        static auto image = juce::ImageCache::getFromMemory(BinaryData::knobsmallpointer_png,
-                                                            BinaryData::knobsmallpointer_pngSize);
-        drawRotatedImageKnob(g, image, knobArea, angle, 1.10f);
-        return;
-    }
-
-    if (slider.getProperties().contains("bqtTopInputKnob") && static_cast<bool>(slider.getProperties()["bqtTopInputKnob"]))
-    {
-        const auto fullBounds = juce::Rectangle<float>(static_cast<float>(x), static_cast<float>(y),
-                                                       static_cast<float>(width), static_cast<float>(height)).reduced(2.0f);
-        const auto side = juce::jmin(fullBounds.getWidth(), fullBounds.getHeight()) * 0.96f;
-        const auto mini = juce::Rectangle<float>(side, side).withCentre(fullBounds.getCentre());
-        g.setColour(juce::Colours::black.withAlpha(0.45f));
-        g.fillEllipse(mini.translated(1.0f, 2.0f));
-
-        juce::ColourGradient body(juce::Colour(0xfff7eee6), mini.getCentreX(), mini.getY(),
-                                  juce::Colour(0xffcfc2b9), mini.getCentreX(), mini.getBottom(), false);
-        g.setGradientFill(body);
-        g.fillEllipse(mini);
-        g.setColour(juce::Colour(ink).withAlpha(0.55f));
-        g.drawEllipse(mini, 1.1f);
-
-        const auto pointerEnd = mini.getCentre().getPointOnCircumference(mini.getWidth() * 0.34f, angle);
-        g.setColour(juce::Colour(ink));
-        g.drawLine({ mini.getCentre(), pointerEnd }, 2.2f);
-        return;
-    }
-
-    g.setColour(juce::Colours::black.withAlpha(0.35f));
-    g.fillEllipse(knob.translated(3.0f, 5.0f));
-
-    juce::ColourGradient body(juce::Colour(0xff3b3b3b), knob.getX(), knob.getY(),
-                              juce::Colour(0xff020202), knob.getRight(), knob.getBottom(), false);
-    body.addColour(0.45, juce::Colour(0xff151515));
-    g.setGradientFill(body);
-    g.fillEllipse(knob);
-
-    g.setColour(juce::Colour(0xff050505));
-    g.drawEllipse(knob, 2.0f);
-    g.setColour(juce::Colour(0xff5f5f5f).withAlpha(0.55f));
-    g.drawEllipse(knob.reduced(4.0f), 1.2f);
-
-    g.setColour(juce::Colours::white.withAlpha(0.18f));
-    g.fillEllipse(knob.reduced(radius * 0.18f).withTrimmedRight(radius * 0.52f).withTrimmedBottom(radius * 0.52f));
-
-    const auto pointerLength = radius * 0.72f;
-    const auto pointerThickness = juce::jmax(2.0f, radius * 0.055f);
-    juce::Path pointer;
-    pointer.addRoundedRectangle(-pointerThickness * 0.5f, -pointerLength, pointerThickness, pointerLength * 0.78f,
-                                pointerThickness * 0.45f);
-    pointer.applyTransform(juce::AffineTransform::rotation(angle).translated(centre.x, centre.y));
-    g.setColour(juce::Colour(0xfff4f0ec));
-    g.fillPath(pointer);
-}
-
-void BqtAudioProcessorEditor::HardwareLookAndFeel::drawComboBox(juce::Graphics& g, int width, int height, bool isButtonDown,
-                                                                int, int, int, int, juce::ComboBox& box)
-{
-    if (box.getProperties().contains("bqtKnobCombo") && static_cast<bool>(box.getProperties()["bqtKnobCombo"]))
-    {
-        const auto bounds = juce::Rectangle<float>(0.0f, 0.0f, static_cast<float>(width), static_cast<float>(height)).reduced(5.0f);
-        const auto radius = juce::jmin(bounds.getWidth(), bounds.getHeight()) * 0.46f;
-        const auto centre = bounds.getCentre();
-        const auto choiceCount = juce::jmax(1, box.getNumItems());
-        const auto selected = juce::jlimit(0, choiceCount - 1, box.getSelectedItemIndex());
-        const auto pos = choiceCount <= 1 ? 0.5f : static_cast<float>(selected) / static_cast<float>(choiceCount - 1);
-        const auto start = juce::MathConstants<float>::pi * 1.22f;
-        const auto end = juce::MathConstants<float>::pi * 2.78f;
-        const auto angle = start + pos * (end - start);
-
-        static auto image = juce::ImageCache::getFromMemory(BinaryData::knobsmallpointer_png,
-                                                            BinaryData::knobsmallpointer_pngSize);
-        drawRotatedImageKnob(g, image, bounds.withCentre(centre).withSizeKeepingCentre(radius * 2.18f, radius * 2.18f),
-                             angle, 1.10f);
-        return;
-    }
-
-    if (box.getProperties().contains("bqtSatTypeSelector") && static_cast<bool>(box.getProperties()["bqtSatTypeSelector"]))
-    {
-        auto bounds = juce::Rectangle<float>(0.0f, 0.0f, static_cast<float>(width), static_cast<float>(height));
-        const auto selected = box.getSelectedItemIndex();
-        const auto rowH = bounds.getHeight() * 0.5f;
-
-        auto drawRow = [&g](juce::String text, int row, bool on)
-        {
-            const auto y = 8.0f + static_cast<float>(row) * 30.0f;
-            const auto led = juce::Rectangle<float>(13.0f, 13.0f).withCentre({ 18.0f, y + 8.0f });
-            const auto rail = juce::Rectangle<float>(82.0f, 3.0f).withCentre({ 72.0f, y + 8.0f });
-            const auto button = juce::Rectangle<float>(25.0f, 25.0f).withCentre({ 112.0f, y + 8.0f });
-
-            g.setColour(juce::Colour(ink));
-            g.setFont(juce::Font(faceFont(17.0f)));
-            g.drawText(text, juce::Rectangle<int>(30, static_cast<int>(y - 4.0f), 64, 24), juce::Justification::centredLeft);
-
-            g.setColour(juce::Colour(ink));
-            g.fillRoundedRectangle(rail, 1.5f);
-
-            g.setColour(juce::Colours::black.withAlpha(0.28f));
-            g.fillEllipse(button.translated(1.0f, 2.0f));
-            g.setColour(on ? juce::Colour(ink) : juce::Colour(0xff9a9a9a));
-            g.fillEllipse(button);
-
-            g.setColour(juce::Colours::black.withAlpha(0.25f));
-            g.fillEllipse(led.translated(1.0f, 1.0f));
-            g.setColour(on ? juce::Colour(lampOn) : juce::Colour(lampOff));
-            g.fillEllipse(led);
-            g.setColour(juce::Colour(ink));
-            g.drawEllipse(led, 1.0f);
-        };
-
-        drawRow("cream", 0, selected <= 0);
-        drawRow("grit", 1, selected > 0);
-        juce::ignoreUnused(rowH);
-        return;
-    }
-
-    const auto bounds = juce::Rectangle<float>(0.5f, 0.5f, static_cast<float>(width) - 1.0f, static_cast<float>(height) - 1.0f)
-                            .reduced(1.0f, 2.0f);
-    g.setColour(juce::Colours::black.withAlpha(0.42f));
-    g.fillRoundedRectangle(bounds.translated(0.0f, 3.0f), 4.0f);
-
-    juce::ColourGradient buttonGradient(isButtonDown ? juce::Colour(0xffeee4dc) : juce::Colour(cream),
-                                        bounds.getCentreX(), bounds.getY(),
-                                        isButtonDown ? juce::Colour(0xffcfc4bb) : juce::Colour(0xffded3ca),
-                                        bounds.getCentreX(), bounds.getBottom(), false);
-    g.setGradientFill(buttonGradient);
-    g.fillRoundedRectangle(bounds, 4.0f);
-    g.setColour(juce::Colours::white.withAlpha(0.45f));
-    g.drawRoundedRectangle(bounds.reduced(1.0f), 3.0f, 1.0f);
-    g.setColour(juce::Colour(panelText));
-    g.drawRoundedRectangle(bounds, 4.0f, 1.2f);
-
-    juce::Path arrow;
-    const auto cx = bounds.getRight() - 13.0f;
-    const auto cy = bounds.getCentreY();
-    arrow.addTriangle(cx - 4.0f, cy - 2.0f, cx + 4.0f, cy - 2.0f, cx, cy + 3.0f);
-    g.setColour(juce::Colour(ink));
-    g.fillPath(arrow);
-    box.setColour(juce::Label::textColourId, juce::Colour(ink));
-}
-
-void BqtAudioProcessorEditor::HardwareLookAndFeel::positionComboBoxText(juce::ComboBox& box, juce::Label& label)
-{
-    if (box.getProperties().contains("bqtKnobCombo") && static_cast<bool>(box.getProperties()["bqtKnobCombo"]))
-    {
-        label.setBounds(0, 0, 0, 0);
-        return;
-    }
-
-    if (box.getProperties().contains("bqtSatTypeSelector") && static_cast<bool>(box.getProperties()["bqtSatTypeSelector"]))
-    {
-        label.setBounds(0, 0, 0, 0);
-        return;
-    }
-
-    label.setBounds(7, 1, box.getWidth() - 21, box.getHeight() - 2);
-    label.setFont(juce::Font(faceFont(15.8f)));
-    label.setJustificationType(juce::Justification::centred);
-}
-
-void BqtAudioProcessorEditor::HardwareLookAndFeel::drawToggleButton(juce::Graphics& g, juce::ToggleButton& button,
-                                                                    bool shouldDrawButtonAsHighlighted,
-                                                                    bool shouldDrawButtonAsDown)
-{
-    if (button.getProperties().contains("bqtPushButton") && static_cast<bool>(button.getProperties()["bqtPushButton"]))
-    {
-        const auto active = button.getToggleState();
-        const auto pressed = shouldDrawButtonAsDown || active;
-        auto bounds = button.getLocalBounds().toFloat().reduced(1.0f, 2.0f);
-
-        g.setColour(juce::Colours::black.withAlpha(pressed ? 0.24f : 0.42f));
-        g.fillRoundedRectangle(bounds.translated(0.0f, pressed ? 1.0f : 3.0f), 4.0f);
-
-        if (pressed)
-            bounds = bounds.reduced(0.8f).translated(0.0f, 0.7f);
-
-        const auto topColour = pressed ? juce::Colour(0xffeee4dc) : juce::Colour(cream);
-        const auto bottomColour = pressed ? juce::Colour(0xffcfc4bb) : juce::Colour(0xffded3ca);
-        juce::ColourGradient buttonGradient(topColour, bounds.getCentreX(), bounds.getY(),
-                                            bottomColour, bounds.getCentreX(), bounds.getBottom(), false);
-        g.setGradientFill(buttonGradient);
-        g.fillRoundedRectangle(bounds, 4.0f);
-
-        g.setColour(pressed ? juce::Colours::black.withAlpha(0.26f) : juce::Colours::white.withAlpha(0.45f));
-        g.drawRoundedRectangle(bounds.reduced(1.0f), 3.0f, 1.0f);
-        g.setColour(pressed ? juce::Colour(ink).withAlpha(0.56f) : juce::Colour(panelText));
-        g.drawRoundedRectangle(bounds, 4.0f, pressed ? 1.7f : 1.2f);
-
-        if (shouldDrawButtonAsHighlighted && ! pressed)
-        {
-            g.setColour(juce::Colours::white.withAlpha(0.18f));
-            g.fillRoundedRectangle(bounds.reduced(2.0f), 3.0f);
-        }
-
-        g.setColour(juce::Colour(ink).withAlpha(button.isEnabled() ? 1.0f : 0.38f));
-        g.setFont(juce::Font(faceFont(15.8f)));
-        g.drawText(button.getButtonText().toLowerCase(), bounds.toNearestInt(), juce::Justification::centred);
-        return;
-    }
-
-    auto bounds = button.getLocalBounds().toFloat();
-    auto labels = bounds.removeFromLeft(58.0f);
-    auto controls = bounds;
-    const auto led = juce::Rectangle<float>(13.0f, 13.0f).withCentre({ controls.getX() + 8.0f, controls.getCentreY() });
-    const auto rail = juce::Rectangle<float>(35.0f, 3.0f).withCentre({ controls.getX() + 25.5f, controls.getCentreY() });
-    auto cap = juce::Rectangle<float>(22.0f, 22.0f).withCentre({ controls.getX() + 43.0f, controls.getCentreY() });
-    const auto on = button.getToggleState();
-    const auto down = shouldDrawButtonAsDown;
-
-    g.setColour(juce::Colour(panelText));
-    g.setFont(juce::Font(faceFont(20.0f, true)));
-    g.drawText(button.getButtonText().toLowerCase(), labels.toNearestInt(), juce::Justification::centredRight);
-
-    g.setColour(juce::Colour(ink));
-    g.fillRoundedRectangle(rail, 1.5f);
-
-    if (down)
-        cap = cap.reduced(1.0f).translated(0.0f, 0.5f);
-
-    g.setColour(juce::Colours::black.withAlpha(0.30f));
-    g.fillEllipse(cap.translated(1.0f, 2.0f));
-    g.setColour(juce::Colour(cream));
-    g.fillEllipse(cap);
-    g.setColour(juce::Colour(ink).withAlpha(0.45f));
-    g.drawEllipse(cap, 1.0f);
-
-    g.setColour(juce::Colours::black.withAlpha(0.25f));
-    g.fillEllipse(led.translated(1.0f, 1.0f));
-    auto lampColour = on ? juce::Colour(lampOn) : juce::Colour(lampOff);
-    if (shouldDrawButtonAsDown)
-        lampColour = lampColour.brighter(0.08f);
-    if (on)
-    {
-        g.setColour(lampColour.withAlpha(0.11f));
-        g.fillEllipse(led.expanded(7.0f));
-        g.setColour(lampColour.withAlpha(0.18f));
-        g.fillEllipse(led.expanded(3.0f));
-    }
-    g.setColour(lampColour);
-    g.fillEllipse(led);
-    if (on)
-    {
-        g.setColour(juce::Colours::white.withAlpha(0.40f));
-        g.fillEllipse(led.reduced(4.0f).translated(-1.5f, -1.5f));
-    }
-    g.setColour(juce::Colour(panelText));
-    g.drawEllipse(led, 1.0f);
-}
-
-void BqtAudioProcessorEditor::HardwareLookAndFeel::drawButtonBackground(juce::Graphics& g, juce::Button& button,
-                                                                        const juce::Colour&, bool,
-                                                                        bool shouldDrawButtonAsDown)
-{
-    if (button.getProperties().contains("bqtPushButton") && static_cast<bool>(button.getProperties()["bqtPushButton"]))
-    {
-        auto bounds = button.getLocalBounds().toFloat().reduced(1.0f, 2.0f);
-
-        g.setColour(juce::Colours::black.withAlpha(shouldDrawButtonAsDown ? 0.24f : 0.42f));
-        g.fillRoundedRectangle(bounds.translated(0.0f, shouldDrawButtonAsDown ? 1.0f : 3.0f), 4.0f);
-
-        if (shouldDrawButtonAsDown)
-            bounds = bounds.reduced(0.8f).translated(0.0f, 0.7f);
-
-        juce::ColourGradient buttonGradient(shouldDrawButtonAsDown ? juce::Colour(0xffeee4dc) : juce::Colour(cream),
-                                            bounds.getCentreX(), bounds.getY(),
-                                            shouldDrawButtonAsDown ? juce::Colour(0xffcfc4bb) : juce::Colour(0xffded3ca),
-                                            bounds.getCentreX(), bounds.getBottom(), false);
-        g.setGradientFill(buttonGradient);
-        g.fillRoundedRectangle(bounds, 4.0f);
-        g.setColour(juce::Colours::white.withAlpha(0.45f));
-        g.drawRoundedRectangle(bounds.reduced(1.0f), 3.0f, 1.0f);
-        g.setColour(juce::Colour(panelText));
-        g.drawRoundedRectangle(bounds, 4.0f, 1.2f);
-
-        if (auto* textButton = dynamic_cast<juce::TextButton*>(&button))
-        {
-            g.setColour(juce::Colour(ink).withAlpha(button.isEnabled() ? 1.0f : 0.38f));
-            g.setFont(juce::Font(faceFont(15.8f)));
-            g.drawText(textButton->getButtonText(), bounds.toNearestInt().reduced(6, 0), juce::Justification::centred);
-        }
-
-        return;
-    }
-
-    if (! (button.getProperties().contains("bqtSatTypeSelector")
-           && static_cast<bool>(button.getProperties()["bqtSatTypeSelector"])))
-    {
-        LookAndFeel_V4::drawButtonBackground(g, button, juce::Colour(cream), false, false);
-        return;
-    }
-
-    const auto grit = button.getToggleState();
-    auto bounds = button.getLocalBounds().toFloat();
-    auto labels = bounds.removeFromLeft(60.0f);
-    auto controls = bounds;
-
-    auto drawLedRow = [&g, labels, controls](const juce::String& text, int row, bool on)
-    {
-        const auto y = 8.0f + static_cast<float>(row) * 24.0f;
-        const auto led = juce::Rectangle<float>(13.0f, 13.0f).withCentre({ controls.getX() + 8.0f, y + 8.0f });
-
-        g.setColour(juce::Colour(panelText));
-        g.setFont(juce::Font(faceFont(20.0f, true)));
-        g.drawText(text, labels.withY(y - 4.0f).withHeight(24.0f).toNearestInt(), juce::Justification::centredRight);
-
-        g.setColour(juce::Colours::black.withAlpha(0.25f));
-        g.fillEllipse(led.translated(1.0f, 1.0f));
-        g.setColour(on ? juce::Colour(lampOn) : juce::Colour(lampOff));
-        if (on)
-        {
-            g.setColour(juce::Colour(lampOn).withAlpha(0.11f));
-            g.fillEllipse(led.expanded(7.0f));
-            g.setColour(juce::Colour(lampOn).withAlpha(0.18f));
-            g.fillEllipse(led.expanded(3.0f));
-            g.setColour(juce::Colour(lampOn));
-        }
-        g.fillEllipse(led);
-        if (on)
-        {
-            g.setColour(juce::Colours::white.withAlpha(0.40f));
-            g.fillEllipse(led.reduced(4.0f).translated(-1.5f, -1.5f));
-        }
-        g.setColour(juce::Colour(panelText));
-        g.drawEllipse(led, 1.0f);
-    };
-
-    const auto rail = juce::Rectangle<float>(35.0f, 3.0f).withCentre({ controls.getX() + 25.5f, controls.getCentreY() });
-    const auto ledTop = juce::Rectangle<float>(13.0f, 13.0f).withCentre({ controls.getX() + 8.0f, 16.0f });
-    const auto ledBottom = juce::Rectangle<float>(13.0f, 13.0f).withCentre({ controls.getX() + 8.0f, 40.0f });
-    auto cap = juce::Rectangle<float>(22.0f, 22.0f).withCentre({ controls.getX() + 43.0f, controls.getCentreY() });
-    if (shouldDrawButtonAsDown)
-        cap = cap.reduced(1.0f).translated(0.0f, 0.5f);
-
-    g.setColour(juce::Colour(ink));
-    g.fillRoundedRectangle(rail, 1.5f);
-    g.drawLine({ ledTop.getCentreX(), ledTop.getCentreY(), ledBottom.getCentreX(), ledBottom.getCentreY() }, 3.0f);
-    g.setColour(juce::Colours::black.withAlpha(0.28f));
-    g.fillEllipse(cap.translated(1.0f, 2.0f));
-    g.setColour(juce::Colour(cream));
-    g.fillEllipse(cap);
-    g.setColour(juce::Colour(ink).withAlpha(0.45f));
-    g.drawEllipse(cap, 1.0f);
-
-    drawLedRow("cream", 0, ! grit);
-    drawLedRow("grit", 1, grit);
-}
-
-void BqtAudioProcessorEditor::HardwareLookAndFeel::drawButtonText(juce::Graphics&, juce::TextButton&, bool, bool)
-{
-}
-
-juce::Rectangle<int> BqtAudioProcessorEditor::HardwareLookAndFeel::getTooltipBounds(const juce::String& tipText,
-                                                                                   juce::Point<int> screenPos,
-                                                                                   juce::Rectangle<int> parentArea)
-{
-    const auto font = juce::Font(faceFont(16.5f, true));
-    const auto width = static_cast<int>(std::ceil(getTextWidth(font, tipText) + 22.0f));
-    const auto height = 31;
-    auto bounds = juce::Rectangle<int>(width, height).withCentre({ screenPos.x, screenPos.y - height / 2 - 3 });
-
-    if (bounds.getY() < parentArea.getY())
-        bounds.setY(screenPos.y + 8);
-
-    return bounds.constrainedWithin(parentArea);
-}
-
-void BqtAudioProcessorEditor::HardwareLookAndFeel::drawTooltip(juce::Graphics& g, const juce::String& text,
-                                                               int width, int height)
-{
-    const auto bounds = juce::Rectangle<float>(0.0f, 0.0f, static_cast<float>(width), static_cast<float>(height));
-    g.fillAll(juce::Colours::transparentBlack);
-    g.setColour(juce::Colour(0xff111111));
-    g.fillRoundedRectangle(bounds.reduced(1.0f), 3.0f);
-    g.setColour(juce::Colour(panelText).withAlpha(0.72f));
-    g.drawRoundedRectangle(bounds.reduced(1.0f), 3.0f, 1.0f);
-    g.setColour(juce::Colour(panelText));
-    g.setFont(juce::Font(faceFont(16.5f, true)));
-    g.drawText(text, juce::Rectangle<int>(width, height).reduced(8, 2), juce::Justification::centred);
-}
-
-BqtAudioProcessorEditor::VuMeter::VuMeter(BqtAudioProcessor& p, int sideIndex)
-    : audioProcessor(p), side(sideIndex)
-{
-    startTimerHz(60);
-}
-
-void BqtAudioProcessorEditor::VuMeter::paint(juce::Graphics& g)
-{
-    const auto bounds = getLocalBounds().toFloat();
-    auto frameBounds = bounds.reduced(1.0f);
-
-    const auto inner = frameBounds.withTrimmedLeft(frameBounds.getWidth() * 0.27f)
-                                 .withTrimmedRight(frameBounds.getWidth() * 0.27f)
-                                 .withTrimmedTop(frameBounds.getHeight() * 0.22f)
-                                 .withTrimmedBottom(frameBounds.getHeight() * 0.35f);
-
-    static auto frame = juce::ImageCache::getFromMemory(BinaryData::vuframe_png, BinaryData::vuframe_pngSize);
-    if (frame.isValid())
-    {
-        const auto frameArea = frameBounds.toNearestInt();
-        g.drawImageWithin(frame, frameArea.getX(), frameArea.getY(), frameArea.getWidth(), frameArea.getHeight(),
-                          juce::RectanglePlacement::stretchToFit, false);
-    }
-
-    auto polar = [](juce::Point<float> centre, float radius, float degrees)
-    {
-        const auto radians = juce::degreesToRadians(degrees);
-        return juce::Point<float>(centre.x + std::cos(radians) * radius,
-                                  centre.y - std::sin(radians) * radius);
-    };
-
-    auto dbToFrac = [](float db)
-    {
-        const auto clamped = juce::jlimit(-20.0f, 3.0f, db);
-        if (clamped <= 0.0f)
-            return ((clamped + 20.0f) / 20.0f) * 0.82f;
-        return 0.82f + (clamped / 3.0f) * 0.18f;
-    };
-
-    const auto centre = juce::Point<float>(inner.getCentreX(), inner.getY() + inner.getHeight() * 0.87f);
-    const auto needlePivot = juce::Point<float>(inner.getCentreX(), inner.getY() + inner.getHeight() * 0.88f);
-    const auto radius = inner.getWidth() * 0.62f;
-    const auto start = 137.0f;
-    const auto end = 43.0f;
-
-    g.setColour(juce::Colour(0xff6f5e52).withAlpha(0.74f));
-    juce::Path arc;
-    for (int i = 0; i <= 40; ++i)
-    {
-        const auto p = static_cast<float>(i) / 40.0f;
-        const auto point = polar(centre, radius, start + (end - start) * p);
-        i == 0 ? arc.startNewSubPath(point) : arc.lineTo(point);
-    }
-    g.strokePath(arc, juce::PathStrokeType(2.2f));
-
-    const auto redStart = dbToFrac(0.0f);
-    juce::Path redArc;
-    for (int i = 0; i <= 18; ++i)
-    {
-        const auto p = redStart + (1.0f - redStart) * (static_cast<float>(i) / 18.0f);
-        const auto point = polar(centre, radius - 3.0f, start + (end - start) * p);
-        i == 0 ? redArc.startNewSubPath(point) : redArc.lineTo(point);
-    }
-    g.setColour(juce::Colour(0xffa13f44).withAlpha(0.82f));
-    g.strokePath(redArc, juce::PathStrokeType(3.4f));
-
-    const std::array<float, 7> majorDbs { -20.0f, -10.0f, -7.0f, -5.0f, -3.0f, 0.0f, 3.0f };
-    const std::array<const char*, 7> majorLabels { "-20", "-10", "-7", "-5", "-3", "0", "+3" };
-    g.setFont(juce::Font(faceFont(11.3f, false)));
-    for (size_t i = 0; i < majorDbs.size(); ++i)
-    {
-        const auto frac = dbToFrac(majorDbs[i]);
-        const auto angle = start + (end - start) * frac;
-        const auto red = majorDbs[i] >= 0.0f;
-        g.setColour(red ? juce::Colour(0xff99353b).withAlpha(0.96f)
-                        : juce::Colour(0xff6b5a4f).withAlpha(0.94f));
-        g.drawLine({ polar(centre, radius - 7.0f, angle), polar(centre, radius + 3.0f, angle) },
-                   majorDbs[i] == 0.0f ? 2.6f : 1.9f);
-        const auto labelPoint = polar(centre, radius + 9.0f, angle);
-        g.drawText(majorLabels[i], juce::Rectangle<float>(34.0f, 15.0f).withCentre(labelPoint).toNearestInt(),
-                   juce::Justification::centred);
-    }
-
-    for (int db = -20; db <= 3; ++db)
-    {
-        if (db == -20 || db == -10 || db == -7 || db == -5 || db == -3 || db == 0 || db == 3)
-            continue;
-        if (db < -10 && db % 5 != 0)
-            continue;
-
-        const auto angle = start + (end - start) * dbToFrac(static_cast<float>(db));
-        const auto red = db >= 0;
-        g.setColour(red ? juce::Colour(0xff99353b).withAlpha(0.62f)
-                        : juce::Colour(0xff6b5a4f).withAlpha(0.52f));
-        g.drawLine({ polar(centre, radius - 4.0f, angle), polar(centre, radius + 2.5f, angle) }, 1.2f);
-    }
-
-    g.setColour(juce::Colour(0xff594a42).withAlpha(0.92f));
-    g.setFont(juce::Font(faceFont(15.0f)));
-    g.drawText("VU", inner.withTrimmedTop(inner.getHeight() * 0.38f).withHeight(22.0f).toNearestInt(),
-               juce::Justification::centred);
-
-    const auto needleAngle = start + juce::jlimit(0.0f, 1.0f, displayedLevel) * (end - start);
-    const auto needleEnd = polar(centre, radius + 7.0f, needleAngle);
-    g.setColour(juce::Colour(0xff8d6e63));
-    g.drawLine({ needlePivot, needleEnd }, 2.6f);
-    g.setColour(juce::Colour(0xff3e2723));
-    g.fillEllipse(juce::Rectangle<float>(6.5f, 6.5f).withCentre(needlePivot));
-}
-
-void BqtAudioProcessorEditor::VuMeter::timerCallback()
-{
-    const auto raw = audioProcessor.getMeterLevel(side);
-    const auto db = juce::Decibels::gainToDecibels(raw, -60.0f);
-    const auto vu = db + 18.0f;
-    const auto clampedVu = juce::jlimit(-20.0f, 3.0f, vu);
-    targetLevel = clampedVu <= 0.0f ? ((clampedVu + 20.0f) / 20.0f) * 0.82f
-                                    : 0.82f + (clampedVu / 3.0f) * 0.18f;
-    displayedLevel += (targetLevel - displayedLevel) * 0.18f;
-    repaint();
-}
-
 void BqtAudioProcessorEditor::paint(juce::Graphics& g)
 {
     const auto uiScale = static_cast<float>(getWidth()) / static_cast<float>(baseEditorWidth);
@@ -1592,17 +945,24 @@ void BqtAudioProcessorEditor::paint(juce::Graphics& g)
     g.fillAll(juce::Colour(0xfff5f2ef));
 
     auto bounds = juce::Rectangle<float>(0.0f, 0.0f, static_cast<float>(baseEditorWidth),
-                                         static_cast<float>(baseEditorHeight)).reduced(18.0f);
-    auto presetBar = bounds.removeFromTop(48.0f);
-    auto top = bounds.removeFromTop(62.0f);
-    bounds.removeFromTop(10.0f);
-    auto rack = getRackFaceBounds(bounds);
+                                         static_cast<float>(baseEditorHeight)).reduced(static_cast<float>(outerEditorMargin));
+    auto headerSlot = bounds.removeFromTop(104.0f);
+    auto rackArea = bounds;
+    rackArea.removeFromTop(10.0f);
+    auto rack = getRackFaceBounds(rackArea);
+    auto header = rack.withY(headerSlot.getY()).withHeight(headerSlot.getHeight());
+    auto presetBar = header.removeFromTop(48.0f);
+    auto top = header.removeFromTop(56.0f);
     auto eqPanel = rack.removeFromLeft(rack.getWidth() * 0.5f);
     auto satPanel = rack;
 
     g.setColour(juce::Colour(0xff1b1b1b));
-    g.fillRoundedRectangle(presetBar, 5.0f);
-    g.fillRoundedRectangle(top, 5.0f);
+    g.fillRoundedRectangle(presetBar.getUnion(top), 5.0f);
+    g.setColour(juce::Colour(panelText));
+    g.setFont(juce::Font(faceFont(27.0f, true)));
+    g.drawText("bqst " JucePlugin_VersionString,
+               presetBar.withTrimmedLeft(14.0f).withTrimmedTop(5.0f).withHeight(34.0f).toNearestInt(),
+               juce::Justification::centredLeft);
 
     auto drawPlate = [&g](juce::Rectangle<float> plate, const juce::String& title)
     {
@@ -1666,11 +1026,11 @@ void BqtAudioProcessorEditor::paint(juce::Graphics& g)
         }
 
         const auto brand = plate.withTrimmedLeft(8.0f).withTrimmedTop(6.0f).withWidth(102.0f).withHeight(78.0f);
-        drawPanelText(g, "ebr", brand.withY(brand.getY()).withHeight(28.0f), juce::Justification::topLeft, 24.0f);
-        drawPanelText(g, "audio", brand.withY(brand.getY() + 21.0f).withHeight(28.0f), juce::Justification::topLeft, 24.0f);
-        drawPanelText(g, "tech", brand.withY(brand.getY() + 42.0f).withHeight(28.0f), juce::Justification::topLeft, 24.0f);
-        drawPanelText(g, title, plate.withTrimmedRight(8.0f).withTrimmedTop(6.0f).withHeight(30.0f),
-                      juce::Justification::topRight, 24.0f);
+        drawPanelText(g, "ebr", brand.withY(brand.getY()).withHeight(30.0f), juce::Justification::topLeft, 27.0f);
+        drawPanelText(g, "audio", brand.withY(brand.getY() + 19.0f).withHeight(30.0f), juce::Justification::topLeft, 27.0f);
+        drawPanelText(g, "tech", brand.withY(brand.getY() + 38.0f).withHeight(30.0f), juce::Justification::topLeft, 27.0f);
+        drawPanelText(g, title, plate.withTrimmedRight(8.0f).withTrimmedTop(6.0f).withHeight(32.0f),
+                      juce::Justification::topRight, 27.0f);
     };
 
     drawPlate(eqPanel, "baxq");
@@ -1797,8 +1157,8 @@ void BqtAudioProcessorEditor::paint(juce::Graphics& g)
     {
         const auto b = slider.getBounds().toFloat();
         drawPanelText(g, text, juce::Rectangle<float>(132.0f, 42.0f)
-                                .withCentre({ b.getCentreX(), b.getBottom() + (text == "drive" ? 13.0f : 8.0f) }),
-                      juce::Justification::centred, 31.0f);
+                                .withCentre({ b.getCentreX(), b.getBottom() + (text == "drive" ? 13.0f : -2.0f) }),
+                      juce::Justification::centred, text == "drive" ? 31.0f : 30.0f);
     };
 
     for (const auto& controls : sideControls)
@@ -1855,46 +1215,71 @@ void BqtAudioProcessorEditor::resized()
             applyUiScale(*component);
     }
 
-    auto bounds = juce::Rectangle<int>(0, 0, baseEditorWidth, baseEditorHeight).reduced(18);
-    auto presetBar = bounds.removeFromTop(48).reduced(8, 7);
-    auto top = bounds.removeFromTop(62).reduced(8, 14);
+    auto bounds = juce::Rectangle<int>(0, 0, baseEditorWidth, baseEditorHeight).reduced(outerEditorMargin);
+    auto headerSlot = bounds.removeFromTop(104);
+    auto rackArea = bounds;
+    rackArea.removeFromTop(10);
+    auto header = getRackFaceBounds(rackArea.toFloat()).toNearestInt()
+                      .withY(headerSlot.getY())
+                      .withHeight(headerSlot.getHeight());
+    auto presetBar = header.removeFromTop(48).reduced(8, 7);
+    auto top = header.removeFromTop(56).reduced(8, 9);
     constexpr int topControlHeight = 36;
 
-    constexpr int modeControlWidth = 80;
-    constexpr int linkControlWidth = 70;
-    constexpr int oversamplingControlWidth = 112;
-    constexpr int autoGainControlWidth = 78;
-    constexpr int bypassControlWidth = 70;
     constexpr int topGap = 4;
     auto topSlot = [](juce::Rectangle<int> area) { return area.withSizeKeepingCentre(area.getWidth(), topControlHeight); };
 
-    presetPrevious.setBounds(topSlot(presetBar.removeFromLeft(38)));
-    presetBar.removeFromLeft(topGap);
-    presetMenuButton.setBounds(topSlot(presetBar.removeFromLeft(320)));
-    presetBar.removeFromLeft(topGap);
-    presetNext.setBounds(topSlot(presetBar.removeFromLeft(38)));
-    presetBar.removeFromLeft(topGap);
-    presetSave.setBounds(topSlot(presetBar.removeFromLeft(70)));
     sizeSelect.setBounds(topSlot(presetBar.removeFromRight(82)));
+    constexpr int presetPreviousWidth = 38;
+    constexpr int presetMenuWidth = 320;
+    constexpr int presetNextWidth = 38;
+    constexpr int presetSaveWidth = 70;
+    auto presetButtonBounds = juce::Rectangle<int>(presetMenuWidth, presetBar.getHeight())
+                                  .withCentre({ baseEditorWidth / 2, presetBar.getCentreY() });
+    presetMenuButton.setBounds(topSlot(presetButtonBounds));
+    presetPrevious.setBounds(topSlot({ presetButtonBounds.getX() - topGap - presetPreviousWidth,
+                                       presetBar.getY(),
+                                       presetPreviousWidth,
+                                       presetBar.getHeight() }));
+    presetNext.setBounds(topSlot({ presetButtonBounds.getRight() + topGap,
+                                   presetBar.getY(),
+                                   presetNextWidth,
+                                   presetBar.getHeight() }));
+    presetSave.setBounds(topSlot({ presetNext.getRight() + topGap,
+                                   presetBar.getY(),
+                                   presetSaveWidth,
+                                   presetBar.getHeight() }));
 
-    inputTrimLabel.setBounds(topSlot(top.removeFromLeft(47)));
-    inputTrim.setBounds(topSlot(top.removeFromLeft(48)));
+    constexpr int inputLabelWidth = 47;
+    constexpr int inputControlWidth = 48;
+    constexpr int numTopButtons = 8;
+    int topButtonWidths[] = { 80, 70, 80, 70, 112, 112, 78, 70 };
+    int preferredTopWidth = inputLabelWidth + inputControlWidth + (numTopButtons * topGap);
+    for (const auto width : topButtonWidths)
+        preferredTopWidth += width;
+
+    auto extraTopWidth = juce::jmax(0, top.getWidth() - preferredTopWidth);
+    for (auto i = 0; i < numTopButtons; ++i)
+        topButtonWidths[i] += extraTopWidth / numTopButtons + (i < extraTopWidth % numTopButtons ? 1 : 0);
+
+    inputTrimLabel.setBounds(topSlot(top.removeFromLeft(inputLabelWidth)));
+    inputTrim.setBounds(topSlot(top.removeFromLeft(inputControlWidth)));
     top.removeFromLeft(topGap);
-    eqMode.setBounds(topSlot(top.removeFromLeft(modeControlWidth)));
+    eqMode.setBounds(topSlot(top.removeFromLeft(topButtonWidths[0])));
     top.removeFromLeft(topGap);
-    eqLink.setBounds(topSlot(top.removeFromLeft(linkControlWidth)));
+    eqLink.setBounds(topSlot(top.removeFromLeft(topButtonWidths[1])));
     top.removeFromLeft(topGap);
-    satMode.setBounds(topSlot(top.removeFromLeft(modeControlWidth)));
+    satMode.setBounds(topSlot(top.removeFromLeft(topButtonWidths[2])));
     top.removeFromLeft(topGap);
-    satLink.setBounds(topSlot(top.removeFromLeft(linkControlWidth)));
+    satLink.setBounds(topSlot(top.removeFromLeft(topButtonWidths[3])));
     top.removeFromLeft(topGap);
-    osRealtime.setBounds(topSlot(top.removeFromLeft(oversamplingControlWidth)));
+    osRealtime.setBounds(topSlot(top.removeFromLeft(topButtonWidths[4])));
     top.removeFromLeft(topGap);
-    osRender.setBounds(topSlot(top.removeFromLeft(oversamplingControlWidth)));
+    osRender.setBounds(topSlot(top.removeFromLeft(topButtonWidths[5])));
     top.removeFromLeft(topGap);
-    autoGain.setBounds(topSlot(top.removeFromLeft(autoGainControlWidth)));
+    autoGain.setBounds(topSlot(top.removeFromLeft(topButtonWidths[6])));
     top.removeFromLeft(topGap);
-    bypass.setBounds(topSlot(top.removeFromLeft(bypassControlWidth)));
+    bypass.setBounds(topSlot(top.removeFromLeft(topButtonWidths[7])));
     eqBypass.setBounds(-2000, -2000, 1, 1);
     satBypass.setBounds(-2000, -2000, 1, 1);
 
@@ -1969,10 +1354,10 @@ void BqtAudioProcessorEditor::resized()
     meterA.setBounds(static_cast<int>(std::round(leftMeterX)), meterTop, vuSize, vuSize);
     meterB.setBounds(static_cast<int>(std::round(rightMeterRight - vuSize)), meterTop, vuSize, vuSize);
 
-    vintage.setBounds(leftDriveX - 72, satPanel.getY() + 196, 144, 44);
+    vintage.setBounds(leftDriveX - 72, satPanel.getY() + 201, 144, 44);
     main.satTypeLabel.setBounds(-2000, -2000, 1, 1);
     main.satType.setBounds(-2000, -2000, 1, 1);
-    main.satTypeButton.setBounds(rightDriveX - 72, satPanel.getY() + 190, 144, 56);
+    main.satTypeButton.setBounds(rightDriveX - 72, satPanel.getY() + 195, 144, 56);
     slave.satTypeLabel.setBounds(-2000, -2000, 1, 1);
     slave.satType.setBounds(-2000, -2000, 1, 1);
     slave.satTypeButton.setBounds(-2000, -2000, 1, 1);
