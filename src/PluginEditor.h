@@ -15,7 +15,6 @@ public:
     ~BqtAudioProcessorEditor() override;
 
     void paint(juce::Graphics&) override;
-    void paintOverChildren(juce::Graphics&) override;
     void resized() override;
     bool keyPressed(const juce::KeyPress& key) override;
 
@@ -56,10 +55,24 @@ private:
         std::unique_ptr<SliderAttachment> outputTrimAttachment;
     };
 
+    class RackComponent final : public juce::Component
+    {
+    public:
+        explicit RackComponent(BqtAudioProcessorEditor& editorToUse) : editor(editorToUse) {}
+        void paint(juce::Graphics& g) override { editor.paintRack(g); }
+        void paintOverChildren(juce::Graphics& g) override;
+        void setBypassed(bool shouldBeBypassed);
+
+    private:
+        BqtAudioProcessorEditor& editor;
+        bool bypassed = false;
+    };
+
     void configureSlider(juce::Slider& slider);
     void configureCombo(juce::ComboBox& combo);
     void configureLabel(juce::Label& label, const juce::String& text, juce::Justification justification = juce::Justification::centred);
     void configureSide(SideControls& controls, int sideIndex);
+    void paintRack(juce::Graphics& g);
     void timerCallback() override;
     void sliderValueChanged(juce::Slider* slider) override;
     void sliderDragStarted(juce::Slider* slider) override;
@@ -90,6 +103,7 @@ private:
     BqtHardwareLookAndFeel hardwareLookAndFeel;
     BqtAudioProcessor& audioProcessor;
     BqtPresetManager presetManager;
+    RackComponent rackComponent;
     juce::TextButton presetPrevious;
     juce::TextButton presetMenuButton;
     juce::TextButton presetNext;

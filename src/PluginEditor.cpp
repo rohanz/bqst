@@ -11,12 +11,13 @@ using namespace bqst::ui;
 } // namespace
 
 BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
-    : AudioProcessorEditor(&p), audioProcessor(p), presetManager(p.state()), meterA(p, 0), meterB(p, 1)
+    : AudioProcessorEditor(&p), audioProcessor(p), presetManager(p.state()), rackComponent(*this), meterA(p, 0), meterB(p, 1)
 {
     setLookAndFeel(&hardwareLookAndFeel);
     setWantsKeyboardFocus(true);
     setSize(baseEditorWidth, baseEditorHeight);
 
+    addAndMakeVisible(rackComponent);
     configureCombo(eqMode);
     configureCombo(satMode);
     configureCombo(osRealtime);
@@ -38,11 +39,11 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
     addAndMakeVisible(satBypass);
     addAndMakeVisible(eqLink);
     addAndMakeVisible(satLink);
-    addAndMakeVisible(vintage);
+    rackComponent.addAndMakeVisible(vintage);
     addAndMakeVisible(bypass);
     addAndMakeVisible(sizeSelect);
-    addAndMakeVisible(meterA);
-    addAndMakeVisible(meterB);
+    rackComponent.addAndMakeVisible(meterA);
+    rackComponent.addAndMakeVisible(meterB);
     meterA.setInterceptsMouseClicks(false, false);
     meterB.setInterceptsMouseClicks(false, false);
     addAndMakeVisible(readoutBubble);
@@ -130,7 +131,7 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
             param->endChangeGesture();
         }
 
-        repaint();
+        rackComponent.setBypassed(bypass.getToggleState());
     };
     previousInputTrimForCompensation = inputTrim.getValue();
 
@@ -418,6 +419,27 @@ void BqtAudioProcessorEditor::configureSide(SideControls& controls, int sideInde
     controls.satTypeAttachment = std::make_unique<ComboBoxAttachment>(audioProcessor.state(), prefix + "SatType", controls.satType);
     controls.mixAttachment = std::make_unique<SliderAttachment>(audioProcessor.state(), prefix + "Mix", controls.mix);
     controls.outputTrimAttachment = std::make_unique<SliderAttachment>(audioProcessor.state(), prefix + "OutputTrim", controls.outputTrim);
+
+    for (auto* component : { static_cast<juce::Component*>(&controls.eqSectionLabel),
+                             static_cast<juce::Component*>(&controls.satSectionLabel),
+                             static_cast<juce::Component*>(&controls.lowGainLabel),
+                             static_cast<juce::Component*>(&controls.lowGain),
+                             static_cast<juce::Component*>(&controls.lowFreqLabel),
+                             static_cast<juce::Component*>(&controls.lowFreq),
+                             static_cast<juce::Component*>(&controls.highGainLabel),
+                             static_cast<juce::Component*>(&controls.highGain),
+                             static_cast<juce::Component*>(&controls.highFreqLabel),
+                             static_cast<juce::Component*>(&controls.highFreq),
+                             static_cast<juce::Component*>(&controls.driveLabel),
+                             static_cast<juce::Component*>(&controls.drive),
+                             static_cast<juce::Component*>(&controls.satTypeLabel),
+                             static_cast<juce::Component*>(&controls.satType),
+                             static_cast<juce::Component*>(&controls.satTypeButton),
+                             static_cast<juce::Component*>(&controls.mixLabel),
+                             static_cast<juce::Component*>(&controls.mix),
+                             static_cast<juce::Component*>(&controls.outputTrimLabel),
+                             static_cast<juce::Component*>(&controls.outputTrim) })
+        rackComponent.addAndMakeVisible(*component);
 }
 
 void BqtAudioProcessorEditor::refreshPresetMenu()
@@ -561,6 +583,7 @@ void BqtAudioProcessorEditor::timerCallback()
     eqBypass.setToggleState(eqIsIn, juce::dontSendNotification);
     satBypass.setToggleState(satIsIn, juce::dontSendNotification);
     bypass.setToggleState(bypassIsOn, juce::dontSendNotification);
+    rackComponent.setBypassed(bypassIsOn);
 
     for (auto& controls : sideControls)
         controls.satTypeButton.setToggleState(controls.satType.getSelectedItemIndex() == 1, juce::dontSendNotification);
@@ -918,11 +941,11 @@ void BqtAudioProcessorEditor::showReadout(juce::Component& target, const juce::S
     const auto font = juce::Font(faceFont(16.5f, true));
     const auto width = static_cast<int>(std::ceil(getTextWidth(font, text) + 22.0f));
     constexpr int height = 31;
-    const auto targetBounds = target.getBounds();
-    auto bounds = juce::Rectangle<int>(width, height).withCentre({ targetBounds.getCentreX(), targetBounds.getY() - 8 });
+    const auto editorTargetBounds = getLocalArea(&target, target.getLocalBounds());
+    auto bounds = juce::Rectangle<int>(width, height).withCentre({ editorTargetBounds.getCentreX(), editorTargetBounds.getY() - 8 });
 
     if (bounds.getY() < 4)
-        bounds.setY(targetBounds.getBottom() + 8);
+        bounds.setY(editorTargetBounds.getBottom() + 8);
 
     readoutBubble.setText(text);
     readoutBubble.setBounds(bounds.constrainedWithin({ 0, 0, baseEditorWidth, baseEditorHeight }));
@@ -985,8 +1008,6 @@ void BqtAudioProcessorEditor::paint(juce::Graphics& g)
     auto header = rack.withY(headerSlot.getY()).withHeight(headerSlot.getHeight());
     auto presetBar = header.removeFromTop(48.0f);
     auto top = header.removeFromTop(56.0f);
-    auto eqPanel = rack.removeFromLeft(rack.getWidth() * 0.5f);
-    auto satPanel = rack;
 
     g.setColour(juce::Colour(0xff1b1b1b));
     g.fillRoundedRectangle(presetBar.getUnion(top), 5.0f);
@@ -995,6 +1016,14 @@ void BqtAudioProcessorEditor::paint(juce::Graphics& g)
     g.drawText("bqst " JucePlugin_VersionString,
                presetBar.withTrimmedLeft(14.0f).withTrimmedTop(5.0f).withHeight(34.0f).toNearestInt(),
                juce::Justification::centredLeft);
+
+}
+
+void BqtAudioProcessorEditor::paintRack(juce::Graphics& g)
+{
+    auto rack = rackComponent.getLocalBounds().toFloat();
+    auto eqPanel = rack.removeFromLeft(rack.getWidth() * 0.5f);
+    auto satPanel = rack;
 
     auto drawPlate = [&g](juce::Rectangle<float> plate, const juce::String& title)
     {
@@ -1199,28 +1228,28 @@ void BqtAudioProcessorEditor::paint(juce::Graphics& g)
         drawSatKnobText(controls.mix, "mix");
         drawSatKnobText(controls.outputTrim, "output");
     }
-
 }
 
-void BqtAudioProcessorEditor::paintOverChildren(juce::Graphics& g)
+void BqtAudioProcessorEditor::RackComponent::paintOverChildren(juce::Graphics& g)
 {
-    if (audioProcessor.state().getRawParameterValue("bypass")->load() <= 0.5f)
+    if (! bypassed)
         return;
 
-    const auto uiScale = static_cast<float>(getWidth()) / static_cast<float>(baseEditorWidth);
-    juce::Graphics::ScopedSaveState savedState(g);
-    g.addTransform(juce::AffineTransform::scale(uiScale));
-
-    auto bounds = juce::Rectangle<float>(0.0f, 0.0f, static_cast<float>(baseEditorWidth),
-                                         static_cast<float>(baseEditorHeight)).reduced(static_cast<float>(outerEditorMargin));
-    bounds.removeFromTop(104.0f);
-    bounds.removeFromTop(10.0f);
-    const auto rack = getRackFaceBounds(bounds);
+    const auto rack = getLocalBounds().toFloat();
 
     g.setColour(juce::Colours::black.withAlpha(0.26f));
     g.fillRect(rack);
     g.setColour(juce::Colours::white.withAlpha(0.10f));
     g.fillRect(rack);
+}
+
+void BqtAudioProcessorEditor::RackComponent::setBypassed(bool shouldBeBypassed)
+{
+    if (bypassed == shouldBeBypassed)
+        return;
+
+    bypassed = shouldBeBypassed;
+    repaint();
 }
 
 void BqtAudioProcessorEditor::resized()
@@ -1232,42 +1261,18 @@ void BqtAudioProcessorEditor::resized()
         component.setTransform(juce::AffineTransform::scale(uiScale));
     };
 
-    for (auto* component : { static_cast<juce::Component*>(&presetPrevious), static_cast<juce::Component*>(&presetMenuButton),
+    for (auto* component : { static_cast<juce::Component*>(&rackComponent),
+                             static_cast<juce::Component*>(&presetPrevious), static_cast<juce::Component*>(&presetMenuButton),
                              static_cast<juce::Component*>(&presetNext), static_cast<juce::Component*>(&presetSave),
                              static_cast<juce::Component*>(&inputTrimLabel), static_cast<juce::Component*>(&inputTrim),
                              static_cast<juce::Component*>(&eqMode), static_cast<juce::Component*>(&satMode),
                              static_cast<juce::Component*>(&osRealtime), static_cast<juce::Component*>(&osRender),
                              static_cast<juce::Component*>(&autoGain), static_cast<juce::Component*>(&eqBypass),
                              static_cast<juce::Component*>(&satBypass), static_cast<juce::Component*>(&eqLink),
-                             static_cast<juce::Component*>(&satLink), static_cast<juce::Component*>(&vintage),
+                             static_cast<juce::Component*>(&satLink),
                              static_cast<juce::Component*>(&bypass), static_cast<juce::Component*>(&sizeSelect),
-                             static_cast<juce::Component*>(&meterA),
-                             static_cast<juce::Component*>(&meterB), static_cast<juce::Component*>(&readoutBubble) })
+                             static_cast<juce::Component*>(&readoutBubble) })
         applyUiScale(*component);
-
-    for (auto& controls : sideControls)
-    {
-        for (auto* component : { static_cast<juce::Component*>(&controls.eqSectionLabel),
-                                 static_cast<juce::Component*>(&controls.satSectionLabel),
-                                 static_cast<juce::Component*>(&controls.lowGainLabel),
-                                 static_cast<juce::Component*>(&controls.lowGain),
-                                 static_cast<juce::Component*>(&controls.lowFreqLabel),
-                                 static_cast<juce::Component*>(&controls.lowFreq),
-                                 static_cast<juce::Component*>(&controls.highGainLabel),
-                                 static_cast<juce::Component*>(&controls.highGain),
-                                 static_cast<juce::Component*>(&controls.highFreqLabel),
-                                 static_cast<juce::Component*>(&controls.highFreq),
-                                 static_cast<juce::Component*>(&controls.driveLabel),
-                                 static_cast<juce::Component*>(&controls.drive),
-                                 static_cast<juce::Component*>(&controls.satTypeLabel),
-                                 static_cast<juce::Component*>(&controls.satType),
-                                 static_cast<juce::Component*>(&controls.satTypeButton),
-                                 static_cast<juce::Component*>(&controls.mixLabel),
-                                 static_cast<juce::Component*>(&controls.mix),
-                                 static_cast<juce::Component*>(&controls.outputTrimLabel),
-                                 static_cast<juce::Component*>(&controls.outputTrim) })
-            applyUiScale(*component);
-    }
 
     auto bounds = juce::Rectangle<int>(0, 0, baseEditorWidth, baseEditorHeight).reduced(outerEditorMargin);
     auto headerSlot = bounds.removeFromTop(104);
@@ -1340,8 +1345,10 @@ void BqtAudioProcessorEditor::resized()
     bounds.removeFromTop(10);
     auto rackFloat = getRackFaceBounds(bounds.toFloat());
     auto rack = rackFloat.toNearestInt();
-    auto eqPanel = rack.removeFromLeft(rack.getWidth() / 2).reduced(24, 26);
-    auto satPanel = rack.reduced(24, 26);
+    rackComponent.setBounds(rack);
+    auto rackLocal = juce::Rectangle<int>(0, 0, rack.getWidth(), rack.getHeight());
+    auto eqPanel = rackLocal.removeFromLeft(rackLocal.getWidth() / 2).reduced(24, 26);
+    auto satPanel = rackLocal.reduced(24, 26);
     const auto satPanelBounds = satPanel;
 
     auto& main = sideControls[0];
