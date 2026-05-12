@@ -14,6 +14,7 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
     : AudioProcessorEditor(&p), audioProcessor(p), presetManager(p.state()), meterA(p, 0), meterB(p, 1)
 {
     setLookAndFeel(&hardwareLookAndFeel);
+    setWantsKeyboardFocus(true);
     setSize(baseEditorWidth, baseEditorHeight);
 
     configureCombo(eqMode);
@@ -120,6 +121,17 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
     satLinkAttachment = std::make_unique<ButtonAttachment>(audioProcessor.state(), "satLink", satLink);
     vintageAttachment = std::make_unique<ButtonAttachment>(audioProcessor.state(), "vintage", vintage);
     bypassAttachment = std::make_unique<ButtonAttachment>(audioProcessor.state(), "bypass", bypass);
+    bypass.onClick = [this]
+    {
+        if (auto* param = audioProcessor.state().getParameter("bypass"))
+        {
+            param->beginChangeGesture();
+            param->setValueNotifyingHost(bypass.getToggleState() ? 1.0f : 0.0f);
+            param->endChangeGesture();
+        }
+
+        repaint();
+    };
     previousInputTrimForCompensation = inputTrim.getValue();
 
     auto setInButtonTarget = [this](const char* parameterId, juce::ToggleButton& button)
@@ -288,6 +300,22 @@ BqtAudioProcessorEditor::~BqtAudioProcessorEditor()
         component->removeMouseListener(this);
 
     setLookAndFeel(nullptr);
+}
+
+bool BqtAudioProcessorEditor::keyPressed(const juce::KeyPress& key)
+{
+    const auto mods = key.getModifiers();
+    if (! mods.isCommandDown() && ! mods.isCtrlDown())
+        return false;
+
+    const auto character = juce::CharacterFunctions::toLowerCase(key.getTextCharacter());
+    if (character != 'z')
+        return false;
+
+    if (mods.isShiftDown())
+        return audioProcessor.undoManager().redo();
+
+    return audioProcessor.undoManager().undo();
 }
 
 void BqtAudioProcessorEditor::configureSlider(juce::Slider& slider)
@@ -529,8 +557,10 @@ void BqtAudioProcessorEditor::timerCallback()
 {
     const auto eqIsIn = audioProcessor.state().getRawParameterValue("eqBypass")->load() < 0.5f;
     const auto satIsIn = audioProcessor.state().getRawParameterValue("satBypass")->load() < 0.5f;
+    const auto bypassIsOn = audioProcessor.state().getRawParameterValue("bypass")->load() > 0.5f;
     eqBypass.setToggleState(eqIsIn, juce::dontSendNotification);
     satBypass.setToggleState(satIsIn, juce::dontSendNotification);
+    bypass.setToggleState(bypassIsOn, juce::dontSendNotification);
 
     for (auto& controls : sideControls)
         controls.satTypeButton.setToggleState(controls.satType.getSelectedItemIndex() == 1, juce::dontSendNotification);
@@ -549,6 +579,7 @@ void BqtAudioProcessorEditor::timerCallback()
     syncHoverTargetsFromMouse();
     updateHoverValueReadout();
     updateTopBarHelp();
+
 }
 
 void BqtAudioProcessorEditor::sliderValueChanged(juce::Slider* slider)
@@ -585,6 +616,7 @@ void BqtAudioProcessorEditor::sliderDragStarted(juce::Slider* slider)
     if (slider == nullptr)
         return;
 
+    audioProcessor.undoManager().beginNewTransaction("Adjust " + slider->getName());
     hideHoverValueReadout();
 
     if (slider == &inputTrim)
@@ -1167,6 +1199,28 @@ void BqtAudioProcessorEditor::paint(juce::Graphics& g)
         drawSatKnobText(controls.mix, "mix");
         drawSatKnobText(controls.outputTrim, "output");
     }
+
+}
+
+void BqtAudioProcessorEditor::paintOverChildren(juce::Graphics& g)
+{
+    if (audioProcessor.state().getRawParameterValue("bypass")->load() <= 0.5f)
+        return;
+
+    const auto uiScale = static_cast<float>(getWidth()) / static_cast<float>(baseEditorWidth);
+    juce::Graphics::ScopedSaveState savedState(g);
+    g.addTransform(juce::AffineTransform::scale(uiScale));
+
+    auto bounds = juce::Rectangle<float>(0.0f, 0.0f, static_cast<float>(baseEditorWidth),
+                                         static_cast<float>(baseEditorHeight)).reduced(static_cast<float>(outerEditorMargin));
+    bounds.removeFromTop(104.0f);
+    bounds.removeFromTop(10.0f);
+    const auto rack = getRackFaceBounds(bounds);
+
+    g.setColour(juce::Colours::black.withAlpha(0.26f));
+    g.fillRect(rack);
+    g.setColour(juce::Colours::white.withAlpha(0.10f));
+    g.fillRect(rack);
 }
 
 void BqtAudioProcessorEditor::resized()
@@ -1378,4 +1432,5 @@ void BqtAudioProcessorEditor::resized()
 
     vintage.toFront(false);
     main.satTypeButton.toFront(false);
+    readoutBubble.toFront(false);
 }

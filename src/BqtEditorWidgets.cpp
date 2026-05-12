@@ -495,7 +495,10 @@ void BqtVuMeter::paint(juce::Graphics& g)
     const auto start = 137.0f;
     const auto end = 43.0f;
 
-    g.setColour(juce::Colour(0xff6f5e52).withAlpha(0.74f));
+    const auto meterBlack = juce::Colour(0xff1f1a17);
+    const auto meterRed = juce::Colour(0xffd22b2b);
+
+    g.setColour(meterBlack.withAlpha(0.78f));
     juce::Path arc;
     for (int i = 0; i <= 40; ++i)
     {
@@ -513,7 +516,7 @@ void BqtVuMeter::paint(juce::Graphics& g)
         const auto point = polar(centre, radius - 3.0f, start + (end - start) * p);
         i == 0 ? redArc.startNewSubPath(point) : redArc.lineTo(point);
     }
-    g.setColour(juce::Colour(0xffa13f44).withAlpha(0.82f));
+    g.setColour(meterRed.withAlpha(0.92f));
     g.strokePath(redArc, juce::PathStrokeType(3.4f));
 
     const std::array<float, 7> majorDbs { -20.0f, -10.0f, -7.0f, -5.0f, -3.0f, 0.0f, 3.0f };
@@ -524,8 +527,8 @@ void BqtVuMeter::paint(juce::Graphics& g)
         const auto frac = dbToFrac(majorDbs[i]);
         const auto angle = start + (end - start) * frac;
         const auto red = majorDbs[i] >= 0.0f;
-        g.setColour(red ? juce::Colour(0xff99353b).withAlpha(0.96f)
-                        : juce::Colour(0xff6b5a4f).withAlpha(0.94f));
+        g.setColour(red ? meterRed.withAlpha(0.98f)
+                        : meterBlack.withAlpha(0.95f));
         g.drawLine({ polar(centre, radius - 7.0f, angle), polar(centre, radius + 3.0f, angle) },
                    majorDbs[i] == 0.0f ? 2.6f : 1.9f);
         const auto labelPoint = polar(centre, radius + 9.0f, angle);
@@ -542,21 +545,21 @@ void BqtVuMeter::paint(juce::Graphics& g)
 
         const auto angle = start + (end - start) * dbToFrac(static_cast<float>(db));
         const auto red = db >= 0;
-        g.setColour(red ? juce::Colour(0xff99353b).withAlpha(0.62f)
-                        : juce::Colour(0xff6b5a4f).withAlpha(0.52f));
+        g.setColour(red ? meterRed.withAlpha(0.72f)
+                        : meterBlack.withAlpha(0.58f));
         g.drawLine({ polar(centre, radius - 4.0f, angle), polar(centre, radius + 2.5f, angle) }, 1.2f);
     }
 
-    g.setColour(juce::Colour(0xff4f413a).withAlpha(0.98f));
+    g.setColour(meterBlack.withAlpha(0.98f));
     g.setFont(juce::Font(faceFont(19.0f, true)));
     g.drawText("vu", inner.withTrimmedTop(inner.getHeight() * 0.38f).withHeight(22.0f).toNearestInt(),
                juce::Justification::centred);
 
     const auto needleAngle = start + juce::jlimit(0.0f, 1.0f, displayedLevel) * (end - start);
     const auto needleEnd = polar(centre, radius + 7.0f, needleAngle);
-    g.setColour(juce::Colour(0xff8d6e63));
+    g.setColour(meterBlack);
     g.drawLine({ needlePivot, needleEnd }, 2.6f);
-    g.setColour(juce::Colour(0xff3e2723));
+    g.setColour(meterBlack.darker(0.35f));
     g.fillEllipse(juce::Rectangle<float>(6.5f, 6.5f).withCentre(needlePivot));
 }
 

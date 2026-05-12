@@ -38,6 +38,7 @@ public:
     void setStateInformation(const void* data, int sizeInBytes) override;
 
     juce::AudioProcessorValueTreeState& state() { return parameters; }
+    juce::UndoManager& undoManager() { return parameterUndoManager; }
     float getMeterLevel(int sideIndex) const;
 
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
@@ -70,6 +71,7 @@ private:
     int getActiveOversamplingIndex() const;
     void updateLatency();
 
+    juce::UndoManager parameterUndoManager;
     juce::AudioProcessorValueTreeState parameters;
     std::array<SideFilters, 2> filters;
     std::array<std::unique_ptr<juce::dsp::Oversampling<float>>, 3> oversamplers;

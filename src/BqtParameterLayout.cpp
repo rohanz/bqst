@@ -17,7 +17,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout BqtAudioProcessor::createPar
     params.push_back(std::make_unique<juce::AudioParameterChoice>("satMode", "Sat Mode", juce::StringArray { "L/R", "M/S" }, 0));
     params.push_back(std::make_unique<juce::AudioParameterChoice>("osRealtime", "Realtime OS", juce::StringArray { "Off", "2x", "4x", "8x" }, 1));
     params.push_back(std::make_unique<juce::AudioParameterChoice>("osRender", "Render OS", juce::StringArray { "Off", "2x", "4x", "8x" }, 2));
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("inputTrim", "Input", juce::NormalisableRange<float>(-18.0f, 18.0f, 0.1f), 0.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("inputTrim", "Input", juce::NormalisableRange<float>(-12.0f, 12.0f, 0.1f), 0.0f));
     params.push_back(std::make_unique<juce::AudioParameterBool>("autoGain", "Autogain", true));
     params.push_back(std::make_unique<juce::AudioParameterBool>(juce::ParameterID { "eqBypass", 1 }, "EQ In", false, hiddenBool));
     params.push_back(std::make_unique<juce::AudioParameterBool>(juce::ParameterID { "satBypass", 1 }, "Sat In", false, hiddenBool));

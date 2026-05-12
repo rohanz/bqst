@@ -12,6 +12,8 @@
 - Root-level user presets now appear directly under User instead of User > User.
 - Presets now ignore utility/session controls: realtime/render oversampling, EQ/Sat in state, and global bypass.
 - Split editor drawing support into dedicated style/widget files for easier maintenance.
+- Added APVTS undo grouping for knob drags and reduced input trim to +/-12 dB.
+- Refined VU meter markings and global bypass dimming behavior.
 
 ## 0.1.1
 
