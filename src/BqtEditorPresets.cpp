@@ -1,0 +1,134 @@
+#include "PluginEditor.h"
+
+void BqtAudioProcessorEditor::refreshPresetMenu()
+{
+    presetManager.refresh();
+    selectedPresetIndex = juce::jlimit(0, juce::jmax(0, presetManager.getPresets().size() - 1), selectedPresetIndex);
+    updatePresetButtonText();
+}
+
+void BqtAudioProcessorEditor::showPresetMenu()
+{
+    const auto& presets = presetManager.getPresets();
+    if (presets.isEmpty())
+        return;
+
+    juce::PopupMenu menu;
+    juce::PopupMenu factoryMenu;
+    juce::PopupMenu userMenu;
+    juce::StringArray factoryCategories;
+    juce::StringArray userCategories;
+
+    for (const auto& preset : presets)
+    {
+        auto& categories = preset.factory ? factoryCategories : userCategories;
+        if (preset.category.isNotEmpty() && ! categories.contains(preset.category))
+            categories.add(preset.category);
+    }
+
+    auto addCategoryMenus = [&presets, this](juce::PopupMenu& parent, const juce::StringArray& categories, bool factory)
+    {
+        for (int i = 0; i < presets.size(); ++i)
+        {
+            const auto& preset = presets.getReference(i);
+            if (preset.factory == factory && preset.category.isEmpty())
+                parent.addItem(i + 1, preset.name, true, i == selectedPresetIndex);
+        }
+
+        for (const auto& category : categories)
+        {
+            juce::PopupMenu categoryMenu;
+            for (int i = 0; i < presets.size(); ++i)
+            {
+                const auto& preset = presets.getReference(i);
+                if (preset.factory == factory && preset.category == category)
+                    categoryMenu.addItem(i + 1, preset.name, true, i == selectedPresetIndex);
+            }
+
+            parent.addSubMenu(category, categoryMenu);
+        }
+    };
+
+    addCategoryMenus(factoryMenu, factoryCategories, true);
+    addCategoryMenus(userMenu, userCategories, false);
+
+    menu.addSubMenu("Factory", factoryMenu);
+    if (userMenu.getNumItems() > 0)
+        menu.addSubMenu("User", userMenu);
+    else
+        menu.addItem(-1, "No user presets", false);
+
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&presetMenuButton),
+                       [this](int result)
+                       {
+                           if (result > 0)
+                               loadPreset(result - 1);
+                       });
+}
+
+void BqtAudioProcessorEditor::loadPreset(int index)
+{
+    if (presetManager.loadPreset(index))
+    {
+        selectedPresetIndex = index;
+        previousInputTrimForCompensation = inputTrim.getValue();
+        updatePresetButtonText();
+    }
+}
+
+void BqtAudioProcessorEditor::selectRelativePreset(int offset)
+{
+    const auto count = presetManager.getPresets().size();
+    if (count <= 0)
+        return;
+
+    loadPreset((selectedPresetIndex + offset + count) % count);
+}
+
+void BqtAudioProcessorEditor::saveUserPreset()
+{
+    const auto directory = presetManager.getUserPresetDirectory();
+    directory.createDirectory();
+
+    presetFileChooser = std::make_unique<juce::FileChooser>("Save BQST preset",
+                                                            directory.getChildFile("New Preset.bqstpreset"),
+                                                            "*.bqstpreset");
+    presetFileChooser->launchAsync(juce::FileBrowserComponent::saveMode
+                                       | juce::FileBrowserComponent::canSelectFiles
+                                       | juce::FileBrowserComponent::warnAboutOverwriting,
+                                   [this](const juce::FileChooser& chooser)
+                                   {
+                                       const auto file = chooser.getResult();
+                                       if (file == juce::File{})
+                                           return;
+
+                                       if (presetManager.saveUserPreset(file))
+                                       {
+                                           refreshPresetMenu();
+                                           const auto savedName = file.withFileExtension(".bqstpreset").getFileNameWithoutExtension();
+                                           for (int i = 0; i < presetManager.getPresets().size(); ++i)
+                                           {
+                                               const auto& preset = presetManager.getPresets().getReference(i);
+                                               if (! preset.factory && preset.name == savedName)
+                                               {
+                                                   selectedPresetIndex = i;
+                                                   updatePresetButtonText();
+                                                   break;
+                                               }
+                                           }
+                                       }
+                                   });
+}
+
+void BqtAudioProcessorEditor::updatePresetButtonText()
+{
+    const auto& presets = presetManager.getPresets();
+    if (presets.isEmpty())
+    {
+        presetMenuButton.setButtonText("No Presets");
+        return;
+    }
+
+    const auto& preset = presets.getReference(juce::jlimit(0, presets.size() - 1, selectedPresetIndex));
+    presetMenuButton.setButtonText(preset.name);
+}

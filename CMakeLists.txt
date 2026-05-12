@@ -46,6 +46,9 @@ target_sources(BQST
         src/BqtEditorStyle.h
         src/BqtPresetManager.cpp
         src/BqtPresetManager.h
+        src/BqtEditorInteraction.cpp
+        src/BqtEditorLayout.cpp
+        src/BqtEditorPresets.cpp
         src/PluginEditor.cpp
         src/PluginEditor.h
         src/BqtDsp.h
