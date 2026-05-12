@@ -10,7 +10,8 @@ Current build:
 - Vintage top rounding after saturation.
 - Realtime and render oversampling up to 8x.
 - Auto gain for saturation level matching.
-- 500-series-inspired fixed-size UI with 100% and 125% view sizes.
+- 500-series-inspired fixed-size UI with 75%, 100%, 125%, and 150% view sizes.
+- Factory and user presets saved as `.bqstpreset` files.
 - VU-style output meters calibrated around 0 VU = -18 dBFS.
 
 Useful docs:

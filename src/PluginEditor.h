@@ -2,6 +2,7 @@
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
+#include "BqtPresetManager.h"
 #include "PluginProcessor.h"
 
 class BqtAudioProcessorEditor final : public juce::AudioProcessorEditor,
@@ -121,9 +122,18 @@ private:
     void setTopBarHelp(juce::Component& component, const juce::String& text);
     void showReadout(juce::Component& target, const juce::String& text);
     void hideReadout();
+    void refreshPresetMenu();
+    void loadSelectedPreset();
+    void selectRelativePreset(int offset);
+    void saveUserPreset();
 
     HardwareLookAndFeel hardwareLookAndFeel;
     BqtAudioProcessor& audioProcessor;
+    BqtPresetManager presetManager;
+    juce::TextButton presetPrevious;
+    juce::ComboBox presetSelect;
+    juce::TextButton presetNext;
+    juce::TextButton presetSave;
     juce::ComboBox eqMode;
     juce::ComboBox satMode;
     juce::ComboBox osRealtime;
@@ -166,6 +176,7 @@ private:
     juce::uint32 helpHoverStartMs = 0;
     bool helpVisible = false;
     double previousInputTrimForCompensation = 0.0;
+    std::unique_ptr<juce::FileChooser> presetFileChooser;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(BqtAudioProcessorEditor)
 };

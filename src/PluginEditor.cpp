@@ -19,7 +19,7 @@ constexpr auto slotWidthInches = 1.5f;
 constexpr auto panelHeightInches = 5.25f;
 constexpr auto screwInsetYInches = (5.25f - 4.938f) * 0.5f;
 constexpr auto baseEditorWidth = 900;
-constexpr auto baseEditorHeight = 820;
+constexpr auto baseEditorHeight = 874;
 constexpr auto fixedEditorScale = 1.25f;
 const juce::StringArray lowFreqLabels { "74", "84", "98", "116", "131", "166", "230", "361" };
 const juce::StringArray highFreqLabels { "1.6k", "1.8k", "2.1k", "2.5k", "3.4k", "4.8k", "7.1k", "18k" };
@@ -98,7 +98,7 @@ void drawRotatedImageKnob(juce::Graphics& g, const juce::Image& image, juce::Rec
 } // namespace
 
 BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
-    : AudioProcessorEditor(&p), audioProcessor(p), meterA(p, 0), meterB(p, 1)
+    : AudioProcessorEditor(&p), audioProcessor(p), presetManager(p.state()), meterA(p, 0), meterB(p, 1)
 {
     setLookAndFeel(&hardwareLookAndFeel);
     setSize(baseEditorWidth, baseEditorHeight);
@@ -108,6 +108,7 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
     configureCombo(osRealtime);
     configureCombo(osRender);
     configureCombo(sizeSelect);
+    configureCombo(presetSelect);
     configureLabel(inputTrimLabel, "input", juce::Justification::centredLeft);
     inputTrimLabel.setColour(juce::Label::textColourId, juce::Colour(cream).withAlpha(0.84f));
     inputTrimLabel.setFont(faceFont(19.5f));
@@ -115,6 +116,10 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
     inputTrim.getProperties().set("bqtTopInputKnob", true);
     inputTrim.textFromValueFunction = [](double value) { return juce::String(value, 1) + " dB"; };
     inputTrim.setDoubleClickReturnValue(true, 0.0);
+    addAndMakeVisible(presetPrevious);
+    addAndMakeVisible(presetNext);
+    addAndMakeVisible(presetSave);
+    addAndMakeVisible(presetSelect);
     addAndMakeVisible(autoGain);
     addAndMakeVisible(eqBypass);
     addAndMakeVisible(satBypass);
@@ -131,6 +136,9 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
     readoutBubble.setVisible(false);
     readoutBubble.setInterceptsMouseClicks(false, false);
 
+    presetPrevious.setButtonText("<");
+    presetNext.setButtonText(">");
+    presetSave.setButtonText("save");
     autoGain.setButtonText("autogain");
     eqBypass.setButtonText("eq in");
     satBypass.setButtonText("sat in");
@@ -142,9 +150,14 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
     satMode.addItemList(juce::StringArray { "sat l/r", "sat m/s" }, 1);
     osRealtime.addItemList(juce::StringArray { "realtime off", "realtime 2x", "realtime 4x", "realtime 8x" }, 1);
     osRender.addItemList(juce::StringArray { "render off", "render 2x", "render 4x", "render 8x" }, 1);
-    sizeSelect.addItemList(juce::StringArray { "100%", "125%" }, 1);
-    sizeSelect.setSelectedId(1, juce::dontSendNotification);
+    sizeSelect.addItemList(juce::StringArray { "75%", "100%", "125%", "150%" }, 1);
+    sizeSelect.setSelectedId(2, juce::dontSendNotification);
+    refreshPresetMenu();
 
+    setTopBarHelp(presetPrevious, "Loads the previous preset.");
+    setTopBarHelp(presetSelect, "Loads factory and user presets.");
+    setTopBarHelp(presetNext, "Loads the next preset.");
+    setTopBarHelp(presetSave, "Saves the current settings as a user preset.");
     setTopBarHelp(inputTrim, "Adjusts level before the EQ and saturation. Control-drag compensates output trim.");
     setTopBarHelp(eqMode, "Chooses whether the EQ controls process left/right or mid/side.");
     setTopBarHelp(eqLink, "Links the two EQ sides.");
@@ -159,10 +172,27 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
 
     for (auto* button : { &autoGain, &eqBypass, &satBypass, &eqLink, &satLink, &bypass })
         button->getProperties().set("bqtPushButton", true);
+    for (auto* button : { &presetPrevious, &presetNext, &presetSave })
+        button->getProperties().set("bqtPushButton", true);
+
+    presetPrevious.onClick = [this] { selectRelativePreset(-1); };
+    presetNext.onClick = [this] { selectRelativePreset(1); };
+    presetSave.onClick = [this] { saveUserPreset(); };
+    presetSelect.onChange = [this] { loadSelectedPreset(); };
 
     sizeSelect.onChange = [this]
     {
-        const auto nextScale = sizeSelect.getSelectedId() == 2 ? fixedEditorScale : 1.0f;
+        const auto nextScale = [this]
+        {
+            switch (sizeSelect.getSelectedId())
+            {
+                case 1: return 0.75f;
+                case 3: return fixedEditorScale;
+                case 4: return 1.50f;
+                default: return 1.0f;
+            }
+        }();
+
         setSize(static_cast<int>(std::round(static_cast<float>(baseEditorWidth) * nextScale)),
                 static_cast<int>(std::round(static_cast<float>(baseEditorHeight) * nextScale)));
     };
@@ -335,7 +365,9 @@ BqtAudioProcessorEditor::~BqtAudioProcessorEditor()
         controls.outputTrim.removeMouseListener(this);
     }
 
-    for (auto* component : { static_cast<juce::Component*>(&eqMode), static_cast<juce::Component*>(&satMode),
+    for (auto* component : { static_cast<juce::Component*>(&presetPrevious), static_cast<juce::Component*>(&presetSelect),
+                             static_cast<juce::Component*>(&presetNext), static_cast<juce::Component*>(&presetSave),
+                             static_cast<juce::Component*>(&eqMode), static_cast<juce::Component*>(&satMode),
                              static_cast<juce::Component*>(&osRealtime), static_cast<juce::Component*>(&osRender),
                              static_cast<juce::Component*>(&autoGain), static_cast<juce::Component*>(&eqLink),
                              static_cast<juce::Component*>(&satLink), static_cast<juce::Component*>(&bypass),
@@ -445,6 +477,77 @@ void BqtAudioProcessorEditor::configureSide(SideControls& controls, int sideInde
     controls.satTypeAttachment = std::make_unique<ComboBoxAttachment>(audioProcessor.state(), prefix + "SatType", controls.satType);
     controls.mixAttachment = std::make_unique<SliderAttachment>(audioProcessor.state(), prefix + "Mix", controls.mix);
     controls.outputTrimAttachment = std::make_unique<SliderAttachment>(audioProcessor.state(), prefix + "OutputTrim", controls.outputTrim);
+}
+
+void BqtAudioProcessorEditor::refreshPresetMenu()
+{
+    presetManager.refresh();
+    presetSelect.clear(juce::dontSendNotification);
+
+    const auto& presets = presetManager.getPresets();
+    for (int i = 0; i < presets.size(); ++i)
+    {
+        const auto& preset = presets.getReference(i);
+        presetSelect.addItem((preset.factory ? "factory / " : "user / ") + preset.name, i + 1);
+    }
+
+    if (presetSelect.getNumItems() > 0 && presetSelect.getSelectedId() == 0)
+        presetSelect.setSelectedId(1, juce::dontSendNotification);
+}
+
+void BqtAudioProcessorEditor::loadSelectedPreset()
+{
+    const auto index = presetSelect.getSelectedId() - 1;
+    if (index >= 0)
+    {
+        presetManager.loadPreset(index);
+        previousInputTrimForCompensation = inputTrim.getValue();
+    }
+}
+
+void BqtAudioProcessorEditor::selectRelativePreset(int offset)
+{
+    const auto count = presetSelect.getNumItems();
+    if (count <= 0)
+        return;
+
+    const auto current = juce::jmax(0, presetSelect.getSelectedId() - 1);
+    const auto next = (current + offset + count) % count;
+    presetSelect.setSelectedId(next + 1, juce::sendNotificationSync);
+}
+
+void BqtAudioProcessorEditor::saveUserPreset()
+{
+    const auto directory = presetManager.getUserPresetDirectory();
+    directory.createDirectory();
+
+    presetFileChooser = std::make_unique<juce::FileChooser>("Save BQST preset",
+                                                            directory.getChildFile("New Preset.bqstpreset"),
+                                                            "*.bqstpreset");
+    presetFileChooser->launchAsync(juce::FileBrowserComponent::saveMode
+                                       | juce::FileBrowserComponent::canSelectFiles
+                                       | juce::FileBrowserComponent::warnAboutOverwriting,
+                                   [this](const juce::FileChooser& chooser)
+                                   {
+                                       const auto file = chooser.getResult();
+                                       if (file == juce::File{})
+                                           return;
+
+                                       if (presetManager.saveUserPreset(file))
+                                       {
+                                           refreshPresetMenu();
+                                           const auto savedName = file.withFileExtension(".bqstpreset").getFileNameWithoutExtension();
+                                           for (int i = 0; i < presetManager.getPresets().size(); ++i)
+                                           {
+                                               const auto& preset = presetManager.getPresets().getReference(i);
+                                               if (! preset.factory && preset.name == savedName)
+                                               {
+                                                   presetSelect.setSelectedId(i + 1, juce::dontSendNotification);
+                                                   break;
+                                               }
+                                           }
+                                       }
+                                   });
 }
 
 void BqtAudioProcessorEditor::timerCallback()
@@ -1404,6 +1507,7 @@ void BqtAudioProcessorEditor::paint(juce::Graphics& g)
 
     auto bounds = juce::Rectangle<float>(0.0f, 0.0f, static_cast<float>(baseEditorWidth),
                                          static_cast<float>(baseEditorHeight)).reduced(18.0f);
+    auto presetBar = bounds.removeFromTop(48.0f);
     auto top = bounds.removeFromTop(62.0f);
     bounds.removeFromTop(10.0f);
     auto rack = getRackFaceBounds(bounds);
@@ -1411,6 +1515,7 @@ void BqtAudioProcessorEditor::paint(juce::Graphics& g)
     auto satPanel = rack;
 
     g.setColour(juce::Colour(0xff1b1b1b));
+    g.fillRoundedRectangle(presetBar, 5.0f);
     g.fillRoundedRectangle(top, 5.0f);
 
     auto drawPlate = [&g](juce::Rectangle<float> plate, const juce::String& title)
@@ -1627,7 +1732,9 @@ void BqtAudioProcessorEditor::resized()
         component.setTransform(juce::AffineTransform::scale(uiScale));
     };
 
-    for (auto* component : { static_cast<juce::Component*>(&inputTrimLabel), static_cast<juce::Component*>(&inputTrim),
+    for (auto* component : { static_cast<juce::Component*>(&presetPrevious), static_cast<juce::Component*>(&presetSelect),
+                             static_cast<juce::Component*>(&presetNext), static_cast<juce::Component*>(&presetSave),
+                             static_cast<juce::Component*>(&inputTrimLabel), static_cast<juce::Component*>(&inputTrim),
                              static_cast<juce::Component*>(&eqMode), static_cast<juce::Component*>(&satMode),
                              static_cast<juce::Component*>(&osRealtime), static_cast<juce::Component*>(&osRender),
                              static_cast<juce::Component*>(&autoGain), static_cast<juce::Component*>(&eqBypass),
@@ -1663,6 +1770,7 @@ void BqtAudioProcessorEditor::resized()
     }
 
     auto bounds = juce::Rectangle<int>(0, 0, baseEditorWidth, baseEditorHeight).reduced(18);
+    auto presetBar = bounds.removeFromTop(48).reduced(8, 7);
     auto top = bounds.removeFromTop(62).reduced(8, 14);
     constexpr int topControlHeight = 36;
 
@@ -1671,9 +1779,17 @@ void BqtAudioProcessorEditor::resized()
     constexpr int oversamplingControlWidth = 112;
     constexpr int autoGainControlWidth = 78;
     constexpr int bypassControlWidth = 70;
-    constexpr int sizeControlWidth = 50;
+    constexpr int sizeControlWidth = 70;
     constexpr int topGap = 4;
     auto topSlot = [](juce::Rectangle<int> area) { return area.withSizeKeepingCentre(area.getWidth(), topControlHeight); };
+
+    presetPrevious.setBounds(topSlot(presetBar.removeFromLeft(38)));
+    presetBar.removeFromLeft(topGap);
+    presetSelect.setBounds(topSlot(presetBar.removeFromLeft(280)));
+    presetBar.removeFromLeft(topGap);
+    presetNext.setBounds(topSlot(presetBar.removeFromLeft(38)));
+    presetBar.removeFromLeft(topGap);
+    presetSave.setBounds(topSlot(presetBar.removeFromLeft(70)));
 
     inputTrimLabel.setBounds(topSlot(top.removeFromLeft(47)));
     inputTrim.setBounds(topSlot(top.removeFromLeft(48)));

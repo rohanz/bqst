@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.2
+
+- Added a preset strip above the main utility bar.
+- Added factory presets: Default, Clean Bax Lift, Cream Glue, Grit Console Push, Wide Air MS, and Subtle Master Polish.
+- Added user preset saving as `.bqstpreset` XML files.
+- User presets default to `~/Library/Application Support/BQST/Presets`.
+- Added previous/next preset buttons and preset hover help.
+- Expanded fixed UI size options to 75%, 100%, 125%, and 150%.
+
 ## 0.1.1
 
 - Renamed the plugin to BQST.
