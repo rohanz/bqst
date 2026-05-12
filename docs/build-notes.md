@@ -48,6 +48,7 @@ Install the release build with:
 ```sh
 rm -rf /Users/rohan/Library/CloudStorage/OneDrive-Personal/dailystuff/music/vst3/BQST.vst3
 cp -R build-release/BQST_artefacts/Release/VST3/BQST.vst3 /Users/rohan/Library/CloudStorage/OneDrive-Personal/dailystuff/music/vst3/
+codesign --force --deep -s - /Users/rohan/Library/CloudStorage/OneDrive-Personal/dailystuff/music/vst3/BQST.vst3
 ```
 
 Automatic copying into `~/Library/Audio/Plug-Ins/VST3` is disabled for now. This avoids permission issues during normal sandboxed development and keeps builds local to the project.
@@ -62,9 +63,9 @@ This may need to run outside the sandbox because pluginval opens plugin bundles 
 
 ## Current Build Status
 
-The project configures and builds a Debug VST3.
+The project configures and builds Debug and Release VST3 artifacts.
 
-The first VST3 build passed pluginval strictness level 5.
+The Release VST3 has passed pluginval strictness level 10.
 
 Implemented in the first scaffold:
 
@@ -72,10 +73,10 @@ Implemented in the first scaffold:
 - Stereo VST3 processor.
 - Independent L/R and M/S routing for the EQ and saturation modules.
 - Input Trim from -18 dB to +18 dB.
-- EQ Bypass, Saturation Bypass, EQ Link, and Saturation Link controls.
+- EQ Link and Saturation Link controls.
 - Per-side low/high Bax-style shelves in 0.1 dB gain steps.
 - Bax shelves use a broad low-Q curve and clamp very high shelf frequencies safely below Nyquist.
-- Per-side Density and Transformer saturation choices.
+- Per-side Cream and Grit saturation choices.
 - Density mode uses a tape-density-inspired soft asymmetric curve rather than a plain tanh clipper.
 - Density mode includes tape-style high pre/de-emphasis around saturation for smoother high-frequency transient rounding.
 - Transformer mode includes low-mid weighting and post-saturation top rounding to avoid forward upper-mid crunch.
@@ -89,15 +90,15 @@ Implemented in the first scaffold:
 - Sliders support Shift fine-drag and explicit double-click reset values.
 - Drive at 0 skips saturation and saturation autogain.
 - Per-side output trim.
-- Per-side saturation output meters in the editor.
+- Per-side VU-style saturation output meters in the editor.
 - VU meter calibration: 0 VU = -18 dBFS with 300 ms smoothing.
 - Realtime/render oversampling up to 8x around the full active processing chain.
 - Oversampling latency reporting with global-bypass delay matching.
 - Global bypass uses a short dry/wet crossfade to avoid clicky hard switching.
-- Top-bar parameters for mode, oversampling, auto gain, and bypass.
-- Placeholder functional UI.
+- Top-bar controls for input, mode, link, oversampling, auto gain, bypass, and fixed UI size.
+- 500-series-inspired UI using local PNG assets and procedural faceplate rendering.
 
 Not implemented yet:
 
-- Final 2-slot 500-series visual design.
 - DAW listening tests.
+- Proper Developer ID signing/notarization for public distribution.

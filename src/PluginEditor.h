@@ -137,7 +137,7 @@ private:
     juce::ToggleButton satLink;
     juce::ToggleButton vintage;
     juce::ToggleButton bypass;
-    juce::ToggleButton sizeToggle;
+    juce::ComboBox sizeSelect;
     std::array<SideControls, 2> sideControls;
     VuMeter meterA;
     VuMeter meterB;

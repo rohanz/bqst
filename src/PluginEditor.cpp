@@ -101,13 +101,13 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
     : AudioProcessorEditor(&p), audioProcessor(p), meterA(p, 0), meterB(p, 1)
 {
     setLookAndFeel(&hardwareLookAndFeel);
-    setSize(static_cast<int>(std::round(static_cast<float>(baseEditorWidth) * fixedEditorScale)),
-            static_cast<int>(std::round(static_cast<float>(baseEditorHeight) * fixedEditorScale)));
+    setSize(baseEditorWidth, baseEditorHeight);
 
     configureCombo(eqMode);
     configureCombo(satMode);
     configureCombo(osRealtime);
     configureCombo(osRender);
+    configureCombo(sizeSelect);
     configureLabel(inputTrimLabel, "input", juce::Justification::centredLeft);
     inputTrimLabel.setColour(juce::Label::textColourId, juce::Colour(cream).withAlpha(0.84f));
     inputTrimLabel.setFont(faceFont(19.5f));
@@ -122,7 +122,7 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
     addAndMakeVisible(satLink);
     addAndMakeVisible(vintage);
     addAndMakeVisible(bypass);
-    addAndMakeVisible(sizeToggle);
+    addAndMakeVisible(sizeSelect);
     addAndMakeVisible(meterA);
     addAndMakeVisible(meterB);
     meterA.setInterceptsMouseClicks(false, false);
@@ -138,11 +138,12 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
     satLink.setButtonText("sat link");
     vintage.setButtonText("vint.");
     bypass.setButtonText("bypass");
-    sizeToggle.setButtonText("size");
     eqMode.addItemList(juce::StringArray { "eq l/r", "eq m/s" }, 1);
     satMode.addItemList(juce::StringArray { "sat l/r", "sat m/s" }, 1);
     osRealtime.addItemList(juce::StringArray { "realtime off", "realtime 2x", "realtime 4x", "realtime 8x" }, 1);
     osRender.addItemList(juce::StringArray { "render off", "render 2x", "render 4x", "render 8x" }, 1);
+    sizeSelect.addItemList(juce::StringArray { "100%", "125%" }, 1);
+    sizeSelect.setSelectedId(1, juce::dontSendNotification);
 
     setTopBarHelp(inputTrim, "Adjusts level before the EQ and saturation. Control-drag compensates output trim.");
     setTopBarHelp(eqMode, "Chooses whether the EQ controls process left/right or mid/side.");
@@ -153,17 +154,15 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
     setTopBarHelp(osRender, "Sets oversampling used for offline export or render.");
     setTopBarHelp(autoGain, "Compensates saturation drive level so changes are easier to compare.");
     setTopBarHelp(bypass, "Bypasses the whole plugin.");
-    setTopBarHelp(sizeToggle, "Switches between normal and large plugin size.");
+    setTopBarHelp(sizeSelect, "Switches between normal and large plugin size.");
     setTopBarHelp(vintage, "Gently rounds the top end after saturation.");
 
     for (auto* button : { &autoGain, &eqBypass, &satBypass, &eqLink, &satLink, &bypass })
         button->getProperties().set("bqtPushButton", true);
 
-    sizeToggle.getProperties().set("bqtPushButton", true);
-    sizeToggle.onClick = [this]
+    sizeSelect.onChange = [this]
     {
-        const auto isLarge = getWidth() > baseEditorWidth;
-        const auto nextScale = isLarge ? 1.0f : fixedEditorScale;
+        const auto nextScale = sizeSelect.getSelectedId() == 2 ? fixedEditorScale : 1.0f;
         setSize(static_cast<int>(std::round(static_cast<float>(baseEditorWidth) * nextScale)),
                 static_cast<int>(std::round(static_cast<float>(baseEditorHeight) * nextScale)));
     };
@@ -316,7 +315,7 @@ BqtAudioProcessorEditor::~BqtAudioProcessorEditor()
 {
     inputTrim.removeListener(this);
     inputTrim.removeMouseListener(this);
-    sizeToggle.removeMouseListener(this);
+    sizeSelect.removeMouseListener(this);
 
     for (auto& controls : sideControls)
     {
@@ -340,7 +339,7 @@ BqtAudioProcessorEditor::~BqtAudioProcessorEditor()
                              static_cast<juce::Component*>(&osRealtime), static_cast<juce::Component*>(&osRender),
                              static_cast<juce::Component*>(&autoGain), static_cast<juce::Component*>(&eqLink),
                              static_cast<juce::Component*>(&satLink), static_cast<juce::Component*>(&bypass),
-                             static_cast<juce::Component*>(&vintage), static_cast<juce::Component*>(&sizeToggle) })
+                             static_cast<juce::Component*>(&vintage), static_cast<juce::Component*>(&sizeSelect) })
         component->removeMouseListener(this);
 
     setLookAndFeel(nullptr);
@@ -1634,7 +1633,7 @@ void BqtAudioProcessorEditor::resized()
                              static_cast<juce::Component*>(&autoGain), static_cast<juce::Component*>(&eqBypass),
                              static_cast<juce::Component*>(&satBypass), static_cast<juce::Component*>(&eqLink),
                              static_cast<juce::Component*>(&satLink), static_cast<juce::Component*>(&vintage),
-                             static_cast<juce::Component*>(&bypass), static_cast<juce::Component*>(&sizeToggle),
+                             static_cast<juce::Component*>(&bypass), static_cast<juce::Component*>(&sizeSelect),
                              static_cast<juce::Component*>(&meterA),
                              static_cast<juce::Component*>(&meterB), static_cast<juce::Component*>(&readoutBubble) })
         applyUiScale(*component);
@@ -1695,7 +1694,7 @@ void BqtAudioProcessorEditor::resized()
     top.removeFromLeft(topGap);
     bypass.setBounds(topSlot(top.removeFromLeft(bypassControlWidth)));
     top.removeFromLeft(topGap);
-    sizeToggle.setBounds(topSlot(top.removeFromLeft(sizeControlWidth)));
+    sizeSelect.setBounds(topSlot(top.removeFromLeft(sizeControlWidth)));
     eqBypass.setBounds(-2000, -2000, 1, 1);
     satBypass.setBounds(-2000, -2000, 1, 1);
 
