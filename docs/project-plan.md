@@ -1,6 +1,6 @@
-# BQT Project Plan
+# BQST Project Plan
 
-BQT stands for Bax / Q / Tape-or-Transformer. It is planned as a mastering-friendly Baxandall-style EQ feeding a dedicated saturation module.
+BQST stands for Bax / Q / Tape-or-Transformer. It is planned as a mastering-friendly Baxandall-style EQ feeding a dedicated saturation module.
 
 ## Product Shape
 
@@ -118,7 +118,7 @@ The EQ uses broad, low-Q shelving curves rather than surgical shelves. The curre
 
 ## Bereich03 BAX-EQ Reference
 
-The Bereich03 BAX-EQ is useful as a curve and workflow reference, but it is not the same exact product shape as BQT's current EQ module.
+The Bereich03 BAX-EQ is useful as a curve and workflow reference, but it is not the same exact product shape as BQST's current EQ module.
 
 Important reference points from the page:
 
@@ -137,17 +137,17 @@ Important reference points from the page:
 
 Graph observations:
 
-- The high shelf graph shows very broad shelves that rise gradually over multiple octaves and reach the final shelf mostly in the upper treble. BQT borrows this broad transition behavior, not the exact frequencies.
-- The low shelf graph shows broad low-frequency boosts that remain flat into the sub range and transition back to flat through the low mids. BQT borrows this broad transition behavior, not the exact frequencies.
+- The high shelf graph shows very broad shelves that rise gradually over multiple octaves and reach the final shelf mostly in the upper treble. BQST borrows this broad transition behavior, not the exact frequencies.
+- The low shelf graph shows broad low-frequency boosts that remain flat into the sub range and transition back to flat through the low mids. BQST borrows this broad transition behavior, not the exact frequencies.
 - The gain graphs show relatively small, mastering-oriented gain steps rather than large tone-shaping boosts.
-- The published THD graph is extremely clean for an analog EQ, so this EQ reference should inform BQT's linear EQ curves, not the saturation section.
+- The published THD graph is extremely clean for an analog EQ, so this EQ reference should inform BQST's linear EQ curves, not the saturation section.
 
-BQT currently keeps independent Side A and Side B controls because that was part of the concept. It also currently has only low/high shelves, not the Bereich03 mid bell. Potential later changes if we want workflow parity rather than just curve inspiration:
+BQST currently keeps independent Side A and Side B controls because that was part of the concept. It also currently has only low/high shelves, not the Bereich03 mid bell. Potential later changes if we want workflow parity rather than just curve inspiration:
 
 - Add a selectable "BAX-EQ positions" frequency set using 35, 47, 62, 82, 120, 210 Hz and 1.2, 2.5, 4.7, 8, 11, 18 kHz.
 - Add a mid bell only if we want the EQ unit to become a three-band mastering EQ rather than a pure Bax shelf unit.
 - Consider per-band stereo/mid/side routing if we want to follow the Bereich03 workflow more closely.
-- Consider optional stepped gain behavior, but keep 0.1 dB controls for now because BQT is a plugin and fine automation is useful.
+- Consider optional stepped gain behavior, but keep 0.1 dB controls for now because BQST is a plugin and fine automation is useful.
 
 Potential later addition:
 

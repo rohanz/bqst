@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(BQT VERSION 0.1.0 LANGUAGES C CXX)
+project(BQST VERSION 0.1.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -21,12 +21,12 @@ juce_add_binary_data(BqtAssets
         assets/fonts/Chillax-Semibold.otf
 )
 
-juce_add_plugin(BQT
+juce_add_plugin(BQST
     COMPANY_NAME "Rohan"
     PLUGIN_MANUFACTURER_CODE RohK
-    PLUGIN_CODE Bqt1
+    PLUGIN_CODE Bqs1
     FORMATS VST3 Standalone
-    PRODUCT_NAME "BQT"
+    PRODUCT_NAME "BQST"
     IS_SYNTH FALSE
     NEEDS_MIDI_INPUT FALSE
     NEEDS_MIDI_OUTPUT FALSE
@@ -35,7 +35,7 @@ juce_add_plugin(BQT
     COPY_PLUGIN_AFTER_BUILD FALSE
 )
 
-target_sources(BQT
+target_sources(BQST
     PRIVATE
         src/PluginProcessor.cpp
         src/PluginProcessor.h
@@ -44,14 +44,14 @@ target_sources(BQT
         src/BqtDsp.h
 )
 
-target_compile_definitions(BQT
+target_compile_definitions(BQST
     PUBLIC
         JUCE_WEB_BROWSER=0
         JUCE_USE_CURL=0
         JUCE_VST3_CAN_REPLACE_VST2=0
 )
 
-target_link_libraries(BQT
+target_link_libraries(BQST
     PRIVATE
         BqtAssets
         juce::juce_audio_utils

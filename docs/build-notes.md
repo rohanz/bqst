@@ -15,7 +15,7 @@ cmake --build build --config Debug
 The development artifact is written to:
 
 ```text
-build/BQT_artefacts/VST3/BQT.vst3
+build/BQST_artefacts/VST3/BQST.vst3
 ```
 
 Rohan's current Ableton-scanned VST3 folder is:
@@ -27,7 +27,27 @@ Rohan's current Ableton-scanned VST3 folder is:
 Copy test builds there with:
 
 ```sh
-cp -R build/BQT_artefacts/VST3/BQT.vst3 /Users/rohan/Library/CloudStorage/OneDrive-Personal/dailystuff/music/vst3/
+cp -R build/BQST_artefacts/VST3/BQST.vst3 /Users/rohan/Library/CloudStorage/OneDrive-Personal/dailystuff/music/vst3/
+```
+
+## Build Release VST3
+
+```sh
+cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release
+cmake --build build-release --config Release
+```
+
+The release artifact is written to:
+
+```text
+build-release/BQST_artefacts/Release/VST3/BQST.vst3
+```
+
+Install the release build with:
+
+```sh
+rm -rf /Users/rohan/Library/CloudStorage/OneDrive-Personal/dailystuff/music/vst3/BQST.vst3
+cp -R build-release/BQST_artefacts/Release/VST3/BQST.vst3 /Users/rohan/Library/CloudStorage/OneDrive-Personal/dailystuff/music/vst3/
 ```
 
 Automatic copying into `~/Library/Audio/Plug-Ins/VST3` is disabled for now. This avoids permission issues during normal sandboxed development and keeps builds local to the project.
@@ -35,7 +55,7 @@ Automatic copying into `~/Library/Audio/Plug-Ins/VST3` is disabled for now. This
 ## Validate
 
 ```sh
-/Applications/pluginval.app/Contents/MacOS/pluginval --validate build/BQT_artefacts/VST3/BQT.vst3 --strictness-level 5
+/Applications/pluginval.app/Contents/MacOS/pluginval --validate build-release/BQST_artefacts/Release/VST3/BQST.vst3 --strictness-level 10
 ```
 
 This may need to run outside the sandbox because pluginval opens plugin bundles and editors.
