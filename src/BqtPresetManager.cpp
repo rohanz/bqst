@@ -11,40 +11,41 @@ struct ParameterValue
 struct FactoryPreset
 {
     const char* name;
+    const char* category;
     std::initializer_list<ParameterValue> values;
 };
 
 constexpr FactoryPreset factoryPresets[] {
-    { "Default", {} },
-    { "Clean Bax Lift",
+    { "Default", "General", {} },
+    { "Clean Bax Lift", "Master",
       {
           { "aHighGain", 1.2f }, { "bHighGain", 1.2f },
           { "aHighFreq", 5.0f }, { "bHighFreq", 5.0f },
           { "aLowGain", 0.7f },  { "bLowGain", 0.7f },
           { "aLowFreq", 3.0f },  { "bLowFreq", 3.0f },
       } },
-    { "Cream Glue",
+    { "Cream Glue", "Saturation",
       {
           { "aDrive", 5.0f }, { "bDrive", 5.0f },
           { "aMix", 72.0f },  { "bMix", 72.0f },
           { "aSatType", 0.0f }, { "bSatType", 0.0f },
           { "vintage", 1.0f },
       } },
-    { "Grit Console Push",
+    { "Grit Console Push", "Saturation",
       {
           { "aDrive", 7.5f }, { "bDrive", 7.5f },
           { "aMix", 58.0f },  { "bMix", 58.0f },
           { "aSatType", 1.0f }, { "bSatType", 1.0f },
           { "aOutputTrim", -0.8f }, { "bOutputTrim", -0.8f },
       } },
-    { "Wide Air MS",
+    { "Wide Air MS", "Master",
       {
           { "eqMode", 1.0f },
           { "aHighGain", 0.4f }, { "bHighGain", 1.5f },
           { "aHighFreq", 5.0f }, { "bHighFreq", 7.0f },
           { "aLowGain", 0.2f },  { "bLowGain", -0.3f },
       } },
-    { "Subtle Master Polish",
+    { "Subtle Master Polish", "Master",
       {
           { "aHighGain", 0.6f }, { "bHighGain", 0.6f },
           { "aHighFreq", 6.0f }, { "bHighFreq", 6.0f },
@@ -97,7 +98,7 @@ void BqtPresetManager::refresh()
     presets.clear();
 
     for (const auto& preset : factoryPresets)
-        presets.add({ preset.name, true, {} });
+        presets.add({ preset.name, preset.category, true, {} });
 
     factoryPresetCount = presets.size();
 
@@ -106,11 +107,17 @@ void BqtPresetManager::refresh()
         return;
 
     juce::Array<juce::File> files;
-    directory.findChildFiles(files, juce::File::findFiles, false, "*.bqstpreset");
+    directory.findChildFiles(files, juce::File::findFiles, true, "*.bqstpreset");
     files.sort();
 
     for (const auto& file : files)
-        presets.add({ file.getFileNameWithoutExtension(), false, file });
+    {
+        auto relativeParent = file.getParentDirectory().getRelativePathFrom(directory);
+        if (relativeParent == "." || relativeParent.isEmpty())
+            relativeParent = "User";
+
+        presets.add({ file.getFileNameWithoutExtension(), relativeParent.replaceCharacter(juce::File::getSeparatorChar(), '/'), false, file });
+    }
 }
 
 bool BqtPresetManager::loadPreset(int index)

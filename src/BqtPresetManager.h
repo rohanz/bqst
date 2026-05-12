@@ -8,6 +8,7 @@ public:
     struct PresetInfo
     {
         juce::String name;
+        juce::String category;
         bool factory = false;
         juce::File file;
     };

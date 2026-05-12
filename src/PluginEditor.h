@@ -123,15 +123,17 @@ private:
     void showReadout(juce::Component& target, const juce::String& text);
     void hideReadout();
     void refreshPresetMenu();
-    void loadSelectedPreset();
+    void showPresetMenu();
+    void loadPreset(int index);
     void selectRelativePreset(int offset);
     void saveUserPreset();
+    void updatePresetButtonText();
 
     HardwareLookAndFeel hardwareLookAndFeel;
     BqtAudioProcessor& audioProcessor;
     BqtPresetManager presetManager;
     juce::TextButton presetPrevious;
-    juce::ComboBox presetSelect;
+    juce::TextButton presetMenuButton;
     juce::TextButton presetNext;
     juce::TextButton presetSave;
     juce::ComboBox eqMode;
@@ -176,6 +178,7 @@ private:
     juce::uint32 helpHoverStartMs = 0;
     bool helpVisible = false;
     double previousInputTrimForCompensation = 0.0;
+    int selectedPresetIndex = 0;
     std::unique_ptr<juce::FileChooser> presetFileChooser;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(BqtAudioProcessorEditor)
