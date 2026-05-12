@@ -18,6 +18,9 @@ constexpr auto totalSlots = 4.0f;
 constexpr auto slotWidthInches = 1.5f;
 constexpr auto panelHeightInches = 5.25f;
 constexpr auto screwInsetYInches = (5.25f - 4.938f) * 0.5f;
+constexpr auto baseEditorWidth = 900;
+constexpr auto baseEditorHeight = 820;
+constexpr auto fixedEditorScale = 1.25f;
 const juce::StringArray lowFreqLabels { "74", "84", "98", "116", "131", "166", "230", "361" };
 const juce::StringArray highFreqLabels { "1.6k", "1.8k", "2.1k", "2.5k", "3.4k", "4.8k", "7.1k", "18k" };
 
@@ -98,7 +101,8 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
     : AudioProcessorEditor(&p), audioProcessor(p), meterA(p, 0), meterB(p, 1)
 {
     setLookAndFeel(&hardwareLookAndFeel);
-    setSize(900, 820);
+    setSize(static_cast<int>(std::round(static_cast<float>(baseEditorWidth) * fixedEditorScale)),
+            static_cast<int>(std::round(static_cast<float>(baseEditorHeight) * fixedEditorScale)));
 
     configureCombo(eqMode);
     configureCombo(satMode);
@@ -109,6 +113,7 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
     inputTrimLabel.setFont(faceFont(19.5f));
     configureSlider(inputTrim);
     inputTrim.getProperties().set("bqtTopInputKnob", true);
+    inputTrim.textFromValueFunction = [](double value) { return juce::String(value, 1) + " dB"; };
     inputTrim.setDoubleClickReturnValue(true, 0.0);
     addAndMakeVisible(autoGain);
     addAndMakeVisible(eqBypass);
@@ -117,10 +122,14 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
     addAndMakeVisible(satLink);
     addAndMakeVisible(vintage);
     addAndMakeVisible(bypass);
+    addAndMakeVisible(sizeToggle);
     addAndMakeVisible(meterA);
     addAndMakeVisible(meterB);
     meterA.setInterceptsMouseClicks(false, false);
     meterB.setInterceptsMouseClicks(false, false);
+    addAndMakeVisible(readoutBubble);
+    readoutBubble.setVisible(false);
+    readoutBubble.setInterceptsMouseClicks(false, false);
 
     autoGain.setButtonText("autogain");
     eqBypass.setButtonText("eq in");
@@ -129,13 +138,35 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
     satLink.setButtonText("sat link");
     vintage.setButtonText("vint.");
     bypass.setButtonText("bypass");
+    sizeToggle.setButtonText("size");
     eqMode.addItemList(juce::StringArray { "eq l/r", "eq m/s" }, 1);
     satMode.addItemList(juce::StringArray { "sat l/r", "sat m/s" }, 1);
-    osRealtime.addItemList(juce::StringArray { "rt off", "rt 2x", "rt 4x", "rt 8x" }, 1);
-    osRender.addItemList(juce::StringArray { "rn off", "rn 2x", "rn 4x", "rn 8x" }, 1);
+    osRealtime.addItemList(juce::StringArray { "realtime off", "realtime 2x", "realtime 4x", "realtime 8x" }, 1);
+    osRender.addItemList(juce::StringArray { "render off", "render 2x", "render 4x", "render 8x" }, 1);
+
+    setTopBarHelp(inputTrim, "Adjusts level before the EQ and saturation. Control-drag compensates output trim.");
+    setTopBarHelp(eqMode, "Chooses whether the EQ controls process left/right or mid/side.");
+    setTopBarHelp(eqLink, "Links the two EQ sides.");
+    setTopBarHelp(satMode, "Chooses whether the saturation controls process left/right or mid/side.");
+    setTopBarHelp(satLink, "Links the two saturation sides.");
+    setTopBarHelp(osRealtime, "Sets oversampling used during normal playback.");
+    setTopBarHelp(osRender, "Sets oversampling used for offline export or render.");
+    setTopBarHelp(autoGain, "Compensates saturation drive level so changes are easier to compare.");
+    setTopBarHelp(bypass, "Bypasses the whole plugin.");
+    setTopBarHelp(sizeToggle, "Switches between normal and large plugin size.");
+    setTopBarHelp(vintage, "Gently rounds the top end after saturation.");
 
     for (auto* button : { &autoGain, &eqBypass, &satBypass, &eqLink, &satLink, &bypass })
         button->getProperties().set("bqtPushButton", true);
+
+    sizeToggle.getProperties().set("bqtPushButton", true);
+    sizeToggle.onClick = [this]
+    {
+        const auto isLarge = getWidth() > baseEditorWidth;
+        const auto nextScale = isLarge ? 1.0f : fixedEditorScale;
+        setSize(static_cast<int>(std::round(static_cast<float>(baseEditorWidth) * nextScale)),
+                static_cast<int>(std::round(static_cast<float>(baseEditorHeight) * nextScale)));
+    };
 
     eqModeAttachment = std::make_unique<ComboBoxAttachment>(audioProcessor.state(), "eqMode", eqMode);
     satModeAttachment = std::make_unique<ComboBoxAttachment>(audioProcessor.state(), "satMode", satMode);
@@ -147,6 +178,7 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
     satLinkAttachment = std::make_unique<ButtonAttachment>(audioProcessor.state(), "satLink", satLink);
     vintageAttachment = std::make_unique<ButtonAttachment>(audioProcessor.state(), "vintage", vintage);
     bypassAttachment = std::make_unique<ButtonAttachment>(audioProcessor.state(), "bypass", bypass);
+    previousInputTrimForCompensation = inputTrim.getValue();
 
     auto setInButtonTarget = [this](const char* parameterId, juce::ToggleButton& button)
     {
@@ -167,53 +199,113 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
     for (int side = 0; side < 2; ++side)
         configureSide(sideControls[static_cast<size_t>(side)], side);
 
-    auto mirrorSlider = [](juce::Slider& source, juce::Slider& dest)
+    auto shouldMirror = [this](const char* linkParameterId)
     {
+        const auto linked = audioProcessor.state().getRawParameterValue(linkParameterId)->load() > 0.5f;
+        const auto controlDown = juce::ModifierKeys::currentModifiers.isCtrlDown();
+        return linked != controlDown;
+    };
+
+    auto mirrorSlider = [this](juce::Slider& source, juce::Slider& dest)
+    {
+        if (isMirroringLinkedControl)
+            return;
+
+        const juce::ScopedValueSetter<bool> scopedMirror(isMirroringLinkedControl, true);
         dest.setValue(source.getValue(), juce::sendNotificationSync);
+    };
+
+    auto mirrorChoice = [this](juce::ComboBox& source, juce::ComboBox& dest)
+    {
+        if (isMirroringLinkedControl)
+            return;
+
+        const juce::ScopedValueSetter<bool> scopedMirror(isMirroringLinkedControl, true);
+        dest.setSelectedItemIndex(source.getSelectedItemIndex(), juce::sendNotificationSync);
     };
 
     auto& left = sideControls[0];
     auto& right = sideControls[1];
-    left.lowGain.onValueChange = [this, &left, &right, mirrorSlider]
+    left.lowGain.onValueChange = [shouldMirror, &left, &right, mirrorSlider]
     {
-        if (audioProcessor.state().getRawParameterValue("eqLink")->load() > 0.5f)
+        if (shouldMirror("eqLink"))
             mirrorSlider(left.lowGain, right.lowGain);
     };
-    left.lowFreq.onValueChange = [this, &left, &right, mirrorSlider]
+    right.lowGain.onValueChange = [shouldMirror, &left, &right, mirrorSlider]
     {
-        if (audioProcessor.state().getRawParameterValue("eqLink")->load() > 0.5f)
+        if (shouldMirror("eqLink"))
+            mirrorSlider(right.lowGain, left.lowGain);
+    };
+    left.lowFreq.onValueChange = [shouldMirror, &left, &right, mirrorSlider]
+    {
+        if (shouldMirror("eqLink"))
             mirrorSlider(left.lowFreq, right.lowFreq);
     };
-    left.highGain.onValueChange = [this, &left, &right, mirrorSlider]
+    right.lowFreq.onValueChange = [shouldMirror, &left, &right, mirrorSlider]
     {
-        if (audioProcessor.state().getRawParameterValue("eqLink")->load() > 0.5f)
+        if (shouldMirror("eqLink"))
+            mirrorSlider(right.lowFreq, left.lowFreq);
+    };
+    left.highGain.onValueChange = [shouldMirror, &left, &right, mirrorSlider]
+    {
+        if (shouldMirror("eqLink"))
             mirrorSlider(left.highGain, right.highGain);
     };
-    left.highFreq.onValueChange = [this, &left, &right, mirrorSlider]
+    right.highGain.onValueChange = [shouldMirror, &left, &right, mirrorSlider]
     {
-        if (audioProcessor.state().getRawParameterValue("eqLink")->load() > 0.5f)
+        if (shouldMirror("eqLink"))
+            mirrorSlider(right.highGain, left.highGain);
+    };
+    left.highFreq.onValueChange = [shouldMirror, &left, &right, mirrorSlider]
+    {
+        if (shouldMirror("eqLink"))
             mirrorSlider(left.highFreq, right.highFreq);
     };
-
-    left.drive.onValueChange = [this, &left, &right, mirrorSlider]
+    right.highFreq.onValueChange = [shouldMirror, &left, &right, mirrorSlider]
     {
-        if (audioProcessor.state().getRawParameterValue("satLink")->load() > 0.5f)
+        if (shouldMirror("eqLink"))
+            mirrorSlider(right.highFreq, left.highFreq);
+    };
+
+    left.drive.onValueChange = [shouldMirror, &left, &right, mirrorSlider]
+    {
+        if (shouldMirror("satLink"))
             mirrorSlider(left.drive, right.drive);
     };
-    left.mix.onValueChange = [this, &left, &right, mirrorSlider]
+    right.drive.onValueChange = [shouldMirror, &left, &right, mirrorSlider]
     {
-        if (audioProcessor.state().getRawParameterValue("satLink")->load() > 0.5f)
+        if (shouldMirror("satLink"))
+            mirrorSlider(right.drive, left.drive);
+    };
+    left.mix.onValueChange = [shouldMirror, &left, &right, mirrorSlider]
+    {
+        if (shouldMirror("satLink"))
             mirrorSlider(left.mix, right.mix);
     };
-    left.outputTrim.onValueChange = [this, &left, &right, mirrorSlider]
+    right.mix.onValueChange = [shouldMirror, &left, &right, mirrorSlider]
     {
-        if (audioProcessor.state().getRawParameterValue("satLink")->load() > 0.5f)
+        if (shouldMirror("satLink"))
+            mirrorSlider(right.mix, left.mix);
+    };
+    left.outputTrim.onValueChange = [shouldMirror, &left, &right, mirrorSlider]
+    {
+        if (shouldMirror("satLink"))
             mirrorSlider(left.outputTrim, right.outputTrim);
     };
-    left.satType.onChange = [this, &left, &right]
+    right.outputTrim.onValueChange = [shouldMirror, &left, &right, mirrorSlider]
     {
-        if (audioProcessor.state().getRawParameterValue("satLink")->load() > 0.5f)
-            right.satType.setSelectedItemIndex(left.satType.getSelectedItemIndex(), juce::sendNotificationSync);
+        if (shouldMirror("satLink"))
+            mirrorSlider(right.outputTrim, left.outputTrim);
+    };
+    left.satType.onChange = [shouldMirror, &left, &right, mirrorChoice]
+    {
+        if (shouldMirror("satLink"))
+            mirrorChoice(left.satType, right.satType);
+    };
+    right.satType.onChange = [shouldMirror, &left, &right, mirrorChoice]
+    {
+        if (shouldMirror("satLink"))
+            mirrorChoice(right.satType, left.satType);
     };
 
     startTimerHz(12);
@@ -222,6 +314,35 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
 
 BqtAudioProcessorEditor::~BqtAudioProcessorEditor()
 {
+    inputTrim.removeListener(this);
+    inputTrim.removeMouseListener(this);
+    sizeToggle.removeMouseListener(this);
+
+    for (auto& controls : sideControls)
+    {
+        controls.lowGain.removeListener(this);
+        controls.lowFreq.removeListener(this);
+        controls.highGain.removeListener(this);
+        controls.highFreq.removeListener(this);
+        controls.drive.removeListener(this);
+        controls.mix.removeListener(this);
+        controls.outputTrim.removeListener(this);
+        controls.lowGain.removeMouseListener(this);
+        controls.lowFreq.removeMouseListener(this);
+        controls.highGain.removeMouseListener(this);
+        controls.highFreq.removeMouseListener(this);
+        controls.drive.removeMouseListener(this);
+        controls.mix.removeMouseListener(this);
+        controls.outputTrim.removeMouseListener(this);
+    }
+
+    for (auto* component : { static_cast<juce::Component*>(&eqMode), static_cast<juce::Component*>(&satMode),
+                             static_cast<juce::Component*>(&osRealtime), static_cast<juce::Component*>(&osRender),
+                             static_cast<juce::Component*>(&autoGain), static_cast<juce::Component*>(&eqLink),
+                             static_cast<juce::Component*>(&satLink), static_cast<juce::Component*>(&bypass),
+                             static_cast<juce::Component*>(&vintage), static_cast<juce::Component*>(&sizeToggle) })
+        component->removeMouseListener(this);
+
     setLookAndFeel(nullptr);
 }
 
@@ -231,7 +352,10 @@ void BqtAudioProcessorEditor::configureSlider(juce::Slider& slider)
     slider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
     slider.setVelocityBasedMode(false);
     slider.setVelocityModeParameters(0.35, 1, 0.0, true, juce::ModifierKeys::shiftModifier);
-    slider.setTooltip("Drag to adjust. Hold Shift for fine movement. Double-click the value to type.");
+    slider.textFromValueFunction = [](double value) { return juce::String(value, 1); };
+    slider.setTooltip({});
+    slider.addListener(this);
+    slider.addMouseListener(this, false);
     addAndMakeVisible(slider);
 }
 
@@ -259,43 +383,58 @@ void BqtAudioProcessorEditor::configureSide(SideControls& controls, int sideInde
     configureLabel(controls.highGainLabel, "hf");
     configureSlider(controls.highGain);
     controls.highGain.getProperties().set("bqtLargeCreamKnob", true);
+    controls.highGain.textFromValueFunction = [](double value) { return juce::String(value, 1) + " dB"; };
     configureLabel(controls.highFreqLabel, "freq");
     configureSlider(controls.highFreq);
     controls.highFreq.getProperties().set("bqtKnobCombo", true);
     controls.highFreq.setRange(0.0, 7.0, 1.0);
+    controls.highFreq.textFromValueFunction = [](double value) { return indexedLabel(highFreqLabels, value); };
     configureLabel(controls.lowGainLabel, "lf");
     configureSlider(controls.lowGain);
     controls.lowGain.getProperties().set("bqtLargeCreamKnob", true);
+    controls.lowGain.textFromValueFunction = [](double value) { return juce::String(value, 1) + " dB"; };
     configureLabel(controls.lowFreqLabel, "freq");
     configureSlider(controls.lowFreq);
     controls.lowFreq.getProperties().set("bqtKnobCombo", true);
     controls.lowFreq.setRange(0.0, 7.0, 1.0);
+    controls.lowFreq.textFromValueFunction = [](double value) { return indexedLabel(lowFreqLabels, value); };
     configureLabel(controls.driveLabel, "drive");
     configureSlider(controls.drive);
     controls.drive.getProperties().set("bqtLargeCreamKnob", true);
+    controls.drive.textFromValueFunction = [](double value) { return juce::String(value, 1) + " dB"; };
     configureLabel(controls.satTypeLabel, "sat. type");
     configureCombo(controls.satType);
     controls.satType.setVisible(false);
     controls.satTypeButton.getProperties().set("bqtSatTypeSelector", true);
     controls.satTypeButton.setButtonText("sat type");
     addAndMakeVisible(controls.satTypeButton);
+    controls.satTypeButton.getProperties().set("bqtCreamHelp", "Combination of op-amps, transistors and diodes for a smooth, thick saturation.");
+    controls.satTypeButton.getProperties().set("bqtGritHelp", "Transformer-style saturation with firmer edge and bite.");
     configureLabel(controls.mixLabel, "mix");
     configureSlider(controls.mix);
     controls.mix.getProperties().set("bqtSmallCreamKnob", true);
+    controls.mix.textFromValueFunction = [](double value) { return juce::String(value, 1) + "%"; };
     configureLabel(controls.outputTrimLabel, "output");
     configureSlider(controls.outputTrim);
     controls.outputTrim.getProperties().set("bqtSmallCreamKnob", true);
+    controls.outputTrim.textFromValueFunction = [](double value) { return juce::String(value, 1) + " dB"; };
     controls.lowGain.setDoubleClickReturnValue(true, 0.0);
     controls.highGain.setDoubleClickReturnValue(true, 0.0);
     controls.drive.setDoubleClickReturnValue(true, 0.0);
     controls.mix.setDoubleClickReturnValue(true, 100.0);
     controls.outputTrim.setDoubleClickReturnValue(true, 0.0);
     controls.satType.addItemList(juce::StringArray { "cream", "grit" }, 1);
-    controls.satTypeButton.onClick = [&combo = controls.satType, &button = controls.satTypeButton]
+    controls.satTypeButton.onClick = [this, &combo = controls.satType, &button = controls.satTypeButton]
     {
         const auto next = combo.getSelectedItemIndex() == 0 ? 1 : 0;
         combo.setSelectedItemIndex(next, juce::sendNotificationSync);
         button.setToggleState(next == 1, juce::dontSendNotification);
+
+        if (hoveredHelpComponent == &button && helpVisible)
+        {
+            hoveredHelpText = button.getProperties()[next == 1 ? "bqtGritHelp" : "bqtCreamHelp"].toString();
+            showReadout(button, hoveredHelpText);
+        }
     };
 
     const auto prefix = sidePrefix(sideIndex);
@@ -321,23 +460,395 @@ void BqtAudioProcessorEditor::timerCallback()
 
     updateLinkedControlStates();
     updateDynamicTooltips();
+
+    if (activeReadoutSlider != nullptr)
+    {
+        if (activeReadoutSlider->isMouseButtonDown())
+            updateDragValueReadout(*activeReadoutSlider);
+        else
+            hideDragValueReadout();
+    }
+
+    syncHoverTargetsFromMouse();
+    updateHoverValueReadout();
+    updateTopBarHelp();
+}
+
+void BqtAudioProcessorEditor::sliderValueChanged(juce::Slider* slider)
+{
+    if (slider == nullptr)
+        return;
+
+    if (slider == &inputTrim)
+    {
+        const auto currentInputTrim = inputTrim.getValue();
+        const auto deltaDb = currentInputTrim - previousInputTrimForCompensation;
+        previousInputTrimForCompensation = currentInputTrim;
+
+        if (inputTrim.isMouseButtonDown()
+            && juce::ModifierKeys::currentModifiers.isCtrlDown()
+            && std::abs(deltaDb) > 0.0)
+        {
+            const juce::ScopedValueSetter<bool> scopedMirror(isMirroringLinkedControl, true);
+            for (auto& controls : sideControls)
+            {
+                const auto compensatedValue = juce::jlimit(controls.outputTrim.getMinimum(),
+                                                          controls.outputTrim.getMaximum(),
+                                                          controls.outputTrim.getValue() - deltaDb);
+                controls.outputTrim.setValue(compensatedValue, juce::sendNotificationSync);
+            }
+        }
+    }
+
+    updateDragValueReadout(*slider);
+}
+
+void BqtAudioProcessorEditor::sliderDragStarted(juce::Slider* slider)
+{
+    if (slider == nullptr)
+        return;
+
+    hideHoverValueReadout();
+
+    if (slider == &inputTrim)
+        previousInputTrimForCompensation = inputTrim.getValue();
+
+    updateDragValueReadout(*slider);
+}
+
+void BqtAudioProcessorEditor::sliderDragEnded(juce::Slider*)
+{
+    hideDragValueReadout();
+}
+
+void BqtAudioProcessorEditor::mouseEnter(const juce::MouseEvent& event)
+{
+    auto* component = event.originalComponent;
+    while (component != nullptr && component != this)
+    {
+        if (component->getProperties().contains("bqtHelpText"))
+        {
+            hideHoverValueReadout();
+            hoveredHelpComponent = component;
+            hoveredHelpText = component->getProperties()["bqtHelpText"].toString();
+            helpHoverStartMs = juce::Time::getMillisecondCounter();
+            helpVisible = false;
+            return;
+        }
+
+        component = component->getParentComponent();
+    }
+
+    if (auto* slider = dynamic_cast<juce::Slider*>(event.originalComponent))
+    {
+        hideTopBarHelp();
+        hoveredReadoutSlider = slider;
+        hoverReadoutStartMs = juce::Time::getMillisecondCounter();
+        hoverReadoutVisible = false;
+    }
+}
+
+void BqtAudioProcessorEditor::mouseMove(const juce::MouseEvent& event)
+{
+    auto* component = event.originalComponent;
+    while (component != nullptr && component != this)
+    {
+        if (component->getProperties().contains("bqtHelpText"))
+        {
+            if (hoveredHelpComponent != component)
+            {
+                hideTopBarHelp();
+                hoveredHelpComponent = component;
+                hoveredHelpText = component->getProperties()["bqtHelpText"].toString();
+            }
+
+            helpHoverStartMs = juce::Time::getMillisecondCounter();
+            return;
+        }
+
+        component = component->getParentComponent();
+    }
+
+    if (auto* slider = dynamic_cast<juce::Slider*>(event.originalComponent))
+    {
+        if (hoveredReadoutSlider != slider)
+        {
+            hoveredReadoutSlider = slider;
+            hoverReadoutVisible = false;
+        }
+
+        hoverReadoutStartMs = juce::Time::getMillisecondCounter();
+
+        if (hoverReadoutVisible)
+            hideHoverValueReadout();
+    }
+}
+
+void BqtAudioProcessorEditor::mouseExit(const juce::MouseEvent& event)
+{
+    if (event.originalComponent == hoveredReadoutSlider)
+        hideHoverValueReadout();
+
+    auto* component = event.originalComponent;
+    while (component != nullptr && component != this)
+    {
+        if (component == hoveredHelpComponent)
+        {
+            hideTopBarHelp();
+            return;
+        }
+
+        component = component->getParentComponent();
+    }
+}
+
+void BqtAudioProcessorEditor::mouseDoubleClick(const juce::MouseEvent& event)
+{
+    if (! event.mods.isCtrlDown())
+        return;
+
+    auto* component = event.originalComponent;
+    while (component != nullptr && component != this)
+    {
+        if (component == &inputTrim)
+        {
+            const juce::ScopedValueSetter<bool> scopedMirror(isMirroringLinkedControl, true);
+            for (auto& controls : sideControls)
+                controls.outputTrim.setValue(0.0, juce::sendNotificationSync);
+
+            previousInputTrimForCompensation = 0.0;
+            return;
+        }
+
+        component = component->getParentComponent();
+    }
+}
+
+void BqtAudioProcessorEditor::updateDragValueReadout(juce::Slider& slider)
+{
+    if (! slider.isMouseButtonDown())
+        return;
+
+    activeReadoutSlider = &slider;
+    juce::Component::SafePointer<juce::Slider> safeSlider(&slider);
+    juce::MessageManager::callAsync([this, safeSlider]
+    {
+        if (safeSlider == nullptr || activeReadoutSlider != safeSlider.getComponent())
+            return;
+
+        auto& currentSlider = *safeSlider;
+        if (! currentSlider.isMouseButtonDown())
+            return;
+
+        showReadout(currentSlider, currentSlider.getTextFromValue(currentSlider.getValue()));
+    });
+}
+
+void BqtAudioProcessorEditor::hideDragValueReadout()
+{
+    activeReadoutSlider = nullptr;
+    if (hoveredReadoutSlider == nullptr && hoveredHelpComponent == nullptr)
+        hideReadout();
+}
+
+void BqtAudioProcessorEditor::syncHoverTargetsFromMouse()
+{
+    if (activeReadoutSlider != nullptr || juce::ModifierKeys::currentModifiers.isAnyMouseButtonDown())
+        return;
+
+    auto* component = juce::Desktop::getInstance().getMainMouseSource().getComponentUnderMouse();
+
+    auto& mainControls = sideControls[0];
+    if (mainControls.satTypeButton.isParentOf(component) || component == &mainControls.satTypeButton)
+    {
+        const auto gritSelected = mainControls.satType.getSelectedItemIndex() == 1;
+        auto helpText = mainControls.satTypeButton.getProperties()[gritSelected ? "bqtGritHelp" : "bqtCreamHelp"].toString();
+
+        if (hoveredHelpComponent != &mainControls.satTypeButton || hoveredHelpText != helpText)
+        {
+            hideHoverValueReadout();
+            hoveredHelpComponent = &mainControls.satTypeButton;
+            hoveredHelpText = helpText;
+            helpHoverStartMs = juce::Time::getMillisecondCounter();
+            helpVisible = false;
+        }
+
+        return;
+    }
+
+    auto* helpComponent = component;
+    while (helpComponent != nullptr && helpComponent != this)
+    {
+        if (helpComponent->getProperties().contains("bqtHelpText"))
+            break;
+
+        helpComponent = helpComponent->getParentComponent();
+    }
+
+    if (helpComponent != nullptr && helpComponent != this)
+    {
+        if (hoveredHelpComponent != helpComponent)
+        {
+            hideHoverValueReadout();
+            hoveredHelpComponent = helpComponent;
+            hoveredHelpText = helpComponent->getProperties()["bqtHelpText"].toString();
+            helpHoverStartMs = juce::Time::getMillisecondCounter();
+            helpVisible = false;
+        }
+
+        return;
+    }
+
+    if (hoveredHelpComponent != nullptr)
+        hideTopBarHelp();
+
+    auto* sliderComponent = component;
+    while (sliderComponent != nullptr && sliderComponent != this)
+    {
+        if (auto* slider = dynamic_cast<juce::Slider*>(sliderComponent))
+        {
+            if (hoveredReadoutSlider != slider)
+            {
+                hideHoverValueReadout();
+                hoveredReadoutSlider = slider;
+                hoverReadoutStartMs = juce::Time::getMillisecondCounter();
+                hoverReadoutVisible = false;
+            }
+
+            return;
+        }
+
+        sliderComponent = sliderComponent->getParentComponent();
+    }
+
+    if (hoveredReadoutSlider != nullptr)
+        hideHoverValueReadout();
+}
+
+void BqtAudioProcessorEditor::updateHoverValueReadout()
+{
+    if (hoveredReadoutSlider == nullptr || activeReadoutSlider != nullptr)
+        return;
+
+    if (hoveredReadoutSlider->isMouseButtonDown())
+        return;
+
+    if (! hoveredReadoutSlider->isMouseOver())
+    {
+        hideHoverValueReadout();
+        return;
+    }
+
+    constexpr juce::uint32 hoverDelayMs = 300;
+    if (! hoverReadoutVisible
+        && juce::Time::getMillisecondCounter() - hoverReadoutStartMs >= hoverDelayMs)
+    {
+        showReadout(*hoveredReadoutSlider, hoveredReadoutSlider->getTextFromValue(hoveredReadoutSlider->getValue()));
+        hoverReadoutVisible = true;
+    }
+}
+
+void BqtAudioProcessorEditor::hideHoverValueReadout()
+{
+    if (activeReadoutSlider == nullptr && hoveredHelpComponent == nullptr)
+        hideReadout();
+
+    hoveredReadoutSlider = nullptr;
+    hoverReadoutVisible = false;
+}
+
+void BqtAudioProcessorEditor::updateTopBarHelp()
+{
+    if (hoveredHelpComponent == nullptr || activeReadoutSlider != nullptr)
+        return;
+
+    if (! hoveredHelpComponent->isMouseOver(true))
+    {
+        hideTopBarHelp();
+        return;
+    }
+
+    constexpr juce::uint32 hoverDelayMs = 300;
+    if (! helpVisible
+        && juce::Time::getMillisecondCounter() - helpHoverStartMs >= hoverDelayMs)
+    {
+        showReadout(*hoveredHelpComponent, hoveredHelpText);
+        helpVisible = true;
+    }
+}
+
+void BqtAudioProcessorEditor::hideTopBarHelp()
+{
+    if (activeReadoutSlider == nullptr && ! hoverReadoutVisible)
+        hideReadout();
+
+    hoveredHelpComponent = nullptr;
+    hoveredHelpText.clear();
+    helpVisible = false;
+}
+
+void BqtAudioProcessorEditor::setTopBarHelp(juce::Component& component, const juce::String& text)
+{
+    if (auto* slider = dynamic_cast<juce::Slider*>(&component))
+        slider->setTooltip({});
+    else if (auto* combo = dynamic_cast<juce::ComboBox*>(&component))
+        combo->setTooltip({});
+    else if (auto* button = dynamic_cast<juce::Button*>(&component))
+        button->setTooltip({});
+
+    component.getProperties().set("bqtHelpText", text);
+    if (dynamic_cast<juce::Slider*>(&component) == nullptr)
+        component.addMouseListener(this, true);
+}
+
+void BqtAudioProcessorEditor::showReadout(juce::Component& target, const juce::String& text)
+{
+    if (text.isEmpty())
+        return;
+
+    const auto font = juce::Font(faceFont(16.5f, true));
+    const auto width = static_cast<int>(std::ceil(getTextWidth(font, text) + 22.0f));
+    constexpr int height = 31;
+    const auto targetBounds = target.getBounds();
+    auto bounds = juce::Rectangle<int>(width, height).withCentre({ targetBounds.getCentreX(), targetBounds.getY() - 8 });
+
+    if (bounds.getY() < 4)
+        bounds.setY(targetBounds.getBottom() + 8);
+
+    readoutBubble.setText(text);
+    readoutBubble.setBounds(bounds.constrainedWithin({ 0, 0, baseEditorWidth, baseEditorHeight }));
+    readoutBubble.setVisible(true);
+    readoutBubble.toFront(false);
+}
+
+void BqtAudioProcessorEditor::hideReadout()
+{
+    readoutBubble.setVisible(false);
+}
+
+void BqtAudioProcessorEditor::ReadoutBubble::setText(juce::String newText)
+{
+    if (text == newText)
+        return;
+
+    text = std::move(newText);
+    repaint();
+}
+
+void BqtAudioProcessorEditor::ReadoutBubble::paint(juce::Graphics& g)
+{
+    const auto bounds = getLocalBounds().toFloat();
+    g.setColour(juce::Colour(0xff111111));
+    g.fillRoundedRectangle(bounds.reduced(1.0f), 3.0f);
+    g.setColour(juce::Colour(panelText).withAlpha(0.72f));
+    g.drawRoundedRectangle(bounds.reduced(1.0f), 3.0f, 1.0f);
+    g.setColour(juce::Colour(panelText));
+    g.setFont(juce::Font(faceFont(16.5f, true)));
+    g.drawText(text, getLocalBounds().reduced(8, 2), juce::Justification::centred);
 }
 
 void BqtAudioProcessorEditor::updateDynamicTooltips()
 {
-    inputTrim.setTooltip("input " + juce::String(inputTrim.getValue(), 1) + " dB");
-
-    for (auto& controls : sideControls)
-    {
-        controls.highGain.setTooltip("hf " + juce::String(controls.highGain.getValue(), 1) + " dB");
-        controls.lowGain.setTooltip("lf " + juce::String(controls.lowGain.getValue(), 1) + " dB");
-        controls.drive.setTooltip("drive " + juce::String(controls.drive.getValue(), 1) + " dB");
-        controls.mix.setTooltip("mix " + juce::String(controls.mix.getValue(), 1) + "%");
-        controls.outputTrim.setTooltip("output " + juce::String(controls.outputTrim.getValue(), 1) + " dB");
-        controls.highFreq.setTooltip("hf freq " + indexedLabel(highFreqLabels, controls.highFreq.getValue()));
-        controls.lowFreq.setTooltip("lf freq " + indexedLabel(lowFreqLabels, controls.lowFreq.getValue()));
-        controls.satTypeButton.setTooltip("sat type " + controls.satType.getText());
-    }
 }
 
 void BqtAudioProcessorEditor::updateLinkedControlStates()
@@ -529,16 +1040,27 @@ void BqtAudioProcessorEditor::HardwareLookAndFeel::drawComboBox(juce::Graphics& 
         return;
     }
 
-    const auto bounds = juce::Rectangle<float>(0.5f, 0.5f, static_cast<float>(width) - 1.0f, static_cast<float>(height) - 1.0f);
-    g.setColour(isButtonDown ? juce::Colour(0xffefe1d8) : juce::Colour(cream));
+    const auto bounds = juce::Rectangle<float>(0.5f, 0.5f, static_cast<float>(width) - 1.0f, static_cast<float>(height) - 1.0f)
+                            .reduced(1.0f, 2.0f);
+    g.setColour(juce::Colours::black.withAlpha(0.42f));
+    g.fillRoundedRectangle(bounds.translated(0.0f, 3.0f), 4.0f);
+
+    juce::ColourGradient buttonGradient(isButtonDown ? juce::Colour(0xffeee4dc) : juce::Colour(cream),
+                                        bounds.getCentreX(), bounds.getY(),
+                                        isButtonDown ? juce::Colour(0xffcfc4bb) : juce::Colour(0xffded3ca),
+                                        bounds.getCentreX(), bounds.getBottom(), false);
+    g.setGradientFill(buttonGradient);
     g.fillRoundedRectangle(bounds, 4.0f);
+    g.setColour(juce::Colours::white.withAlpha(0.45f));
+    g.drawRoundedRectangle(bounds.reduced(1.0f), 3.0f, 1.0f);
     g.setColour(juce::Colour(panelText));
-    g.drawRoundedRectangle(bounds, 4.0f, 1.5f);
+    g.drawRoundedRectangle(bounds, 4.0f, 1.2f);
 
     juce::Path arrow;
     const auto cx = bounds.getRight() - 13.0f;
     const auto cy = bounds.getCentreY();
     arrow.addTriangle(cx - 4.0f, cy - 2.0f, cx + 4.0f, cy - 2.0f, cx, cy + 3.0f);
+    g.setColour(juce::Colour(ink));
     g.fillPath(arrow);
     box.setColour(juce::Label::textColourId, juce::Colour(ink));
 }
@@ -557,9 +1079,9 @@ void BqtAudioProcessorEditor::HardwareLookAndFeel::positionComboBoxText(juce::Co
         return;
     }
 
-    label.setBounds(10, 1, box.getWidth() - 27, box.getHeight() - 2);
-    label.setFont(juce::Font(faceFont(18.5f)));
-    label.setJustificationType(juce::Justification::centredLeft);
+    label.setBounds(7, 1, box.getWidth() - 21, box.getHeight() - 2);
+    label.setFont(juce::Font(faceFont(15.8f)));
+    label.setJustificationType(juce::Justification::centred);
 }
 
 void BqtAudioProcessorEditor::HardwareLookAndFeel::drawToggleButton(juce::Graphics& g, juce::ToggleButton& button,
@@ -568,27 +1090,27 @@ void BqtAudioProcessorEditor::HardwareLookAndFeel::drawToggleButton(juce::Graphi
 {
     if (button.getProperties().contains("bqtPushButton") && static_cast<bool>(button.getProperties()["bqtPushButton"]))
     {
-        const auto toggled = button.getToggleState();
-        const auto pressed = shouldDrawButtonAsDown || toggled;
+        const auto active = button.getToggleState();
+        const auto pressed = shouldDrawButtonAsDown || active;
         auto bounds = button.getLocalBounds().toFloat().reduced(1.0f, 2.0f);
 
-        g.setColour(juce::Colours::black.withAlpha(pressed ? 0.18f : 0.42f));
+        g.setColour(juce::Colours::black.withAlpha(pressed ? 0.24f : 0.42f));
         g.fillRoundedRectangle(bounds.translated(0.0f, pressed ? 1.0f : 3.0f), 4.0f);
 
         if (pressed)
-            bounds = bounds.reduced(2.0f).translated(0.0f, 1.0f);
+            bounds = bounds.reduced(0.8f).translated(0.0f, 0.7f);
 
-        const auto topColour = pressed ? juce::Colour(0xffd6cdc5) : juce::Colour(cream);
-        const auto bottomColour = pressed ? juce::Colour(0xffb7ada5) : juce::Colour(0xffded3ca);
+        const auto topColour = pressed ? juce::Colour(0xffeee4dc) : juce::Colour(cream);
+        const auto bottomColour = pressed ? juce::Colour(0xffcfc4bb) : juce::Colour(0xffded3ca);
         juce::ColourGradient buttonGradient(topColour, bounds.getCentreX(), bounds.getY(),
                                             bottomColour, bounds.getCentreX(), bounds.getBottom(), false);
         g.setGradientFill(buttonGradient);
         g.fillRoundedRectangle(bounds, 4.0f);
 
-        g.setColour(pressed ? juce::Colours::black.withAlpha(0.22f) : juce::Colours::white.withAlpha(0.45f));
+        g.setColour(pressed ? juce::Colours::black.withAlpha(0.26f) : juce::Colours::white.withAlpha(0.45f));
         g.drawRoundedRectangle(bounds.reduced(1.0f), 3.0f, 1.0f);
-        g.setColour(juce::Colour(panelText));
-        g.drawRoundedRectangle(bounds, 4.0f, 1.2f);
+        g.setColour(pressed ? juce::Colour(ink).withAlpha(0.56f) : juce::Colour(panelText));
+        g.drawRoundedRectangle(bounds, 4.0f, pressed ? 1.7f : 1.2f);
 
         if (shouldDrawButtonAsHighlighted && ! pressed)
         {
@@ -597,7 +1119,7 @@ void BqtAudioProcessorEditor::HardwareLookAndFeel::drawToggleButton(juce::Graphi
         }
 
         g.setColour(juce::Colour(ink).withAlpha(button.isEnabled() ? 1.0f : 0.38f));
-        g.setFont(juce::Font(faceFont(18.0f)));
+        g.setFont(juce::Font(faceFont(15.8f)));
         g.drawText(button.getButtonText().toLowerCase(), bounds.toNearestInt(), juce::Justification::centred);
         return;
     }
@@ -722,10 +1244,39 @@ void BqtAudioProcessorEditor::HardwareLookAndFeel::drawButtonText(juce::Graphics
 {
 }
 
+juce::Rectangle<int> BqtAudioProcessorEditor::HardwareLookAndFeel::getTooltipBounds(const juce::String& tipText,
+                                                                                   juce::Point<int> screenPos,
+                                                                                   juce::Rectangle<int> parentArea)
+{
+    const auto font = juce::Font(faceFont(16.5f, true));
+    const auto width = static_cast<int>(std::ceil(getTextWidth(font, tipText) + 22.0f));
+    const auto height = 31;
+    auto bounds = juce::Rectangle<int>(width, height).withCentre({ screenPos.x, screenPos.y - height / 2 - 3 });
+
+    if (bounds.getY() < parentArea.getY())
+        bounds.setY(screenPos.y + 8);
+
+    return bounds.constrainedWithin(parentArea);
+}
+
+void BqtAudioProcessorEditor::HardwareLookAndFeel::drawTooltip(juce::Graphics& g, const juce::String& text,
+                                                               int width, int height)
+{
+    const auto bounds = juce::Rectangle<float>(0.0f, 0.0f, static_cast<float>(width), static_cast<float>(height));
+    g.fillAll(juce::Colours::transparentBlack);
+    g.setColour(juce::Colour(0xff111111));
+    g.fillRoundedRectangle(bounds.reduced(1.0f), 3.0f);
+    g.setColour(juce::Colour(panelText).withAlpha(0.72f));
+    g.drawRoundedRectangle(bounds.reduced(1.0f), 3.0f, 1.0f);
+    g.setColour(juce::Colour(panelText));
+    g.setFont(juce::Font(faceFont(16.5f, true)));
+    g.drawText(text, juce::Rectangle<int>(width, height).reduced(8, 2), juce::Justification::centred);
+}
+
 BqtAudioProcessorEditor::VuMeter::VuMeter(BqtAudioProcessor& p, int sideIndex)
     : audioProcessor(p), side(sideIndex)
 {
-    startTimerHz(24);
+    startTimerHz(60);
 }
 
 void BqtAudioProcessorEditor::VuMeter::paint(juce::Graphics& g)
@@ -824,7 +1375,7 @@ void BqtAudioProcessorEditor::VuMeter::paint(juce::Graphics& g)
     g.drawText("VU", inner.withTrimmedTop(inner.getHeight() * 0.38f).withHeight(22.0f).toNearestInt(),
                juce::Justification::centred);
 
-    const auto needleAngle = start + juce::jlimit(0.0f, 1.0f, level) * (end - start);
+    const auto needleAngle = start + juce::jlimit(0.0f, 1.0f, displayedLevel) * (end - start);
     const auto needleEnd = polar(centre, radius + 7.0f, needleAngle);
     g.setColour(juce::Colour(0xff8d6e63));
     g.drawLine({ needlePivot, needleEnd }, 2.6f);
@@ -838,16 +1389,22 @@ void BqtAudioProcessorEditor::VuMeter::timerCallback()
     const auto db = juce::Decibels::gainToDecibels(raw, -60.0f);
     const auto vu = db + 18.0f;
     const auto clampedVu = juce::jlimit(-20.0f, 3.0f, vu);
-    level = clampedVu <= 0.0f ? ((clampedVu + 20.0f) / 20.0f) * 0.82f
-                              : 0.82f + (clampedVu / 3.0f) * 0.18f;
+    targetLevel = clampedVu <= 0.0f ? ((clampedVu + 20.0f) / 20.0f) * 0.82f
+                                    : 0.82f + (clampedVu / 3.0f) * 0.18f;
+    displayedLevel += (targetLevel - displayedLevel) * 0.18f;
     repaint();
 }
 
 void BqtAudioProcessorEditor::paint(juce::Graphics& g)
 {
+    const auto uiScale = static_cast<float>(getWidth()) / static_cast<float>(baseEditorWidth);
+    juce::Graphics::ScopedSaveState savedState(g);
+    g.addTransform(juce::AffineTransform::scale(uiScale));
+
     g.fillAll(juce::Colour(0xfff5f2ef));
 
-    auto bounds = getLocalBounds().toFloat().reduced(18.0f);
+    auto bounds = juce::Rectangle<float>(0.0f, 0.0f, static_cast<float>(baseEditorWidth),
+                                         static_cast<float>(baseEditorHeight)).reduced(18.0f);
     auto top = bounds.removeFromTop(62.0f);
     bounds.removeFromTop(10.0f);
     auto rack = getRackFaceBounds(bounds);
@@ -1064,32 +1621,81 @@ void BqtAudioProcessorEditor::paint(juce::Graphics& g)
 
 void BqtAudioProcessorEditor::resized()
 {
-    auto bounds = getLocalBounds().reduced(18);
-    auto top = bounds.removeFromTop(62).reduced(18, 14);
+    const auto uiScale = static_cast<float>(getWidth()) / static_cast<float>(baseEditorWidth);
+
+    auto applyUiScale = [uiScale](juce::Component& component)
+    {
+        component.setTransform(juce::AffineTransform::scale(uiScale));
+    };
+
+    for (auto* component : { static_cast<juce::Component*>(&inputTrimLabel), static_cast<juce::Component*>(&inputTrim),
+                             static_cast<juce::Component*>(&eqMode), static_cast<juce::Component*>(&satMode),
+                             static_cast<juce::Component*>(&osRealtime), static_cast<juce::Component*>(&osRender),
+                             static_cast<juce::Component*>(&autoGain), static_cast<juce::Component*>(&eqBypass),
+                             static_cast<juce::Component*>(&satBypass), static_cast<juce::Component*>(&eqLink),
+                             static_cast<juce::Component*>(&satLink), static_cast<juce::Component*>(&vintage),
+                             static_cast<juce::Component*>(&bypass), static_cast<juce::Component*>(&sizeToggle),
+                             static_cast<juce::Component*>(&meterA),
+                             static_cast<juce::Component*>(&meterB), static_cast<juce::Component*>(&readoutBubble) })
+        applyUiScale(*component);
+
+    for (auto& controls : sideControls)
+    {
+        for (auto* component : { static_cast<juce::Component*>(&controls.eqSectionLabel),
+                                 static_cast<juce::Component*>(&controls.satSectionLabel),
+                                 static_cast<juce::Component*>(&controls.lowGainLabel),
+                                 static_cast<juce::Component*>(&controls.lowGain),
+                                 static_cast<juce::Component*>(&controls.lowFreqLabel),
+                                 static_cast<juce::Component*>(&controls.lowFreq),
+                                 static_cast<juce::Component*>(&controls.highGainLabel),
+                                 static_cast<juce::Component*>(&controls.highGain),
+                                 static_cast<juce::Component*>(&controls.highFreqLabel),
+                                 static_cast<juce::Component*>(&controls.highFreq),
+                                 static_cast<juce::Component*>(&controls.driveLabel),
+                                 static_cast<juce::Component*>(&controls.drive),
+                                 static_cast<juce::Component*>(&controls.satTypeLabel),
+                                 static_cast<juce::Component*>(&controls.satType),
+                                 static_cast<juce::Component*>(&controls.satTypeButton),
+                                 static_cast<juce::Component*>(&controls.mixLabel),
+                                 static_cast<juce::Component*>(&controls.mix),
+                                 static_cast<juce::Component*>(&controls.outputTrimLabel),
+                                 static_cast<juce::Component*>(&controls.outputTrim) })
+            applyUiScale(*component);
+    }
+
+    auto bounds = juce::Rectangle<int>(0, 0, baseEditorWidth, baseEditorHeight).reduced(18);
+    auto top = bounds.removeFromTop(62).reduced(8, 14);
     constexpr int topControlHeight = 36;
 
-    constexpr int topControlWidth = 80;
-    constexpr int topGap = 8;
+    constexpr int modeControlWidth = 80;
+    constexpr int linkControlWidth = 70;
+    constexpr int oversamplingControlWidth = 112;
+    constexpr int autoGainControlWidth = 78;
+    constexpr int bypassControlWidth = 70;
+    constexpr int sizeControlWidth = 50;
+    constexpr int topGap = 4;
     auto topSlot = [](juce::Rectangle<int> area) { return area.withSizeKeepingCentre(area.getWidth(), topControlHeight); };
 
-    inputTrimLabel.setBounds(topSlot(top.removeFromLeft(62)));
-    inputTrim.setBounds(topSlot(top.removeFromLeft(62)));
+    inputTrimLabel.setBounds(topSlot(top.removeFromLeft(47)));
+    inputTrim.setBounds(topSlot(top.removeFromLeft(48)));
     top.removeFromLeft(topGap);
-    eqMode.setBounds(topSlot(top.removeFromLeft(topControlWidth)));
+    eqMode.setBounds(topSlot(top.removeFromLeft(modeControlWidth)));
     top.removeFromLeft(topGap);
-    eqLink.setBounds(topSlot(top.removeFromLeft(topControlWidth)));
+    eqLink.setBounds(topSlot(top.removeFromLeft(linkControlWidth)));
     top.removeFromLeft(topGap);
-    satMode.setBounds(topSlot(top.removeFromLeft(topControlWidth)));
+    satMode.setBounds(topSlot(top.removeFromLeft(modeControlWidth)));
     top.removeFromLeft(topGap);
-    satLink.setBounds(topSlot(top.removeFromLeft(topControlWidth)));
+    satLink.setBounds(topSlot(top.removeFromLeft(linkControlWidth)));
     top.removeFromLeft(topGap);
-    osRealtime.setBounds(topSlot(top.removeFromLeft(topControlWidth)));
+    osRealtime.setBounds(topSlot(top.removeFromLeft(oversamplingControlWidth)));
     top.removeFromLeft(topGap);
-    osRender.setBounds(topSlot(top.removeFromLeft(topControlWidth)));
+    osRender.setBounds(topSlot(top.removeFromLeft(oversamplingControlWidth)));
     top.removeFromLeft(topGap);
-    autoGain.setBounds(topSlot(top.removeFromLeft(topControlWidth)));
+    autoGain.setBounds(topSlot(top.removeFromLeft(autoGainControlWidth)));
     top.removeFromLeft(topGap);
-    bypass.setBounds(topSlot(top.removeFromLeft(topControlWidth)));
+    bypass.setBounds(topSlot(top.removeFromLeft(bypassControlWidth)));
+    top.removeFromLeft(topGap);
+    sizeToggle.setBounds(topSlot(top.removeFromLeft(sizeControlWidth)));
     eqBypass.setBounds(-2000, -2000, 1, 1);
     satBypass.setBounds(-2000, -2000, 1, 1);
 

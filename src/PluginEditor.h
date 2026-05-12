@@ -4,7 +4,9 @@
 
 #include "PluginProcessor.h"
 
-class BqtAudioProcessorEditor final : public juce::AudioProcessorEditor, private juce::Timer
+class BqtAudioProcessorEditor final : public juce::AudioProcessorEditor,
+                                      private juce::Timer,
+                                      private juce::Slider::Listener
 {
 public:
     explicit BqtAudioProcessorEditor(BqtAudioProcessor&);
@@ -61,7 +63,8 @@ private:
 
         BqtAudioProcessor& audioProcessor;
         int side = 0;
-        float level = 0.0f;
+        float targetLevel = 0.0f;
+        float displayedLevel = 0.0f;
     };
 
     class HardwareLookAndFeel final : public juce::LookAndFeel_V4
@@ -79,6 +82,19 @@ private:
                                   bool shouldDrawButtonAsHighlighted, bool shouldDrawButtonAsDown) override;
         void drawButtonText(juce::Graphics& g, juce::TextButton& button, bool shouldDrawButtonAsHighlighted,
                             bool shouldDrawButtonAsDown) override;
+        juce::Rectangle<int> getTooltipBounds(const juce::String& tipText, juce::Point<int> screenPos,
+                                              juce::Rectangle<int> parentArea) override;
+        void drawTooltip(juce::Graphics& g, const juce::String& text, int width, int height) override;
+    };
+
+    class ReadoutBubble final : public juce::Component
+    {
+    public:
+        void setText(juce::String newText);
+        void paint(juce::Graphics& g) override;
+
+    private:
+        juce::String text;
     };
 
     void configureSlider(juce::Slider& slider);
@@ -86,8 +102,25 @@ private:
     void configureLabel(juce::Label& label, const juce::String& text, juce::Justification justification = juce::Justification::centred);
     void configureSide(SideControls& controls, int sideIndex);
     void timerCallback() override;
+    void sliderValueChanged(juce::Slider* slider) override;
+    void sliderDragStarted(juce::Slider* slider) override;
+    void sliderDragEnded(juce::Slider* slider) override;
+    void mouseEnter(const juce::MouseEvent& event) override;
+    void mouseMove(const juce::MouseEvent& event) override;
+    void mouseExit(const juce::MouseEvent& event) override;
+    void mouseDoubleClick(const juce::MouseEvent& event) override;
     void updateLinkedControlStates();
     void updateDynamicTooltips();
+    void updateDragValueReadout(juce::Slider& slider);
+    void hideDragValueReadout();
+    void syncHoverTargetsFromMouse();
+    void updateHoverValueReadout();
+    void hideHoverValueReadout();
+    void updateTopBarHelp();
+    void hideTopBarHelp();
+    void setTopBarHelp(juce::Component& component, const juce::String& text);
+    void showReadout(juce::Component& target, const juce::String& text);
+    void hideReadout();
 
     HardwareLookAndFeel hardwareLookAndFeel;
     BqtAudioProcessor& audioProcessor;
@@ -104,6 +137,7 @@ private:
     juce::ToggleButton satLink;
     juce::ToggleButton vintage;
     juce::ToggleButton bypass;
+    juce::ToggleButton sizeToggle;
     std::array<SideControls, 2> sideControls;
     VuMeter meterA;
     VuMeter meterB;
@@ -121,6 +155,17 @@ private:
     std::unique_ptr<ButtonAttachment> vintageAttachment;
     std::unique_ptr<ButtonAttachment> bypassAttachment;
     juce::TooltipWindow tooltipWindow { this, 700 };
+    ReadoutBubble readoutBubble;
+    bool isMirroringLinkedControl = false;
+    juce::Slider* activeReadoutSlider = nullptr;
+    juce::Slider* hoveredReadoutSlider = nullptr;
+    juce::uint32 hoverReadoutStartMs = 0;
+    bool hoverReadoutVisible = false;
+    juce::Component* hoveredHelpComponent = nullptr;
+    juce::String hoveredHelpText;
+    juce::uint32 helpHoverStartMs = 0;
+    bool helpVisible = false;
+    double previousInputTrimForCompensation = 0.0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(BqtAudioProcessorEditor)
 };
