@@ -29,20 +29,6 @@ void BqtReadoutBubble::paint(juce::Graphics& g)
     g.drawText(text, getLocalBounds().reduced(8, 2), juce::Justification::centred);
 }
 
-BqtBypassOverlay::BqtBypassOverlay()
-{
-    setInterceptsMouseClicks(false, false);
-}
-
-void BqtBypassOverlay::paint(juce::Graphics& g)
-{
-    const auto bounds = getLocalBounds().toFloat();
-    g.setColour(juce::Colours::black.withAlpha(0.28f));
-    g.fillRect(bounds);
-    g.setColour(juce::Colour(0xff8a8a8a).withAlpha(0.16f));
-    g.fillRect(bounds);
-}
-
 BqtHardwareLookAndFeel::BqtHardwareLookAndFeel()
 {
     setColour(juce::Slider::textBoxTextColourId, juce::Colour(ink));
@@ -467,7 +453,6 @@ void BqtHardwareLookAndFeel::drawTooltip(juce::Graphics& g, const juce::String& 
 BqtVuMeter::BqtVuMeter(BqtAudioProcessor& p, int sideIndex)
     : audioProcessor(p), side(sideIndex)
 {
-    startTimerHz(60);
 }
 
 void BqtVuMeter::paint(juce::Graphics& g)
@@ -577,7 +562,7 @@ void BqtVuMeter::paint(juce::Graphics& g)
     g.fillEllipse(juce::Rectangle<float>(6.5f, 6.5f).withCentre(needlePivot));
 }
 
-void BqtVuMeter::timerCallback()
+void BqtVuMeter::updateLevel()
 {
     const auto raw = audioProcessor.getMeterLevel(side);
     const auto db = juce::Decibels::gainToDecibels(raw, -60.0f);
@@ -586,5 +571,4 @@ void BqtVuMeter::timerCallback()
     targetLevel = clampedVu <= 0.0f ? ((clampedVu + 20.0f) / 20.0f) * 0.82f
                                     : 0.82f + (clampedVu / 3.0f) * 0.18f;
     displayedLevel += (targetLevel - displayedLevel) * 0.18f;
-    repaint();
 }

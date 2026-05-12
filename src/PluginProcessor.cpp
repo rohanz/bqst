@@ -5,7 +5,7 @@ BqtAudioProcessor::BqtAudioProcessor()
     : AudioProcessor(BusesProperties()
           .withInput("Input", juce::AudioChannelSet::stereo(), true)
           .withOutput("Output", juce::AudioChannelSet::stereo(), true)),
-      parameters(*this, &parameterUndoManager, "PARAMETERS", createParameterLayout())
+      parameters(*this, nullptr, "PARAMETERS", createParameterLayout())
 {
 }
 

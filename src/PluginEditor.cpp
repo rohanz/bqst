@@ -8,6 +8,26 @@
 namespace
 {
 using namespace bqst::ui;
+
+constexpr std::array<const char*, 28> undoableParameterIds {
+    "eqMode", "satMode", "osRealtime", "osRender", "inputTrim", "autoGain",
+    "eqBypass", "satBypass", "eqLink", "satLink", "bypass", "vintage",
+    "aLowGain", "aLowFreq", "aHighGain", "aHighFreq", "aDrive", "aSatType", "aMix", "aOutputTrim",
+    "bLowGain", "bLowFreq", "bHighGain", "bHighFreq", "bDrive", "bSatType", "bMix", "bOutputTrim"
+};
+
+bool snapshotsMatch(const std::vector<std::pair<juce::String, float>>& a,
+                    const std::vector<std::pair<juce::String, float>>& b)
+{
+    if (a.size() != b.size())
+        return false;
+
+    for (size_t i = 0; i < a.size(); ++i)
+        if (a[i].first != b[i].first || std::abs(a[i].second - b[i].second) > 0.00001f)
+            return false;
+
+    return true;
+}
 } // namespace
 
 BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
@@ -15,6 +35,7 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
 {
     setLookAndFeel(&hardwareLookAndFeel);
     setWantsKeyboardFocus(true);
+    addKeyListener(this);
     setSize(baseEditorWidth, baseEditorHeight);
 
     addAndMakeVisible(rackComponent);
@@ -46,9 +67,6 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
     rackComponent.addAndMakeVisible(meterB);
     meterA.setInterceptsMouseClicks(false, false);
     meterB.setInterceptsMouseClicks(false, false);
-    addAndMakeVisible(bypassOverlay);
-    bypassOverlay.setVisible(false);
-    bypassOverlay.setInterceptsMouseClicks(false, false);
     addAndMakeVisible(readoutBubble);
     readoutBubble.setVisible(false);
     readoutBubble.setInterceptsMouseClicks(false, false);
@@ -134,7 +152,7 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
             param->endChangeGesture();
         }
 
-        rackComponent.setBypassed(bypass.getToggleState());
+        requestRackBypassVisualState(bypass.getToggleState());
     };
     previousInputTrimForCompensation = inputTrim.getValue();
 
@@ -157,13 +175,6 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
     for (int side = 0; side < 2; ++side)
         configureSide(sideControls[static_cast<size_t>(side)], side);
 
-    auto shouldMirror = [this](const char* linkParameterId)
-    {
-        const auto linked = audioProcessor.state().getRawParameterValue(linkParameterId)->load() > 0.5f;
-        const auto controlDown = juce::ModifierKeys::currentModifiers.isCtrlDown();
-        return linked != controlDown;
-    };
-
     auto mirrorSlider = [this](juce::Slider& source, juce::Slider& dest)
     {
         if (isMirroringLinkedControl)
@@ -184,94 +195,97 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
 
     auto& left = sideControls[0];
     auto& right = sideControls[1];
-    left.lowGain.onValueChange = [shouldMirror, &left, &right, mirrorSlider]
+    left.lowGain.onValueChange = [this, &left, &right, mirrorSlider]
     {
-        if (shouldMirror("eqLink"))
+        if (shouldMirrorLinkedControls("eqLink"))
             mirrorSlider(left.lowGain, right.lowGain);
     };
-    right.lowGain.onValueChange = [shouldMirror, &left, &right, mirrorSlider]
+    right.lowGain.onValueChange = [this, &left, &right, mirrorSlider]
     {
-        if (shouldMirror("eqLink"))
+        if (shouldMirrorLinkedControls("eqLink"))
             mirrorSlider(right.lowGain, left.lowGain);
     };
-    left.lowFreq.onValueChange = [shouldMirror, &left, &right, mirrorSlider]
+    left.lowFreq.onValueChange = [this, &left, &right, mirrorSlider]
     {
-        if (shouldMirror("eqLink"))
+        if (shouldMirrorLinkedControls("eqLink"))
             mirrorSlider(left.lowFreq, right.lowFreq);
     };
-    right.lowFreq.onValueChange = [shouldMirror, &left, &right, mirrorSlider]
+    right.lowFreq.onValueChange = [this, &left, &right, mirrorSlider]
     {
-        if (shouldMirror("eqLink"))
+        if (shouldMirrorLinkedControls("eqLink"))
             mirrorSlider(right.lowFreq, left.lowFreq);
     };
-    left.highGain.onValueChange = [shouldMirror, &left, &right, mirrorSlider]
+    left.highGain.onValueChange = [this, &left, &right, mirrorSlider]
     {
-        if (shouldMirror("eqLink"))
+        if (shouldMirrorLinkedControls("eqLink"))
             mirrorSlider(left.highGain, right.highGain);
     };
-    right.highGain.onValueChange = [shouldMirror, &left, &right, mirrorSlider]
+    right.highGain.onValueChange = [this, &left, &right, mirrorSlider]
     {
-        if (shouldMirror("eqLink"))
+        if (shouldMirrorLinkedControls("eqLink"))
             mirrorSlider(right.highGain, left.highGain);
     };
-    left.highFreq.onValueChange = [shouldMirror, &left, &right, mirrorSlider]
+    left.highFreq.onValueChange = [this, &left, &right, mirrorSlider]
     {
-        if (shouldMirror("eqLink"))
+        if (shouldMirrorLinkedControls("eqLink"))
             mirrorSlider(left.highFreq, right.highFreq);
     };
-    right.highFreq.onValueChange = [shouldMirror, &left, &right, mirrorSlider]
+    right.highFreq.onValueChange = [this, &left, &right, mirrorSlider]
     {
-        if (shouldMirror("eqLink"))
+        if (shouldMirrorLinkedControls("eqLink"))
             mirrorSlider(right.highFreq, left.highFreq);
     };
 
-    left.drive.onValueChange = [shouldMirror, &left, &right, mirrorSlider]
+    left.drive.onValueChange = [this, &left, &right, mirrorSlider]
     {
-        if (shouldMirror("satLink"))
+        if (shouldMirrorLinkedControls("satLink"))
             mirrorSlider(left.drive, right.drive);
     };
-    right.drive.onValueChange = [shouldMirror, &left, &right, mirrorSlider]
+    right.drive.onValueChange = [this, &left, &right, mirrorSlider]
     {
-        if (shouldMirror("satLink"))
+        if (shouldMirrorLinkedControls("satLink"))
             mirrorSlider(right.drive, left.drive);
     };
-    left.mix.onValueChange = [shouldMirror, &left, &right, mirrorSlider]
+    left.mix.onValueChange = [this, &left, &right, mirrorSlider]
     {
-        if (shouldMirror("satLink"))
+        if (shouldMirrorLinkedControls("satLink"))
             mirrorSlider(left.mix, right.mix);
     };
-    right.mix.onValueChange = [shouldMirror, &left, &right, mirrorSlider]
+    right.mix.onValueChange = [this, &left, &right, mirrorSlider]
     {
-        if (shouldMirror("satLink"))
+        if (shouldMirrorLinkedControls("satLink"))
             mirrorSlider(right.mix, left.mix);
     };
-    left.outputTrim.onValueChange = [shouldMirror, &left, &right, mirrorSlider]
+    left.outputTrim.onValueChange = [this, &left, &right, mirrorSlider]
     {
-        if (shouldMirror("satLink"))
+        if (shouldMirrorLinkedControls("satLink"))
             mirrorSlider(left.outputTrim, right.outputTrim);
     };
-    right.outputTrim.onValueChange = [shouldMirror, &left, &right, mirrorSlider]
+    right.outputTrim.onValueChange = [this, &left, &right, mirrorSlider]
     {
-        if (shouldMirror("satLink"))
+        if (shouldMirrorLinkedControls("satLink"))
             mirrorSlider(right.outputTrim, left.outputTrim);
     };
-    left.satType.onChange = [shouldMirror, &left, &right, mirrorChoice]
+    left.satType.onChange = [this, &left, &right, mirrorChoice]
     {
-        if (shouldMirror("satLink"))
+        if (shouldMirrorLinkedControls("satLink"))
             mirrorChoice(left.satType, right.satType);
     };
-    right.satType.onChange = [shouldMirror, &left, &right, mirrorChoice]
+    right.satType.onChange = [this, &left, &right, mirrorChoice]
     {
-        if (shouldMirror("satLink"))
+        if (shouldMirrorLinkedControls("satLink"))
             mirrorChoice(right.satType, left.satType);
     };
 
-    startTimerHz(12);
+    startTimerHz(60);
     updateLinkedControlStates();
 }
 
 BqtAudioProcessorEditor::~BqtAudioProcessorEditor()
 {
+    endLinkedMirrorGestures();
+    removeKeyListener(this);
+
     inputTrim.removeListener(this);
     inputTrim.removeMouseListener(this);
     sizeSelect.removeMouseListener(this);
@@ -292,6 +306,7 @@ BqtAudioProcessorEditor::~BqtAudioProcessorEditor()
         controls.drive.removeMouseListener(this);
         controls.mix.removeMouseListener(this);
         controls.outputTrim.removeMouseListener(this);
+        controls.satTypeButton.removeMouseListener(this);
     }
 
     for (auto* component : { static_cast<juce::Component*>(&presetPrevious), static_cast<juce::Component*>(&presetMenuButton),
@@ -304,22 +319,6 @@ BqtAudioProcessorEditor::~BqtAudioProcessorEditor()
         component->removeMouseListener(this);
 
     setLookAndFeel(nullptr);
-}
-
-bool BqtAudioProcessorEditor::keyPressed(const juce::KeyPress& key)
-{
-    const auto mods = key.getModifiers();
-    if (! mods.isCommandDown() && ! mods.isCtrlDown())
-        return false;
-
-    const auto character = juce::CharacterFunctions::toLowerCase(key.getTextCharacter());
-    if (character != 'z')
-        return false;
-
-    if (mods.isShiftDown())
-        return audioProcessor.undoManager().redo();
-
-    return audioProcessor.undoManager().undo();
 }
 
 void BqtAudioProcessorEditor::configureSlider(juce::Slider& slider)
@@ -364,6 +363,7 @@ void BqtAudioProcessorEditor::configureSide(SideControls& controls, int sideInde
     configureSlider(controls.highFreq);
     controls.highFreq.getProperties().set("bqtKnobCombo", true);
     controls.highFreq.setRange(0.0, 7.0, 1.0);
+    controls.highFreq.setChangeNotificationOnlyOnRelease(true);
     controls.highFreq.textFromValueFunction = [](double value) { return indexedLabel(highFreqLabels, value); };
     configureLabel(controls.lowGainLabel, "lf");
     configureSlider(controls.lowGain);
@@ -373,6 +373,7 @@ void BqtAudioProcessorEditor::configureSide(SideControls& controls, int sideInde
     configureSlider(controls.lowFreq);
     controls.lowFreq.getProperties().set("bqtKnobCombo", true);
     controls.lowFreq.setRange(0.0, 7.0, 1.0);
+    controls.lowFreq.setChangeNotificationOnlyOnRelease(true);
     controls.lowFreq.textFromValueFunction = [](double value) { return indexedLabel(lowFreqLabels, value); };
     configureLabel(controls.driveLabel, "drive");
     configureSlider(controls.drive);
@@ -383,6 +384,7 @@ void BqtAudioProcessorEditor::configureSide(SideControls& controls, int sideInde
     controls.satType.setVisible(false);
     controls.satTypeButton.getProperties().set("bqtSatTypeSelector", true);
     controls.satTypeButton.setButtonText("sat type");
+    controls.satTypeButton.addMouseListener(this, true);
     addAndMakeVisible(controls.satTypeButton);
     controls.satTypeButton.getProperties().set("bqtCreamHelp", "Combination of op-amps, transistors and diodes for a smooth, thick saturation.");
     controls.satTypeButton.getProperties().set("bqtGritHelp", "Transformer-style saturation with firmer edge and bite.");
@@ -586,13 +588,19 @@ void BqtAudioProcessorEditor::timerCallback()
     eqBypass.setToggleState(eqIsIn, juce::dontSendNotification);
     satBypass.setToggleState(satIsIn, juce::dontSendNotification);
     bypass.setToggleState(bypassIsOn, juce::dontSendNotification);
-    rackComponent.setBypassed(bypassIsOn);
+    requestRackBypassVisualState(bypassIsOn);
 
     for (auto& controls : sideControls)
         controls.satTypeButton.setToggleState(controls.satType.getSelectedItemIndex() == 1, juce::dontSendNotification);
 
+    if (! rackComponent.isBypassed())
+    {
+        meterA.updateLevel();
+        meterB.updateLevel();
+        rackComponent.repaint();
+    }
+
     updateLinkedControlStates();
-    updateRackBypassVisualState();
     updateDynamicTooltips();
 
     if (activeReadoutSlider != nullptr)
@@ -607,6 +615,42 @@ void BqtAudioProcessorEditor::timerCallback()
     updateHoverValueReadout();
     updateTopBarHelp();
 
+}
+
+bool BqtAudioProcessorEditor::keyPressed(const juce::KeyPress& key)
+{
+    const auto keyCode = juce::CharacterFunctions::toLowerCase(static_cast<juce::juce_wchar>(key.getKeyCode()));
+    const auto modifiers = key.getModifiers();
+    const auto wantsUndo = keyCode == 'z' && (modifiers.isCommandDown() || modifiers.isCtrlDown());
+    const auto wantsRedo = wantsUndo && modifiers.isShiftDown();
+
+    if (wantsRedo)
+        return redoLastPluginEdit();
+
+    if (wantsUndo)
+        return undoLastPluginEdit();
+
+    return false;
+}
+
+bool BqtAudioProcessorEditor::keyPressed(const juce::KeyPress& key, juce::Component*)
+{
+    return keyPressed(key);
+}
+
+void BqtAudioProcessorEditor::mouseDown(const juce::MouseEvent&)
+{
+    beginUndoableEdit();
+}
+
+void BqtAudioProcessorEditor::mouseUp(const juce::MouseEvent&)
+{
+    juce::Component::SafePointer<BqtAudioProcessorEditor> safeThis(this);
+    juce::MessageManager::callAsync([safeThis]
+    {
+        if (safeThis != nullptr)
+            safeThis->finishUndoableEdit();
+    });
 }
 
 void BqtAudioProcessorEditor::sliderValueChanged(juce::Slider* slider)
@@ -638,12 +682,112 @@ void BqtAudioProcessorEditor::sliderValueChanged(juce::Slider* slider)
     updateDragValueReadout(*slider);
 }
 
+bool BqtAudioProcessorEditor::shouldMirrorLinkedControls(const char* linkParameterId) const
+{
+    const auto linked = audioProcessor.state().getRawParameterValue(linkParameterId)->load() > 0.5f;
+    const auto controlDown = juce::ModifierKeys::currentModifiers.isCtrlDown();
+    return linked != controlDown;
+}
+
+void BqtAudioProcessorEditor::beginMirroredParameterGesture(const juce::String& parameterId)
+{
+    if (auto* parameter = audioProcessor.state().getParameter(parameterId))
+    {
+        if (! activeMirroredGestureParameters.contains(parameter))
+        {
+            parameter->beginChangeGesture();
+            activeMirroredGestureParameters.add(parameter);
+        }
+    }
+}
+
+void BqtAudioProcessorEditor::beginLinkedMirrorGestureFor(juce::Slider& slider)
+{
+    auto& left = sideControls[0];
+    auto& right = sideControls[1];
+
+    if (shouldMirrorLinkedControls("eqLink"))
+    {
+        if (&slider == &left.lowGain)       beginMirroredParameterGesture("bLowGain");
+        else if (&slider == &right.lowGain) beginMirroredParameterGesture("aLowGain");
+        else if (&slider == &left.highGain) beginMirroredParameterGesture("bHighGain");
+        else if (&slider == &right.highGain) beginMirroredParameterGesture("aHighGain");
+    }
+
+    if (shouldMirrorLinkedControls("satLink"))
+    {
+        if (&slider == &left.drive)            beginMirroredParameterGesture("bDrive");
+        else if (&slider == &right.drive)      beginMirroredParameterGesture("aDrive");
+        else if (&slider == &left.mix)         beginMirroredParameterGesture("bMix");
+        else if (&slider == &right.mix)        beginMirroredParameterGesture("aMix");
+        else if (&slider == &left.outputTrim)  beginMirroredParameterGesture("bOutputTrim");
+        else if (&slider == &right.outputTrim) beginMirroredParameterGesture("aOutputTrim");
+    }
+}
+
+void BqtAudioProcessorEditor::endLinkedMirrorGestures()
+{
+    for (auto* parameter : activeMirroredGestureParameters)
+        if (parameter != nullptr)
+            parameter->endChangeGesture();
+
+    activeMirroredGestureParameters.clear();
+}
+
+void BqtAudioProcessorEditor::mirrorLinkedSteppedFrequencyVisual(juce::Slider& slider)
+{
+    if (! shouldMirrorLinkedControls("eqLink"))
+        return;
+
+    auto& left = sideControls[0];
+    auto& right = sideControls[1];
+    const juce::ScopedValueSetter<bool> scopedMirror(isMirroringLinkedControl, true);
+
+    if (&slider == &left.lowFreq)
+        right.lowFreq.setValue(left.lowFreq.getValue(), juce::dontSendNotification);
+    else if (&slider == &right.lowFreq)
+        left.lowFreq.setValue(right.lowFreq.getValue(), juce::dontSendNotification);
+    else if (&slider == &left.highFreq)
+        right.highFreq.setValue(left.highFreq.getValue(), juce::dontSendNotification);
+    else if (&slider == &right.highFreq)
+        left.highFreq.setValue(right.highFreq.getValue(), juce::dontSendNotification);
+}
+
+void BqtAudioProcessorEditor::commitParameterGesture(const juce::String& parameterId, float plainValue)
+{
+    if (auto* parameter = audioProcessor.state().getParameter(parameterId))
+    {
+        parameter->beginChangeGesture();
+        parameter->setValueNotifyingHost(parameter->convertTo0to1(plainValue));
+        parameter->endChangeGesture();
+    }
+}
+
+void BqtAudioProcessorEditor::commitMirroredSteppedFrequency(juce::Slider& slider)
+{
+    if (! shouldMirrorLinkedControls("eqLink"))
+        return;
+
+    auto& left = sideControls[0];
+    auto& right = sideControls[1];
+
+    if (&slider == &left.lowFreq)
+        commitParameterGesture("bLowFreq", static_cast<float>(right.lowFreq.getValue()));
+    else if (&slider == &right.lowFreq)
+        commitParameterGesture("aLowFreq", static_cast<float>(left.lowFreq.getValue()));
+    else if (&slider == &left.highFreq)
+        commitParameterGesture("bHighFreq", static_cast<float>(right.highFreq.getValue()));
+    else if (&slider == &right.highFreq)
+        commitParameterGesture("aHighFreq", static_cast<float>(left.highFreq.getValue()));
+}
+
 void BqtAudioProcessorEditor::sliderDragStarted(juce::Slider* slider)
 {
     if (slider == nullptr)
         return;
 
-    audioProcessor.undoManager().beginNewTransaction("Adjust " + slider->getName());
+    beginUndoableEdit();
+    beginLinkedMirrorGestureFor(*slider);
     hideHoverValueReadout();
 
     if (slider == &inputTrim)
@@ -652,9 +796,20 @@ void BqtAudioProcessorEditor::sliderDragStarted(juce::Slider* slider)
     updateDragValueReadout(*slider);
 }
 
-void BqtAudioProcessorEditor::sliderDragEnded(juce::Slider*)
+void BqtAudioProcessorEditor::sliderDragEnded(juce::Slider* slider)
 {
+    if (slider != nullptr)
+        commitMirroredSteppedFrequency(*slider);
+
+    endLinkedMirrorGestures();
+    finishUndoableEdit();
     hideDragValueReadout();
+}
+
+void BqtAudioProcessorEditor::mouseDrag(const juce::MouseEvent& event)
+{
+    if (auto* slider = dynamic_cast<juce::Slider*>(event.originalComponent))
+        mirrorLinkedSteppedFrequencyVisual(*slider);
 }
 
 void BqtAudioProcessorEditor::mouseEnter(const juce::MouseEvent& event)
@@ -968,6 +1123,107 @@ void BqtAudioProcessorEditor::hideReadout()
     readoutBubble.setVisible(false);
 }
 
+void BqtAudioProcessorEditor::beginUndoableEdit()
+{
+    if (restoringPluginEditState || undoCaptureActive)
+        return;
+
+    pendingUndoState = capturePluginEditState();
+    undoCaptureActive = true;
+}
+
+void BqtAudioProcessorEditor::finishUndoableEdit()
+{
+    if (! undoCaptureActive)
+        return;
+
+    undoCaptureActive = false;
+    const auto nextState = capturePluginEditState();
+
+    if (! snapshotsMatch(pendingUndoState, nextState))
+    {
+        undoStack.push_back(pendingUndoState);
+        redoStack.clear();
+
+        constexpr size_t maxUndoSteps = 64;
+        if (undoStack.size() > maxUndoSteps)
+            undoStack.erase(undoStack.begin());
+    }
+
+    pendingUndoState.clear();
+}
+
+void BqtAudioProcessorEditor::cancelUndoableEdit()
+{
+    undoCaptureActive = false;
+    pendingUndoState.clear();
+}
+
+bool BqtAudioProcessorEditor::undoLastPluginEdit()
+{
+    finishUndoableEdit();
+
+    if (undoStack.empty())
+        return false;
+
+    const auto currentState = capturePluginEditState();
+    auto previousState = undoStack.back();
+    undoStack.pop_back();
+    redoStack.push_back(currentState);
+    restorePluginEditState(previousState);
+    return true;
+}
+
+bool BqtAudioProcessorEditor::redoLastPluginEdit()
+{
+    finishUndoableEdit();
+
+    if (redoStack.empty())
+        return false;
+
+    const auto currentState = capturePluginEditState();
+    auto nextState = redoStack.back();
+    redoStack.pop_back();
+    undoStack.push_back(currentState);
+    restorePluginEditState(nextState);
+    return true;
+}
+
+std::vector<std::pair<juce::String, float>> BqtAudioProcessorEditor::capturePluginEditState() const
+{
+    std::vector<std::pair<juce::String, float>> snapshot;
+    snapshot.reserve(undoableParameterIds.size());
+
+    for (const auto* id : undoableParameterIds)
+        if (auto* parameter = audioProcessor.state().getParameter(id))
+            snapshot.emplace_back(id, parameter->getValue());
+
+    return snapshot;
+}
+
+void BqtAudioProcessorEditor::restorePluginEditState(const std::vector<std::pair<juce::String, float>>& snapshot)
+{
+    const juce::ScopedValueSetter<bool> scopedRestore(restoringPluginEditState, true);
+    const juce::ScopedValueSetter<bool> scopedMirror(isMirroringLinkedControl, true);
+
+    endLinkedMirrorGestures();
+
+    for (const auto& [id, value] : snapshot)
+    {
+        if (auto* parameter = audioProcessor.state().getParameter(id))
+        {
+            parameter->beginChangeGesture();
+            parameter->setValueNotifyingHost(value);
+            parameter->endChangeGesture();
+        }
+    }
+
+    previousInputTrimForCompensation = inputTrim.getValue();
+    updateLinkedControlStates();
+    requestRackBypassVisualState(audioProcessor.state().getRawParameterValue("bypass")->load() > 0.5f);
+    repaint();
+}
+
 void BqtAudioProcessorEditor::updateDynamicTooltips()
 {
 }
@@ -999,15 +1255,6 @@ void BqtAudioProcessorEditor::updateLinkedControlStates()
     keepVisible(right.satTypeLabel);
     keepVisible(right.mixLabel);
     keepVisible(right.outputTrimLabel);
-}
-
-void BqtAudioProcessorEditor::updateRackBypassVisualState()
-{
-    const auto bypassed = rackComponent.isBypassed();
-
-    bypassOverlay.setVisible(bypassed);
-    bypassOverlay.toFront(false);
-    bypassOverlay.repaint();
 }
 
 void BqtAudioProcessorEditor::paint(juce::Graphics& g)
@@ -1249,13 +1496,30 @@ void BqtAudioProcessorEditor::paintRack(juce::Graphics& g)
     }
 }
 
+void BqtAudioProcessorEditor::RackComponent::paintOverChildren(juce::Graphics& g)
+{
+    if (! bypassed)
+        return;
+
+    const auto bounds = getLocalBounds().toFloat();
+    g.setColour(juce::Colours::black.withAlpha(0.28f));
+    g.fillRect(bounds);
+    g.setColour(juce::Colour(0xff8a8a8a).withAlpha(0.16f));
+    g.fillRect(bounds);
+}
+
+void BqtAudioProcessorEditor::requestRackBypassVisualState(bool shouldBeBypassed)
+{
+    rackComponent.setBypassed(shouldBeBypassed);
+}
+
 void BqtAudioProcessorEditor::RackComponent::setBypassed(bool shouldBeBypassed)
 {
     if (bypassed == shouldBeBypassed)
         return;
 
     bypassed = shouldBeBypassed;
-    editor.updateRackBypassVisualState();
+    repaint();
 }
 
 void BqtAudioProcessorEditor::resized()
@@ -1277,7 +1541,7 @@ void BqtAudioProcessorEditor::resized()
                              static_cast<juce::Component*>(&satBypass), static_cast<juce::Component*>(&eqLink),
                              static_cast<juce::Component*>(&satLink),
                              static_cast<juce::Component*>(&bypass), static_cast<juce::Component*>(&sizeSelect),
-                             static_cast<juce::Component*>(&bypassOverlay), static_cast<juce::Component*>(&readoutBubble) })
+                             static_cast<juce::Component*>(&readoutBubble) })
         applyUiScale(*component);
 
     auto bounds = juce::Rectangle<int>(0, 0, baseEditorWidth, baseEditorHeight).reduced(outerEditorMargin);
@@ -1352,7 +1616,6 @@ void BqtAudioProcessorEditor::resized()
     auto rackFloat = getRackFaceBounds(bounds.toFloat());
     auto rack = rackFloat.toNearestInt();
     rackComponent.setBounds(rack);
-    bypassOverlay.setBounds(rack);
     auto rackLocal = juce::Rectangle<int>(0, 0, rack.getWidth(), rack.getHeight());
     auto eqPanel = rackLocal.removeFromLeft(rackLocal.getWidth() / 2).reduced(24, 26);
     auto satPanel = rackLocal.reduced(24, 26);
@@ -1446,6 +1709,5 @@ void BqtAudioProcessorEditor::resized()
 
     vintage.toFront(false);
     main.satTypeButton.toFront(false);
-    bypassOverlay.toFront(false);
     readoutBubble.toFront(false);
 }

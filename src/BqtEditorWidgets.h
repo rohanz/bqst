@@ -34,22 +34,14 @@ private:
     juce::String text;
 };
 
-class BqtBypassOverlay final : public juce::Component
-{
-public:
-    BqtBypassOverlay();
-    void paint(juce::Graphics& g) override;
-};
-
-class BqtVuMeter final : public juce::Component, private juce::Timer
+class BqtVuMeter final : public juce::Component
 {
 public:
     BqtVuMeter(BqtAudioProcessor& processor, int sideIndex);
     void paint(juce::Graphics& g) override;
+    void updateLevel();
 
 private:
-    void timerCallback() override;
-
     BqtAudioProcessor& audioProcessor;
     int side = 0;
     float targetLevel = 0.0f;

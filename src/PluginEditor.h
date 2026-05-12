@@ -6,9 +6,12 @@
 #include "BqtPresetManager.h"
 #include "PluginProcessor.h"
 
+#include <vector>
+
 class BqtAudioProcessorEditor final : public juce::AudioProcessorEditor,
                                       private juce::Timer,
-                                      private juce::Slider::Listener
+                                      private juce::Slider::Listener,
+                                      private juce::KeyListener
 {
 public:
     explicit BqtAudioProcessorEditor(BqtAudioProcessor&);
@@ -16,7 +19,6 @@ public:
 
     void paint(juce::Graphics&) override;
     void resized() override;
-    bool keyPressed(const juce::KeyPress& key) override;
 
 private:
     using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
@@ -60,6 +62,7 @@ private:
     public:
         explicit RackComponent(BqtAudioProcessorEditor& editorToUse) : editor(editorToUse) {}
         void paint(juce::Graphics& g) override { editor.paintRack(g); }
+        void paintOverChildren(juce::Graphics& g) override;
         void setBypassed(bool shouldBeBypassed);
         bool isBypassed() const { return bypassed; }
 
@@ -73,11 +76,23 @@ private:
     void configureLabel(juce::Label& label, const juce::String& text, juce::Justification justification = juce::Justification::centred);
     void configureSide(SideControls& controls, int sideIndex);
     void paintRack(juce::Graphics& g);
-    void updateRackBypassVisualState();
+    void requestRackBypassVisualState(bool shouldBeBypassed);
     void timerCallback() override;
+    bool shouldMirrorLinkedControls(const char* linkParameterId) const;
+    void beginLinkedMirrorGestureFor(juce::Slider& slider);
+    void beginMirroredParameterGesture(const juce::String& parameterId);
+    void endLinkedMirrorGestures();
+    void mirrorLinkedSteppedFrequencyVisual(juce::Slider& slider);
+    void commitMirroredSteppedFrequency(juce::Slider& slider);
+    void commitParameterGesture(const juce::String& parameterId, float plainValue);
+    bool keyPressed(const juce::KeyPress& key) override;
+    bool keyPressed(const juce::KeyPress& key, juce::Component* originatingComponent) override;
+    void mouseDown(const juce::MouseEvent& event) override;
+    void mouseUp(const juce::MouseEvent& event) override;
     void sliderValueChanged(juce::Slider* slider) override;
     void sliderDragStarted(juce::Slider* slider) override;
     void sliderDragEnded(juce::Slider* slider) override;
+    void mouseDrag(const juce::MouseEvent& event) override;
     void mouseEnter(const juce::MouseEvent& event) override;
     void mouseMove(const juce::MouseEvent& event) override;
     void mouseExit(const juce::MouseEvent& event) override;
@@ -94,6 +109,13 @@ private:
     void setTopBarHelp(juce::Component& component, const juce::String& text);
     void showReadout(juce::Component& target, const juce::String& text);
     void hideReadout();
+    void beginUndoableEdit();
+    void finishUndoableEdit();
+    void cancelUndoableEdit();
+    bool undoLastPluginEdit();
+    bool redoLastPluginEdit();
+    void restorePluginEditState(const std::vector<std::pair<juce::String, float>>& snapshot);
+    std::vector<std::pair<juce::String, float>> capturePluginEditState() const;
     void refreshPresetMenu();
     void showPresetMenu();
     void loadPreset(int index);
@@ -126,7 +148,6 @@ private:
     std::array<SideControls, 2> sideControls;
     BqtVuMeter meterA;
     BqtVuMeter meterB;
-    BqtBypassOverlay bypassOverlay;
 
     std::unique_ptr<ComboBoxAttachment> eqModeAttachment;
     std::unique_ptr<ComboBoxAttachment> satModeAttachment;
@@ -153,6 +174,12 @@ private:
     bool helpVisible = false;
     double previousInputTrimForCompensation = 0.0;
     int selectedPresetIndex = 0;
+    juce::Array<juce::RangedAudioParameter*> activeMirroredGestureParameters;
+    std::vector<std::pair<juce::String, float>> pendingUndoState;
+    std::vector<std::vector<std::pair<juce::String, float>>> undoStack;
+    std::vector<std::vector<std::pair<juce::String, float>>> redoStack;
+    bool restoringPluginEditState = false;
+    bool undoCaptureActive = false;
     std::unique_ptr<juce::FileChooser> presetFileChooser;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(BqtAudioProcessorEditor)
