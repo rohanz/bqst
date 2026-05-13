@@ -71,7 +71,9 @@ void BqtAudioProcessorEditor::loadPreset(int index)
     if (presetManager.loadPreset(index))
     {
         selectedPresetIndex = index;
-        previousInputTrimForCompensation = inputTrim.getValue();
+        inputTrimCompensationStart = inputTrim.getValue();
+        for (size_t side = 0; side < sideControls.size(); ++side)
+            outputTrimCompensationStart[side] = sideControls[side].outputTrim.getValue();
         updatePresetButtonText();
     }
 }

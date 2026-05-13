@@ -47,7 +47,8 @@ void BqtAudioProcessorEditor::timerCallback()
     {
         meterA.updateLevel();
         meterB.updateLevel();
-        rackComponent.repaint();
+        meterA.repaint();
+        meterB.repaint();
     }
 
     updateLinkedControlStates();
@@ -110,19 +111,19 @@ void BqtAudioProcessorEditor::sliderValueChanged(juce::Slider* slider)
     if (slider == &inputTrim)
     {
         const auto currentInputTrim = inputTrim.getValue();
-        const auto deltaDb = currentInputTrim - previousInputTrimForCompensation;
-        previousInputTrimForCompensation = currentInputTrim;
+        const auto deltaDb = currentInputTrim - inputTrimCompensationStart;
 
         if (inputTrim.isMouseButtonDown()
             && juce::ModifierKeys::currentModifiers.isCtrlDown()
             && std::abs(deltaDb) > 0.0)
         {
             const juce::ScopedValueSetter<bool> scopedMirror(isMirroringLinkedControl, true);
-            for (auto& controls : sideControls)
+            for (size_t index = 0; index < sideControls.size(); ++index)
             {
+                auto& controls = sideControls[index];
                 const auto compensatedValue = juce::jlimit(controls.outputTrim.getMinimum(),
                                                           controls.outputTrim.getMaximum(),
-                                                          controls.outputTrim.getValue() - deltaDb);
+                                                          outputTrimCompensationStart[index] - deltaDb);
                 controls.outputTrim.setValue(compensatedValue, juce::sendNotificationSync);
             }
         }
@@ -240,7 +241,11 @@ void BqtAudioProcessorEditor::sliderDragStarted(juce::Slider* slider)
     hideHoverValueReadout();
 
     if (slider == &inputTrim)
-        previousInputTrimForCompensation = inputTrim.getValue();
+    {
+        inputTrimCompensationStart = inputTrim.getValue();
+        for (size_t index = 0; index < sideControls.size(); ++index)
+            outputTrimCompensationStart[index] = sideControls[index].outputTrim.getValue();
+    }
 
     updateDragValueReadout(*slider);
 }
@@ -356,7 +361,8 @@ void BqtAudioProcessorEditor::mouseDoubleClick(const juce::MouseEvent& event)
             for (auto& controls : sideControls)
                 controls.outputTrim.setValue(0.0, juce::sendNotificationSync);
 
-            previousInputTrimForCompensation = 0.0;
+            inputTrimCompensationStart = inputTrim.getValue();
+            outputTrimCompensationStart = { 0.0, 0.0 };
             return;
         }
 
@@ -667,7 +673,9 @@ void BqtAudioProcessorEditor::restorePluginEditState(const std::vector<std::pair
         }
     }
 
-    previousInputTrimForCompensation = inputTrim.getValue();
+    inputTrimCompensationStart = inputTrim.getValue();
+    for (size_t index = 0; index < sideControls.size(); ++index)
+        outputTrimCompensationStart[index] = sideControls[index].outputTrim.getValue();
     updateLinkedControlStates();
     requestRackBypassVisualState(audioProcessor.state().getRawParameterValue("bypass")->load() > 0.5f);
     repaint();

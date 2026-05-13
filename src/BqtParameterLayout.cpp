@@ -38,7 +38,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout BqtAudioProcessor::createPar
         params.push_back(std::make_unique<juce::AudioParameterFloat>(prefix + "Drive", label + " Drive", juce::NormalisableRange<float>(0.0f, 18.0f, 0.1f), 0.0f));
         params.push_back(std::make_unique<juce::AudioParameterChoice>(prefix + "SatType", label + " Type", juce::StringArray { "Cream", "Grit" }, 0));
         params.push_back(std::make_unique<juce::AudioParameterFloat>(prefix + "Mix", label + " Mix", juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 100.0f));
-        params.push_back(std::make_unique<juce::AudioParameterFloat>(prefix + "OutputTrim", label + " Output", juce::NormalisableRange<float>(-12.0f, 12.0f, 0.1f), 0.0f));
+        params.push_back(std::make_unique<juce::AudioParameterFloat>(prefix + "OutputTrim", label + " Output", juce::NormalisableRange<float>(-16.0f, 16.0f, 0.1f), 0.0f));
     }
 
     return { params.begin(), params.end() };

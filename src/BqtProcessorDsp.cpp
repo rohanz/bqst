@@ -4,7 +4,6 @@ namespace
 {
 constexpr auto sqrtHalf = 0.70710678118654752440f;
 constexpr auto numOversamplingFactors = 3;
-constexpr auto minRmsForMatching = 1.0e-5f;
 constexpr auto vuRiseTo99Seconds = 0.3f;
 constexpr auto vuTimeConstantSeconds = vuRiseTo99Seconds / 4.605170186f;
 constexpr auto vuSineAverageToRms = 1.110720735f;
@@ -206,33 +205,15 @@ void BqtAudioProcessor::processSide(float* samples, int numSamples, int sideInde
 
         dryBuffer.copyFrom(0, 0, samples, numSamples);
 
-        processSaturation(samples, numSamples, sideIndex, drive, currentDriveGain, satType, compensation);
+        processSaturation(samples, numSamples, sideIndex, drive, currentDriveGain, satType);
 
         const auto* dry = dryBuffer.getReadPointer(0);
 
-        if (autoGainEnabled)
-        {
-            auto dryEnergy = 0.0f;
-            auto wetEnergy = 0.0f;
-
-            for (int sample = 0; sample < numSamples; ++sample)
-            {
-                dryEnergy += dry[sample] * dry[sample];
-                wetEnergy += samples[sample] * samples[sample];
-            }
-
-            const auto dryRms = std::sqrt(dryEnergy / static_cast<float>(numSamples));
-            const auto wetRms = std::sqrt(wetEnergy / static_cast<float>(numSamples));
-
-            if (dryRms > minRmsForMatching && wetRms > minRmsForMatching)
-            {
-                const auto wetMatchGain = juce::jlimit(0.25f, 4.0f, dryRms / wetRms);
-                juce::FloatVectorOperations::multiply(samples, wetMatchGain, numSamples);
-            }
-        }
-
         for (int sample = 0; sample < numSamples; ++sample)
-            samples[sample] = dry[sample] + (samples[sample] - dry[sample]) * mix;
+        {
+            const auto wet = samples[sample] * compensation;
+            samples[sample] = dry[sample] + (wet - dry[sample]) * mix;
+        }
     }
 
     for (int sample = 0; sample < numSamples; ++sample)
@@ -241,15 +222,15 @@ void BqtAudioProcessor::processSide(float* samples, int numSamples, int sideInde
     updateMeter(sideIndex, samples, numSamples);
 }
 
-void BqtAudioProcessor::processSaturation(float* samples, int numSamples, int sideIndex, float drive, float driveGainValue, bqt::SaturationType satType, float compensation)
+void BqtAudioProcessor::processSaturation(float* samples, int numSamples, int sideIndex, float drive, float driveGainValue, bqt::SaturationType satType)
 {
-    const auto processSample = [drive, driveGainValue, satType, compensation](float value)
+    const auto processSample = [drive, driveGainValue, satType](float value)
     {
         value *= driveGainValue;
         value = satType == bqt::SaturationType::density
             ? bqt::densitySaturate(value, drive)
             : bqt::transformerSaturate(value, drive);
-        return value * compensation;
+        return value;
     };
 
     for (int sample = 0; sample < numSamples; ++sample)

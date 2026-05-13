@@ -6,6 +6,7 @@
 #include "BqtPresetManager.h"
 #include "PluginProcessor.h"
 
+#include <array>
 #include <vector>
 
 class BqtAudioProcessorEditor final : public juce::AudioProcessorEditor,
@@ -172,7 +173,8 @@ private:
     juce::String hoveredHelpText;
     juce::uint32 helpHoverStartMs = 0;
     bool helpVisible = false;
-    double previousInputTrimForCompensation = 0.0;
+    double inputTrimCompensationStart = 0.0;
+    std::array<double, 2> outputTrimCompensationStart { 0.0, 0.0 };
     int selectedPresetIndex = 0;
     juce::Array<juce::RangedAudioParameter*> activeMirroredGestureParameters;
     std::vector<std::pair<juce::String, float>> pendingUndoState;

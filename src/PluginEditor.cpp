@@ -133,7 +133,9 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
 
         requestRackBypassVisualState(bypass.getToggleState());
     };
-    previousInputTrimForCompensation = inputTrim.getValue();
+    inputTrimCompensationStart = inputTrim.getValue();
+    for (size_t index = 0; index < sideControls.size(); ++index)
+        outputTrimCompensationStart[index] = sideControls[index].outputTrim.getValue();
 
     auto setInButtonTarget = [this](const char* parameterId, juce::ToggleButton& button)
     {

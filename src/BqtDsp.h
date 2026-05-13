@@ -40,16 +40,14 @@ inline float densitySaturate(float sample, float drive01)
 
     const auto push = drive01 * drive01;
     const auto maxPush = push * drive01;
-    const auto evenBias = 0.014f + drive01 * 0.050f + push * 0.018f;
-    const auto oddWeight = 0.045f + drive01 * 0.145f + push * 0.120f + maxPush * 0.180f;
-    const auto softKnee = 0.62f + drive01 * 0.58f + push * 0.38f + maxPush * 0.55f;
-    const auto biased = sample + evenBias * sample * sample;
-    const auto driven = biased * softKnee + oddWeight * sample * sample * sample;
-    const auto shaped = std::tanh(driven) * (1.0f + 0.10f * drive01 + 0.12f * maxPush);
-    const auto dcOffset = std::tanh(evenBias * 0.015f);
-    const auto blend = 0.07f + drive01 * 0.32f + push * 0.13f + maxPush * 0.12f;
+    const auto asymmetry = drive01 * (0.012f + drive01 * 0.048f + push * 0.028f);
+    const auto oddWeight = drive01 * (0.040f + drive01 * 0.135f + push * 0.105f + maxPush * 0.165f);
+    const auto softKnee = 0.82f + drive01 * 0.38f + push * 0.36f + maxPush * 0.50f;
+    const auto driven = sample * softKnee + oddWeight * sample * sample * sample + asymmetry;
+    const auto shaped = (std::tanh(driven) - std::tanh(asymmetry)) * (1.0f + 0.09f * drive01 + 0.10f * maxPush);
+    const auto blend = drive01 * 0.38f + push * 0.13f + maxPush * 0.12f;
 
-    return sample * (1.0f - blend) + (shaped - dcOffset) * blend;
+    return sample * (1.0f - blend) + shaped * blend;
 }
 
 inline float transformerSaturate(float sample, float drive01)
@@ -59,12 +57,12 @@ inline float transformerSaturate(float sample, float drive01)
 
     const auto push = drive01 * drive01;
     const auto maxPush = push * drive01;
-    const auto drive = 0.82f + drive01 * 1.65f + push * 0.82f + maxPush * 1.15f;
+    const auto drive = 0.92f + drive01 * 1.55f + push * 0.82f + maxPush * 1.15f;
     const auto bias = 0.018f * drive01 + push * 0.010f + maxPush * 0.018f;
     const auto biased = sample * drive + bias;
     const auto shaped = std::tanh(biased * 0.86f) / std::tanh(0.86f) - std::tanh(bias * 0.86f) / std::tanh(0.86f);
     const auto rounded = shaped - (0.025f * drive01 + 0.014f * push + 0.020f * maxPush) * shaped * shaped * shaped;
-    const auto blend = 0.09f + drive01 * 0.34f + push * 0.12f + maxPush * 0.14f;
+    const auto blend = drive01 * 0.43f + push * 0.12f + maxPush * 0.14f;
 
     return sample * (1.0f - blend) + rounded * blend;
 }
@@ -74,7 +72,9 @@ inline float saturationAutoGain(float drive01, SaturationType type)
     if (drive01 <= 0.0f)
         return 1.0f;
 
-    const auto amount = type == SaturationType::density ? 0.16f : 0.14f;
-    return 1.0f / (1.0f + drive01 * amount);
+    const auto amount = type == SaturationType::density ? 2.05f : 2.20f;
+    const auto exponent = type == SaturationType::density ? 1.80f : 1.21f;
+    const auto shapedDrive = std::pow(drive01, exponent);
+    return 1.0f / (1.0f + shapedDrive * amount);
 }
 } // namespace bqt
