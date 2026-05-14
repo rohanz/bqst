@@ -72,8 +72,8 @@ inline float saturationAutoGain(float drive01, SaturationType type)
     if (drive01 <= 0.0f)
         return 1.0f;
 
-    const auto amount = type == SaturationType::density ? 2.05f : 2.20f;
-    const auto exponent = type == SaturationType::density ? 1.80f : 1.21f;
+    const auto amount = type == SaturationType::density ? 1.89f : 2.80f;
+    const auto exponent = type == SaturationType::density ? 1.70f : 1.59f;
     const auto shapedDrive = std::pow(drive01, exponent);
     return 1.0f / (1.0f + shapedDrive * amount);
 }

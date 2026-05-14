@@ -213,20 +213,22 @@ Why not live RMS/LUFS matching inside the plugin:
 Current curve in `BqtDsp.h`:
 
 ```cpp
-amount   = Cream ? 2.05 : 2.20
-exponent = Cream ? 1.80 : 1.21
+amount   = Cream ? 1.89 : 2.80
+exponent = Cream ? 1.70 : 1.59
 gain = 1 / (1 + pow(drive01, exponent) * amount)
 ```
+
+Use `tools/calibrate_autogain.py` to rerun the offline material sweep before changing these values. It tests sine, 808, bassline, drum-bus, and dense-master style signals against the plugin's saturation tone path.
 
 Approximate compensation:
 
 ```text
 Drive    Cream      Grit
-1 dB     -0.1 dB    -0.6 dB
-3 dB     -0.7 dB    -2.0 dB
-6 dB     -2.2 dB    -4.0 dB
-12 dB    -6.0 dB    -7.4 dB
-18 dB    -9.7 dB    -10.1 dB
+1 dB     -0.1 dB    -0.2 dB
+3 dB     -0.7 dB    -1.3 dB
+6 dB     -2.2 dB    -3.5 dB
+12 dB    -5.8 dB    -7.9 dB
+18 dB    -9.2 dB    -11.6 dB
 ```
 
 These values were calibrated from offline sweeps using sine/two-tone/808-ish tests at several levels. If retuning, use multiple sources and keep the behavior predictable.

@@ -99,6 +99,8 @@ saturation -> wet autogain -> mix -> output trim
 
 Autogain should not be a live RMS or LUFS follower inside the plugin. LUFS/RMS can be used offline to tune the static compensation curve, but the plugin itself should avoid signal-dependent gain chasing. Live matching can make bass-heavy material feel like it is being compressed or tone-shifted, which is not the goal.
 
+Autogain calibration should be checked with varied material, not only sine waves. The repo includes an offline sweep script for this so Cream and Grit can be retuned against bass, drums, master-like material, and simple reference tones.
+
 The Mix knob should blend between dry and level-compensated wet. Output trim is the final manual correction after the blend.
 
 ## Low-End Handling
