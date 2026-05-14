@@ -18,6 +18,8 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
     setSize(baseEditorWidth, baseEditorHeight);
 
     addAndMakeVisible(rackComponent);
+    addAndMakeVisible(rackBypassOverlay);
+    rackBypassOverlay.setVisible(false);
     configureCombo(eqMode);
     configureCombo(satMode);
     configureCombo(osRealtime);

@@ -485,9 +485,8 @@ void BqtAudioProcessorEditor::updateHoverValueReadout()
         return;
     }
 
-    constexpr juce::uint32 hoverDelayMs = 300;
     if (! hoverReadoutVisible
-        && juce::Time::getMillisecondCounter() - hoverReadoutStartMs >= hoverDelayMs)
+        && juce::Time::getMillisecondCounter() - hoverReadoutStartMs >= hoverValueDelayMs)
     {
         showReadout(*hoveredReadoutSlider, hoveredReadoutSlider->getTextFromValue(hoveredReadoutSlider->getValue()));
         hoverReadoutVisible = true;
@@ -514,9 +513,8 @@ void BqtAudioProcessorEditor::updateTopBarHelp()
         return;
     }
 
-    constexpr juce::uint32 hoverDelayMs = 300;
     if (! helpVisible
-        && juce::Time::getMillisecondCounter() - helpHoverStartMs >= hoverDelayMs)
+        && juce::Time::getMillisecondCounter() - helpHoverStartMs >= hoverHelpDelayMs)
     {
         showReadout(*hoveredHelpComponent, hoveredHelpText);
         helpVisible = true;

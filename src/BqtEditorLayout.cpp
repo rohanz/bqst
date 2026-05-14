@@ -231,27 +231,39 @@ void BqtAudioProcessorEditor::paintRack(juce::Graphics& g)
     drawSatChannelText(meterA, "l/m");
     drawSatChannelText(meterB, "r/s");
 
+    auto drawSatCenterText = [&g](const juce::Slider& left, const juce::Slider& right, const juce::String& text, float yOffset)
+    {
+        const auto x = (left.getBounds().getCentreX() + right.getBounds().getCentreX()) * 0.5f;
+        const auto y = (left.getBottom() + right.getBottom()) * 0.5f + yOffset;
+        drawPanelText(g, text, juce::Rectangle<float>(132.0f, 42.0f).withCentre({ x, y }),
+                      juce::Justification::centred, 34.0f);
+    };
+
+    drawSatCenterText(sideControls[0].drive, sideControls[1].drive, "drive", 1.0f);
+
     auto drawSatKnobText = [&g](const juce::Slider& slider, const juce::String& text)
     {
         const auto b = slider.getBounds().toFloat();
         drawPanelText(g, text, juce::Rectangle<float>(132.0f, 42.0f)
-                                .withCentre({ b.getCentreX(), b.getBottom() + (text == "drive" ? 13.0f : -2.0f) }),
-                      juce::Justification::centred, text == "drive" ? 31.0f : 30.0f);
+                                .withCentre({ b.getCentreX(), b.getBottom() - 2.0f }),
+                      juce::Justification::centred, 30.0f);
     };
 
     for (const auto& controls : sideControls)
     {
-        drawSatKnobText(controls.drive, "drive");
         drawSatKnobText(controls.mix, "mix");
         drawSatKnobText(controls.outputTrim, "output");
     }
 }
 
-void BqtAudioProcessorEditor::RackComponent::paintOverChildren(juce::Graphics& g)
+BqtAudioProcessorEditor::BypassOverlay::BypassOverlay()
 {
-    if (! bypassed)
-        return;
+    setInterceptsMouseClicks(false, false);
+    setVisible(false);
+}
 
+void BqtAudioProcessorEditor::BypassOverlay::paint(juce::Graphics& g)
+{
     const auto bounds = getLocalBounds().toFloat();
     g.setColour(juce::Colours::black.withAlpha(0.28f));
     g.fillRect(bounds);
@@ -261,7 +273,18 @@ void BqtAudioProcessorEditor::RackComponent::paintOverChildren(juce::Graphics& g
 
 void BqtAudioProcessorEditor::requestRackBypassVisualState(bool shouldBeBypassed)
 {
+    const auto wasBypassed = rackComponent.isBypassed();
     rackComponent.setBypassed(shouldBeBypassed);
+
+    rackBypassOverlay.setBounds(rackComponent.getBounds());
+    rackBypassOverlay.setVisible(shouldBeBypassed);
+    rackBypassOverlay.toFront(false);
+    readoutBubble.toFront(false);
+
+    if (shouldBeBypassed && wasBypassed != shouldBeBypassed)
+        rackBypassOverlay.repaint();
+    else if (wasBypassed != shouldBeBypassed)
+        repaint(rackComponent.getBounds());
 }
 
 void BqtAudioProcessorEditor::RackComponent::setBypassed(bool shouldBeBypassed)
@@ -270,7 +293,6 @@ void BqtAudioProcessorEditor::RackComponent::setBypassed(bool shouldBeBypassed)
         return;
 
     bypassed = shouldBeBypassed;
-    repaint();
 }
 
 void BqtAudioProcessorEditor::resized()
@@ -283,6 +305,7 @@ void BqtAudioProcessorEditor::resized()
     };
 
     for (auto* component : { static_cast<juce::Component*>(&rackComponent),
+                             static_cast<juce::Component*>(&rackBypassOverlay),
                              static_cast<juce::Component*>(&presetPrevious), static_cast<juce::Component*>(&presetMenuButton),
                              static_cast<juce::Component*>(&presetNext), static_cast<juce::Component*>(&presetSave),
                              static_cast<juce::Component*>(&inputTrimLabel), static_cast<juce::Component*>(&inputTrim),
@@ -367,6 +390,7 @@ void BqtAudioProcessorEditor::resized()
     auto rackFloat = getRackFaceBounds(bounds.toFloat());
     auto rack = rackFloat.toNearestInt();
     rackComponent.setBounds(rack);
+    rackBypassOverlay.setBounds(rack);
     auto rackLocal = juce::Rectangle<int>(0, 0, rack.getWidth(), rack.getHeight());
     auto eqPanel = rackLocal.removeFromLeft(rackLocal.getWidth() / 2).reduced(24, 26);
     auto satPanel = rackLocal.reduced(24, 26);
@@ -460,5 +484,6 @@ void BqtAudioProcessorEditor::resized()
 
     vintage.toFront(false);
     main.satTypeButton.toFront(false);
+    requestRackBypassVisualState(rackComponent.isBypassed());
     readoutBubble.toFront(false);
 }

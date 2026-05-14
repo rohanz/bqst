@@ -58,12 +58,18 @@ private:
         std::unique_ptr<SliderAttachment> outputTrimAttachment;
     };
 
+    class BypassOverlay final : public juce::Component
+    {
+    public:
+        BypassOverlay();
+        void paint(juce::Graphics& g) override;
+    };
+
     class RackComponent final : public juce::Component
     {
     public:
         explicit RackComponent(BqtAudioProcessorEditor& editorToUse) : editor(editorToUse) {}
         void paint(juce::Graphics& g) override { editor.paintRack(g); }
-        void paintOverChildren(juce::Graphics& g) override;
         void setBypassed(bool shouldBeBypassed);
         bool isBypassed() const { return bypassed; }
 
@@ -128,6 +134,7 @@ private:
     BqtAudioProcessor& audioProcessor;
     BqtPresetManager presetManager;
     RackComponent rackComponent;
+    BypassOverlay rackBypassOverlay;
     juce::TextButton presetPrevious;
     juce::TextButton presetMenuButton;
     juce::TextButton presetNext;
@@ -173,6 +180,8 @@ private:
     juce::String hoveredHelpText;
     juce::uint32 helpHoverStartMs = 0;
     bool helpVisible = false;
+    static constexpr juce::uint32 hoverHelpDelayMs = 700;
+    static constexpr juce::uint32 hoverValueDelayMs = 300;
     double inputTrimCompensationStart = 0.0;
     std::array<double, 2> outputTrimCompensationStart { 0.0, 0.0 };
     int selectedPresetIndex = 0;

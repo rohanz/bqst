@@ -141,14 +141,14 @@ void BqtAudioProcessor::updateFilters()
 void BqtAudioProcessor::updateSaturationToneFilters()
 {
     const auto vintageEnabled = parameters.getRawParameterValue("vintage")->load() > 0.5f;
-    const auto vintageGainDb = vintageEnabled ? -4.2f : 0.0f;
+    const auto vintageGainDb = vintageEnabled ? -3.2f : 0.0f;
 
     for (int side = 0; side < 2; ++side)
     {
         const auto sideIndex = static_cast<size_t>(side);
         *filters[sideIndex].vintage.coefficients = *Coefficients::makeHighShelf(currentSampleRate, 12000.0f, 0.42f, dbToGain(vintageGainDb));
         *filters[sideIndex].densityPreEmphasis.coefficients = *Coefficients::makeHighShelf(currentSampleRate, 6200.0f, 0.55f, dbToGain(0.7f));
-        *filters[sideIndex].densityDeEmphasis.coefficients = *Coefficients::makeHighShelf(currentSampleRate, 6200.0f, 0.55f, dbToGain(-0.9f));
+        *filters[sideIndex].densityDeEmphasis.coefficients = *Coefficients::makeHighShelf(currentSampleRate, 6200.0f, 0.55f, dbToGain(-0.7f));
         *filters[sideIndex].saturationLowGuardPre.coefficients = *Coefficients::makeLowShelf(currentSampleRate, 95.0f, 0.55f, dbToGain(-2.2f));
         *filters[sideIndex].saturationLowGuardPost.coefficients = *Coefficients::makeLowShelf(currentSampleRate, 95.0f, 0.55f, dbToGain(2.2f));
         *filters[sideIndex].transformerWeight.coefficients = *Coefficients::makePeakFilter(currentSampleRate, 240.0f, 0.75f, dbToGain(0.35f));
