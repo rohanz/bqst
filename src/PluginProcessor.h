@@ -52,10 +52,13 @@ private:
         Filter lowShelf;
         Filter highShelf;
         Filter vintage;
+        Filter densityBodyFocus;
         Filter densityPreEmphasis;
         Filter densityDeEmphasis;
         Filter saturationLowGuardPre;
         Filter saturationLowGuardPost;
+        Filter transformerLowDrive;
+        Filter transformerLowRestore;
         Filter transformerWeight;
         Filter transformerTop;
     };

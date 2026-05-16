@@ -47,19 +47,25 @@ void BqtAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
         side.lowShelf.prepare(spec);
         side.highShelf.prepare(spec);
         side.vintage.prepare(spec);
+        side.densityBodyFocus.prepare(spec);
         side.densityPreEmphasis.prepare(spec);
         side.densityDeEmphasis.prepare(spec);
         side.saturationLowGuardPre.prepare(spec);
         side.saturationLowGuardPost.prepare(spec);
+        side.transformerLowDrive.prepare(spec);
+        side.transformerLowRestore.prepare(spec);
         side.transformerWeight.prepare(spec);
         side.transformerTop.prepare(spec);
         side.lowShelf.reset();
         side.highShelf.reset();
         side.vintage.reset();
+        side.densityBodyFocus.reset();
         side.densityPreEmphasis.reset();
         side.densityDeEmphasis.reset();
         side.saturationLowGuardPre.reset();
         side.saturationLowGuardPost.reset();
+        side.transformerLowDrive.reset();
+        side.transformerLowRestore.reset();
         side.transformerWeight.reset();
         side.transformerTop.reset();
     }
@@ -147,12 +153,15 @@ void BqtAudioProcessor::updateSaturationToneFilters()
     {
         const auto sideIndex = static_cast<size_t>(side);
         *filters[sideIndex].vintage.coefficients = *Coefficients::makeHighShelf(currentSampleRate, 12000.0f, 0.42f, dbToGain(vintageGainDb));
-        *filters[sideIndex].densityPreEmphasis.coefficients = *Coefficients::makeHighShelf(currentSampleRate, 6200.0f, 0.55f, dbToGain(0.7f));
-        *filters[sideIndex].densityDeEmphasis.coefficients = *Coefficients::makeHighShelf(currentSampleRate, 6200.0f, 0.55f, dbToGain(-0.7f));
+        *filters[sideIndex].densityBodyFocus.coefficients = *Coefficients::makePeakFilter(currentSampleRate, 720.0f, 0.52f, dbToGain(0.85f));
+        *filters[sideIndex].densityPreEmphasis.coefficients = *Coefficients::makeHighShelf(currentSampleRate, 6200.0f, 0.55f, dbToGain(-0.65f));
+        *filters[sideIndex].densityDeEmphasis.coefficients = *Coefficients::makeHighShelf(currentSampleRate, 7000.0f, 0.50f, dbToGain(-0.55f));
         *filters[sideIndex].saturationLowGuardPre.coefficients = *Coefficients::makeLowShelf(currentSampleRate, 95.0f, 0.55f, dbToGain(-2.2f));
         *filters[sideIndex].saturationLowGuardPost.coefficients = *Coefficients::makeLowShelf(currentSampleRate, 95.0f, 0.55f, dbToGain(2.2f));
-        *filters[sideIndex].transformerWeight.coefficients = *Coefficients::makePeakFilter(currentSampleRate, 240.0f, 0.75f, dbToGain(0.35f));
-        *filters[sideIndex].transformerTop.coefficients = *Coefficients::makeHighShelf(currentSampleRate, 8200.0f, 0.50f, dbToGain(-0.6f));
+        *filters[sideIndex].transformerLowDrive.coefficients = *Coefficients::makeLowShelf(currentSampleRate, 165.0f, 0.62f, dbToGain(1.10f));
+        *filters[sideIndex].transformerLowRestore.coefficients = *Coefficients::makeLowShelf(currentSampleRate, 165.0f, 0.62f, dbToGain(-0.70f));
+        *filters[sideIndex].transformerWeight.coefficients = *Coefficients::makePeakFilter(currentSampleRate, 245.0f, 0.72f, dbToGain(0.55f));
+        *filters[sideIndex].transformerTop.coefficients = *Coefficients::makeHighShelf(currentSampleRate, 7800.0f, 0.50f, dbToGain(-0.75f));
     }
 }
 
@@ -238,15 +247,24 @@ void BqtAudioProcessor::processSaturation(float* samples, int numSamples, int si
         auto value = samples[sample];
         value = filters[static_cast<size_t>(sideIndex)].saturationLowGuardPre.processSample(value);
         if (satType == bqt::SaturationType::density)
+        {
+            value = filters[static_cast<size_t>(sideIndex)].densityBodyFocus.processSample(value);
             value = filters[static_cast<size_t>(sideIndex)].densityPreEmphasis.processSample(value);
+        }
         else
+        {
+            value = filters[static_cast<size_t>(sideIndex)].transformerLowDrive.processSample(value);
             value = filters[static_cast<size_t>(sideIndex)].transformerWeight.processSample(value);
+        }
 
         value = processSample(value);
         if (satType == bqt::SaturationType::density)
             value = filters[static_cast<size_t>(sideIndex)].densityDeEmphasis.processSample(value);
         else
+        {
+            value = filters[static_cast<size_t>(sideIndex)].transformerLowRestore.processSample(value);
             value = filters[static_cast<size_t>(sideIndex)].transformerTop.processSample(value);
+        }
 
         value = filters[static_cast<size_t>(sideIndex)].saturationLowGuardPost.processSample(value);
         samples[sample] = filters[static_cast<size_t>(sideIndex)].vintage.processSample(value);

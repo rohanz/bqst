@@ -305,9 +305,10 @@ void BqtAudioProcessorEditor::mouseMove(const juce::MouseEvent& event)
                 hideTopBarHelp();
                 hoveredHelpComponent = component;
                 hoveredHelpText = component->getProperties()["bqtHelpText"].toString();
+                helpHoverStartMs = juce::Time::getMillisecondCounter();
+                helpVisible = false;
             }
 
-            helpHoverStartMs = juce::Time::getMillisecondCounter();
             return;
         }
 
@@ -320,12 +321,8 @@ void BqtAudioProcessorEditor::mouseMove(const juce::MouseEvent& event)
         {
             hoveredReadoutSlider = slider;
             hoverReadoutVisible = false;
+            hoverReadoutStartMs = juce::Time::getMillisecondCounter();
         }
-
-        hoverReadoutStartMs = juce::Time::getMillisecondCounter();
-
-        if (hoverReadoutVisible)
-            hideHoverValueReadout();
     }
 }
 

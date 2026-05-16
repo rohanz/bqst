@@ -33,7 +33,7 @@ inline constexpr std::array<float, 8> highShelfFrequenciesHz {
     1600.0f, 1800.0f, 2100.0f, 2500.0f, 3400.0f, 4800.0f, 7100.0f, 18000.0f
 };
 
-inline float densitySaturate(float sample, float drive01)
+inline float densitySaturateLegacy(float sample, float drive01)
 {
     if (drive01 <= 0.0f)
         return sample;
@@ -46,6 +46,23 @@ inline float densitySaturate(float sample, float drive01)
     const auto driven = sample * softKnee + oddWeight * sample * sample * sample + asymmetry;
     const auto shaped = (std::tanh(driven) - std::tanh(asymmetry)) * (1.0f + 0.09f * drive01 + 0.10f * maxPush);
     const auto blend = drive01 * 0.38f + push * 0.13f + maxPush * 0.12f;
+
+    return sample * (1.0f - blend) + shaped * blend;
+}
+
+inline float densitySaturate(float sample, float drive01)
+{
+    if (drive01 <= 0.0f)
+        return sample;
+
+    const auto push = drive01 * drive01;
+    const auto maxPush = push * drive01;
+    const auto asymmetry = drive01 * (0.016f + drive01 * 0.045f + push * 0.040f);
+    const auto oddWeight = drive01 * (0.032f + drive01 * 0.095f + push * 0.115f + maxPush * 0.135f);
+    const auto softKnee = 0.80f + drive01 * 0.42f + push * 0.36f + maxPush * 0.60f;
+    const auto driven = sample * softKnee + oddWeight * sample * sample * sample + asymmetry;
+    const auto shaped = (std::tanh(driven) - std::tanh(asymmetry)) * (1.0f + 0.07f * drive01 + 0.13f * maxPush);
+    const auto blend = drive01 * 0.39f + push * 0.16f + maxPush * 0.15f;
 
     return sample * (1.0f - blend) + shaped * blend;
 }
@@ -72,8 +89,8 @@ inline float saturationAutoGain(float drive01, SaturationType type)
     if (drive01 <= 0.0f)
         return 1.0f;
 
-    const auto amount = type == SaturationType::density ? 1.89f : 2.80f;
-    const auto exponent = type == SaturationType::density ? 1.70f : 1.59f;
+    const auto amount = type == SaturationType::density ? 2.04f : 2.71f;
+    const auto exponent = type == SaturationType::density ? 1.67f : 1.48f;
     const auto shapedDrive = std::pow(drive01, exponent);
     return 1.0f / (1.0f + shapedDrive * amount);
 }

@@ -87,12 +87,12 @@ def density_saturate(sample, drive01):
 
     push = drive01 * drive01
     max_push = push * drive01
-    asymmetry = drive01 * (0.012 + drive01 * 0.048 + push * 0.028)
-    odd_weight = drive01 * (0.040 + drive01 * 0.135 + push * 0.105 + max_push * 0.165)
-    soft_knee = 0.82 + drive01 * 0.38 + push * 0.36 + max_push * 0.50
+    asymmetry = drive01 * (0.016 + drive01 * 0.045 + push * 0.040)
+    odd_weight = drive01 * (0.032 + drive01 * 0.095 + push * 0.115 + max_push * 0.135)
+    soft_knee = 0.80 + drive01 * 0.42 + push * 0.36 + max_push * 0.60
     driven = sample * soft_knee + odd_weight * sample * sample * sample + asymmetry
-    shaped = (math.tanh(driven) - math.tanh(asymmetry)) * (1.0 + 0.09 * drive01 + 0.10 * max_push)
-    blend = drive01 * 0.38 + push * 0.13 + max_push * 0.12
+    shaped = (math.tanh(driven) - math.tanh(asymmetry)) * (1.0 + 0.07 * drive01 + 0.13 * max_push)
+    blend = drive01 * 0.39 + push * 0.16 + max_push * 0.15
     return sample * (1.0 - blend) + shaped * blend
 
 
@@ -117,20 +117,29 @@ def process_saturation(samples, drive01, sat_type):
     post_low = make_low_shelf(95.0, 0.55, db_to_gain(2.2))
 
     if sat_type == "cream":
-        pre_tone = make_high_shelf(6200.0, 0.55, db_to_gain(0.7))
-        post_tone = make_high_shelf(6200.0, 0.55, db_to_gain(-0.7))
+        body_tone = make_peak(720.0, 0.52, db_to_gain(0.85))
+        pre_tone = make_high_shelf(6200.0, 0.55, db_to_gain(-0.65))
+        post_tone = make_high_shelf(7000.0, 0.50, db_to_gain(-0.55))
         shape = density_saturate
     else:
-        pre_tone = make_peak(240.0, 0.75, db_to_gain(0.35))
-        post_tone = make_high_shelf(8200.0, 0.50, db_to_gain(-0.6))
+        low_drive = make_low_shelf(165.0, 0.62, db_to_gain(1.10))
+        pre_tone = make_peak(245.0, 0.72, db_to_gain(0.55))
+        low_restore = make_low_shelf(165.0, 0.62, db_to_gain(-0.70))
+        post_tone = make_high_shelf(7800.0, 0.50, db_to_gain(-0.75))
         shape = transformer_saturate
 
     gain = db_to_gain(drive01 * 18.0 * drive_scale)
     out = []
     for sample in samples:
         value = pre_low.process(sample)
+        if sat_type == "cream":
+            value = body_tone.process(value)
+        else:
+            value = low_drive.process(value)
         value = pre_tone.process(value)
         value = shape(value * gain, drive01)
+        if sat_type == "grit":
+            value = low_restore.process(value)
         value = post_tone.process(value)
         value = post_low.process(value)
         out.append(value)

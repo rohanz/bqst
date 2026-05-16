@@ -9,3 +9,4 @@ DerivedData/
 *.vst3
 *.component
 *.aaxplugin
+references/**/*.wav
