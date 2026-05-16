@@ -57,24 +57,36 @@ void BqtHardwareLookAndFeel::drawRotarySlider(juce::Graphics& g, int x, int y, i
 
     if (slider.getProperties().contains("bqtLargeCreamKnob") && static_cast<bool>(slider.getProperties()["bqtLargeCreamKnob"]))
     {
-        static auto image = juce::ImageCache::getFromMemory(BinaryData::knoblargeskirted_png,
-                                                            BinaryData::knoblargeskirted_pngSize);
+        static auto image = []
+        {
+            const auto source = juce::ImageCache::getFromMemory(BinaryData::knoblargeskirted_png,
+                                                                BinaryData::knoblargeskirted_pngSize);
+            return source.rescaled(768, 768, juce::Graphics::highResamplingQuality);
+        }();
         drawRotatedImageKnob(g, image, knobArea, angle, 1.18f);
         return;
     }
 
     if (slider.getProperties().contains("bqtSmallCreamKnob") && static_cast<bool>(slider.getProperties()["bqtSmallCreamKnob"]))
     {
-        static auto image = juce::ImageCache::getFromMemory(BinaryData::knobsmallpointer_png,
-                                                            BinaryData::knobsmallpointer_pngSize);
+        static auto image = []
+        {
+            const auto source = juce::ImageCache::getFromMemory(BinaryData::knobsmallpointer_png,
+                                                                BinaryData::knobsmallpointer_pngSize);
+            return source.rescaled(512, 512, juce::Graphics::highResamplingQuality);
+        }();
         drawRotatedImageKnob(g, image, knobArea, angle, 1.08f);
         return;
     }
 
     if (slider.getProperties().contains("bqtKnobCombo") && static_cast<bool>(slider.getProperties()["bqtKnobCombo"]))
     {
-        static auto image = juce::ImageCache::getFromMemory(BinaryData::knobsmallpointer_png,
-                                                            BinaryData::knobsmallpointer_pngSize);
+        static auto image = []
+        {
+            const auto source = juce::ImageCache::getFromMemory(BinaryData::knobsmallpointer_png,
+                                                                BinaryData::knobsmallpointer_pngSize);
+            return source.rescaled(512, 512, juce::Graphics::highResamplingQuality);
+        }();
         drawRotatedImageKnob(g, image, knobArea, angle, 1.10f);
         return;
     }
@@ -143,8 +155,12 @@ void BqtHardwareLookAndFeel::drawComboBox(juce::Graphics& g, int width, int heig
         const auto end = juce::MathConstants<float>::pi * 2.78f;
         const auto angle = start + pos * (end - start);
 
-        static auto image = juce::ImageCache::getFromMemory(BinaryData::knobsmallpointer_png,
-                                                            BinaryData::knobsmallpointer_pngSize);
+        static auto image = []
+        {
+            const auto source = juce::ImageCache::getFromMemory(BinaryData::knobsmallpointer_png,
+                                                                BinaryData::knobsmallpointer_pngSize);
+            return source.rescaled(512, 512, juce::Graphics::highResamplingQuality);
+        }();
         drawRotatedImageKnob(g, image, bounds.withCentre(centre).withSizeKeepingCentre(radius * 2.18f, radius * 2.18f),
                              angle, 1.10f);
         return;
@@ -457,6 +473,12 @@ BqtVuMeter::BqtVuMeter(BqtAudioProcessor& p, int sideIndex)
 
 void BqtVuMeter::paint(juce::Graphics& g)
 {
+    if (staticLayerWidth != getWidth() || staticLayerHeight != getHeight() || ! staticLayer.isValid())
+        rebuildStaticLayer();
+
+    if (staticLayer.isValid())
+        g.drawImageAt(staticLayer, 0, 0);
+
     const auto bounds = getLocalBounds().toFloat();
     auto frameBounds = bounds.reduced(1.0f);
 
@@ -465,7 +487,57 @@ void BqtVuMeter::paint(juce::Graphics& g)
                                  .withTrimmedTop(frameBounds.getHeight() * 0.22f)
                                  .withTrimmedBottom(frameBounds.getHeight() * 0.35f);
 
-    static auto frame = juce::ImageCache::getFromMemory(BinaryData::vuframe_png, BinaryData::vuframe_pngSize);
+    auto polar = [](juce::Point<float> centre, float radius, float degrees)
+    {
+        const auto radians = juce::degreesToRadians(degrees);
+        return juce::Point<float>(centre.x + std::cos(radians) * radius,
+                                  centre.y - std::sin(radians) * radius);
+    };
+
+    const auto centre = juce::Point<float>(inner.getCentreX(), inner.getY() + inner.getHeight() * 0.87f);
+    const auto needlePivot = juce::Point<float>(inner.getCentreX(), inner.getY() + inner.getHeight() * 0.88f);
+    const auto radius = inner.getWidth() * 0.62f;
+    const auto start = 137.0f;
+    const auto end = 43.0f;
+
+    const auto meterBlack = juce::Colour(0xff1f1a17);
+
+    const auto needleAngle = start + juce::jlimit(0.0f, 1.0f, displayedLevel) * (end - start);
+    const auto needleEnd = polar(centre, radius + 7.0f, needleAngle);
+    g.setColour(meterBlack);
+    g.drawLine({ needlePivot, needleEnd }, 2.6f);
+    g.setColour(meterBlack.darker(0.35f));
+    g.fillEllipse(juce::Rectangle<float>(6.5f, 6.5f).withCentre(needlePivot));
+}
+
+void BqtVuMeter::rebuildStaticLayer()
+{
+    staticLayerWidth = getWidth();
+    staticLayerHeight = getHeight();
+
+    if (staticLayerWidth <= 0 || staticLayerHeight <= 0)
+    {
+        staticLayer = {};
+        return;
+    }
+
+    staticLayer = juce::Image(juce::Image::ARGB, staticLayerWidth, staticLayerHeight, true);
+    juce::Graphics g(staticLayer);
+
+    const auto bounds = juce::Rectangle<float>(0.0f, 0.0f, static_cast<float>(staticLayerWidth),
+                                               static_cast<float>(staticLayerHeight));
+    auto frameBounds = bounds.reduced(1.0f);
+
+    const auto inner = frameBounds.withTrimmedLeft(frameBounds.getWidth() * 0.27f)
+                                 .withTrimmedRight(frameBounds.getWidth() * 0.27f)
+                                 .withTrimmedTop(frameBounds.getHeight() * 0.22f)
+                                 .withTrimmedBottom(frameBounds.getHeight() * 0.35f);
+
+    static auto frame = []
+    {
+        const auto source = juce::ImageCache::getFromMemory(BinaryData::vuframe_png, BinaryData::vuframe_pngSize);
+        return source.rescaled(1000, 1000, juce::Graphics::highResamplingQuality);
+    }();
     if (frame.isValid())
     {
         const auto frameArea = frameBounds.toNearestInt();
@@ -489,7 +561,6 @@ void BqtVuMeter::paint(juce::Graphics& g)
     };
 
     const auto centre = juce::Point<float>(inner.getCentreX(), inner.getY() + inner.getHeight() * 0.87f);
-    const auto needlePivot = juce::Point<float>(inner.getCentreX(), inner.getY() + inner.getHeight() * 0.88f);
     const auto radius = inner.getWidth() * 0.62f;
     const auto start = 137.0f;
     const auto end = 43.0f;
@@ -553,13 +624,6 @@ void BqtVuMeter::paint(juce::Graphics& g)
     g.setFont(juce::Font(faceFont(19.0f, true)));
     g.drawText("vu", inner.withTrimmedTop(inner.getHeight() * 0.38f).withHeight(22.0f).toNearestInt(),
                juce::Justification::centred);
-
-    const auto needleAngle = start + juce::jlimit(0.0f, 1.0f, displayedLevel) * (end - start);
-    const auto needleEnd = polar(centre, radius + 7.0f, needleAngle);
-    g.setColour(meterBlack);
-    g.drawLine({ needlePivot, needleEnd }, 2.6f);
-    g.setColour(meterBlack.darker(0.35f));
-    g.fillEllipse(juce::Rectangle<float>(6.5f, 6.5f).withCentre(needlePivot));
 }
 
 void BqtVuMeter::updateLevel()

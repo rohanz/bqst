@@ -42,8 +42,13 @@ public:
     void updateLevel();
 
 private:
+    void rebuildStaticLayer();
+
     BqtAudioProcessor& audioProcessor;
     int side = 0;
     float targetLevel = 0.0f;
     float displayedLevel = 0.0f;
+    juce::Image staticLayer;
+    int staticLayerWidth = 0;
+    int staticLayerHeight = 0;
 };
