@@ -6,11 +6,11 @@ Portfolio writeup: https://rohanjk.xyz/projects/bqst
 
 ## Download
 
-The recommended macOS release is the signed and notarized installer:
+Download BQST from the project page:
 
-[Download BQST 1.0.0 for macOS](https://www.rohanjk.xyz/downloads/bqst/BQST-1.0.0-macOS.pkg)
+https://www.rohanjk.xyz/projects/bqst
 
-The installer includes:
+The macOS installer includes:
 
 - VST3: `/Library/Audio/Plug-Ins/VST3/BQST.vst3`
 - Audio Unit: `/Library/Audio/Plug-Ins/Components/BQST.component`
