@@ -473,11 +473,22 @@ BqtVuMeter::BqtVuMeter(BqtAudioProcessor& p, int sideIndex)
 
 void BqtVuMeter::paint(juce::Graphics& g)
 {
-    if (staticLayerWidth != getWidth() || staticLayerHeight != getHeight() || ! staticLayer.isValid())
+    const auto layerScale = juce::jlimit(1.0f, 4.0f,
+                                         juce::jmax(renderScale * 2.0f,
+                                                    juce::Component::getApproximateScaleFactorForComponent(this)));
+    const auto desiredLayerWidth = static_cast<int>(std::ceil(static_cast<float>(getWidth()) * layerScale));
+    const auto desiredLayerHeight = static_cast<int>(std::ceil(static_cast<float>(getHeight()) * layerScale));
+
+    if (staticLayerWidth != desiredLayerWidth || staticLayerHeight != desiredLayerHeight
+        || ! juce::approximatelyEqual(staticLayerScale, layerScale) || ! staticLayer.isValid())
         rebuildStaticLayer();
 
     if (staticLayer.isValid())
-        g.drawImageAt(staticLayer, 0, 0);
+    {
+        g.setImageResamplingQuality(juce::Graphics::highResamplingQuality);
+        g.drawImage(staticLayer, 0, 0, getWidth(), getHeight(),
+                    0, 0, staticLayer.getWidth(), staticLayer.getHeight());
+    }
 
     const auto bounds = getLocalBounds().toFloat();
     auto frameBounds = bounds.reduced(1.0f);
@@ -510,12 +521,30 @@ void BqtVuMeter::paint(juce::Graphics& g)
     g.fillEllipse(juce::Rectangle<float>(6.5f, 6.5f).withCentre(needlePivot));
 }
 
+void BqtVuMeter::setRenderScale(float newScale)
+{
+    newScale = juce::jlimit(1.0f, 3.0f, newScale);
+
+    if (juce::approximatelyEqual(renderScale, newScale))
+        return;
+
+    renderScale = newScale;
+    staticLayer = {};
+    repaint();
+}
+
 void BqtVuMeter::rebuildStaticLayer()
 {
-    staticLayerWidth = getWidth();
-    staticLayerHeight = getHeight();
+    const auto logicalWidth = getWidth();
+    const auto logicalHeight = getHeight();
+    const auto layerScale = juce::jlimit(1.0f, 4.0f,
+                                         juce::jmax(renderScale * 2.0f,
+                                                    juce::Component::getApproximateScaleFactorForComponent(this)));
+    staticLayerWidth = static_cast<int>(std::ceil(static_cast<float>(logicalWidth) * layerScale));
+    staticLayerHeight = static_cast<int>(std::ceil(static_cast<float>(logicalHeight) * layerScale));
+    staticLayerScale = layerScale;
 
-    if (staticLayerWidth <= 0 || staticLayerHeight <= 0)
+    if (staticLayerWidth <= 0 || staticLayerHeight <= 0 || logicalWidth <= 0 || logicalHeight <= 0)
     {
         staticLayer = {};
         return;
@@ -523,9 +552,10 @@ void BqtVuMeter::rebuildStaticLayer()
 
     staticLayer = juce::Image(juce::Image::ARGB, staticLayerWidth, staticLayerHeight, true);
     juce::Graphics g(staticLayer);
+    g.addTransform(juce::AffineTransform::scale(layerScale));
 
-    const auto bounds = juce::Rectangle<float>(0.0f, 0.0f, static_cast<float>(staticLayerWidth),
-                                               static_cast<float>(staticLayerHeight));
+    const auto bounds = juce::Rectangle<float>(0.0f, 0.0f, static_cast<float>(logicalWidth),
+                                               static_cast<float>(logicalHeight));
     auto frameBounds = bounds.reduced(1.0f);
 
     const auto inner = frameBounds.withTrimmedLeft(frameBounds.getWidth() * 0.27f)
@@ -626,7 +656,7 @@ void BqtVuMeter::rebuildStaticLayer()
                juce::Justification::centred);
 }
 
-void BqtVuMeter::updateLevel()
+bool BqtVuMeter::updateLevel()
 {
     const auto raw = audioProcessor.getMeterLevel(side);
     const auto db = juce::Decibels::gainToDecibels(raw, -60.0f);
@@ -634,5 +664,11 @@ void BqtVuMeter::updateLevel()
     const auto clampedVu = juce::jlimit(-20.0f, 3.0f, vu);
     targetLevel = clampedVu <= 0.0f ? ((clampedVu + 20.0f) / 20.0f) * 0.82f
                                     : 0.82f + (clampedVu / 3.0f) * 0.18f;
+    const auto previousLevel = displayedLevel;
     displayedLevel += (targetLevel - displayedLevel) * 0.18f;
+
+    if (std::abs(targetLevel - displayedLevel) < 0.0005f)
+        displayedLevel = targetLevel;
+
+    return std::abs(displayedLevel - previousLevel) >= 0.0001f;
 }

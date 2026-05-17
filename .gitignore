@@ -1,5 +1,7 @@
 build/
 build-release/
+build-windows/
+dist/
 cmake-build-*/
 .DS_Store
 *.jucer

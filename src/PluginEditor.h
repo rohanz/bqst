@@ -7,6 +7,7 @@
 #include "PluginProcessor.h"
 
 #include <array>
+#include <functional>
 #include <vector>
 
 class BqtAudioProcessorEditor final : public juce::AudioProcessorEditor,
@@ -65,10 +66,28 @@ private:
         void paint(juce::Graphics& g) override;
     };
 
+    class AboutPanel final : public juce::Component
+    {
+    public:
+        AboutPanel();
+        void paint(juce::Graphics& g) override;
+        void resized() override;
+        void mouseUp(const juce::MouseEvent& event) override;
+
+        std::function<void()> onClose;
+
+    private:
+        juce::Rectangle<int> closeBounds;
+    };
+
     class RackComponent final : public juce::Component
     {
     public:
-        explicit RackComponent(BqtAudioProcessorEditor& editorToUse) : editor(editorToUse) {}
+        explicit RackComponent(BqtAudioProcessorEditor& editorToUse) : editor(editorToUse)
+        {
+            setOpaque(true);
+        }
+
         void paint(juce::Graphics& g) override { editor.paintRack(g); }
         void setBypassed(bool shouldBeBypassed);
         bool isBypassed() const { return bypassed; }
@@ -129,6 +148,8 @@ private:
     void selectRelativePreset(int offset);
     void saveUserPreset();
     void updatePresetButtonText();
+    void showAboutPanel();
+    void hideAboutPanel();
 
     BqtHardwareLookAndFeel hardwareLookAndFeel;
     BqtAudioProcessor& audioProcessor;
@@ -139,6 +160,7 @@ private:
     juce::TextButton presetMenuButton;
     juce::TextButton presetNext;
     juce::TextButton presetSave;
+    juce::TextButton aboutButton;
     juce::ComboBox eqMode;
     juce::ComboBox satMode;
     juce::ComboBox osRealtime;
@@ -156,6 +178,7 @@ private:
     std::array<SideControls, 2> sideControls;
     BqtVuMeter meterA;
     BqtVuMeter meterB;
+    AboutPanel aboutPanel;
 
     std::unique_ptr<ComboBoxAttachment> eqModeAttachment;
     std::unique_ptr<ComboBoxAttachment> satModeAttachment;

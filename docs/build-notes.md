@@ -67,13 +67,87 @@ AU   -> ~/Library/Audio/Plug-Ins/Components/BQST.component
 
 This may need to run outside the sandbox because pluginval opens plugin bundles and editors.
 
+## Package and Notarize
+
+Build a local installer package:
+
+```sh
+scripts/package-macos.sh
+```
+
+This produces `dist/BQST-1.0.0-macOS.pkg` with ad-hoc signed plugin bundles. It is useful for install testing, but it is not suitable for public distribution.
+
+For a public macOS package, install the Developer ID Application and Developer ID Installer certificates, then create a notary keychain profile:
+
+```sh
+xcrun notarytool store-credentials bqst-notary --apple-id "you@example.com" --team-id "TEAMID" --password "app-specific-password"
+```
+
+If Xcode was just installed and `xcode-select -p` still prints `/Library/Developer/CommandLineTools`, switch the active developer directory once:
+
+```sh
+sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+```
+
+If you cannot switch it globally, prefix the package command with:
+
+```sh
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
+```
+
+Then run:
+
+```sh
+PLUGIN_SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
+INSTALLER_SIGN_IDENTITY="Developer ID Installer: Your Name (TEAMID)" \
+NOTARY_PROFILE="bqst-notary" \
+NOTARIZE=1 \
+scripts/package-macos.sh
+```
+
+The script signs the VST3/AU bundles, signs the installer package, submits it with `notarytool`, staples the notarization ticket, and verifies the final package with `spctl`.
+
+The macOS installer uses `packaging/macos/Distribution.xml` with Welcome and Read Me pages. The installer artwork is generated from the BQST project banner in the website redesign:
+
+```text
+/Users/rohan/Documents/progwork/www/rohan-website-redesign/assets/images/projects/bqst/banner.png
+```
+
+## Windows Installer
+
+The Windows installer project uses Inno Setup 6 and the cropped artwork in `packaging/windows`.
+
+The GitHub Actions workflow `.github/workflows/windows-installer.yml` builds the Windows VST3 on `windows-latest`, runs Inno Setup, verifies the expected output files, and uploads the VST3 and installer as artifacts.
+
+On Windows:
+
+```powershell
+cmake -S . -B build-windows -DCMAKE_BUILD_TYPE=Release
+cmake --build build-windows --config Release
+powershell -ExecutionPolicy Bypass -File scripts/package-windows.ps1
+```
+
+The script expects:
+
+```text
+build-windows/BQST_artefacts/Release/VST3/BQST.vst3
+```
+
+It writes:
+
+```text
+dist/BQST-1.0.0-Windows.exe
+```
+
 ## Current Build Status
 
 The project configures and builds Debug and Release VST3, AU, and Standalone artifacts.
 
 The Release VST3 has passed pluginval strictness level 10.
 
-Implemented in the first scaffold:
+The macOS package script can build, sign, submit, staple, and verify a notarized installer
+when run with Developer ID identities and `NOTARIZE=1`.
+
 Implemented in the current build:
 
 - JUCE/CMake plugin target.
@@ -105,8 +179,3 @@ Implemented in the current build:
 - Top-bar controls for input, mode, link, oversampling, auto gain, bypass, and fixed UI size.
 - Preset strip with factory presets, previous/next navigation, and user preset saving.
 - 500-series-inspired UI using local PNG assets and procedural faceplate rendering.
-
-Not implemented yet:
-
-- Developer ID signing/notarization for public distribution.
-- Final signed installer release.

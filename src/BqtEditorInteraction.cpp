@@ -45,10 +45,11 @@ void BqtAudioProcessorEditor::timerCallback()
 
     if (! rackComponent.isBypassed())
     {
-        meterA.updateLevel();
-        meterB.updateLevel();
-        meterA.repaint();
-        meterB.repaint();
+        if (meterA.updateLevel())
+            meterA.repaint();
+
+        if (meterB.updateLevel())
+            meterB.repaint();
     }
 
     updateLinkedControlStates();

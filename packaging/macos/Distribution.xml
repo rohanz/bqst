@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<installer-gui-script minSpecVersion="1">
+    <title>BQST 1.0.0</title>
+    <background file="background.png" alignment="center" scaling="proportional"/>
+    <welcome file="Welcome.html"/>
+    <readme file="ReadMe.html"/>
+    <options customize="never" require-scripts="false"/>
+    <domains enable_anywhere="false" enable_currentUserHome="false" enable_localSystem="true"/>
+
+    <choices-outline>
+        <line choice="bqst.plugins"/>
+    </choices-outline>
+
+    <choice id="bqst.plugins" title="BQST Plugins" description="Installs the BQST VST3 and Audio Unit plugins.">
+        <pkg-ref id="xyz.rohanjk.bqst.plugins"/>
+    </choice>
+
+    <pkg-ref id="xyz.rohanjk.bqst.plugins"
+             version="1.0.0"
+             auth="Root"
+             onConclusion="none">BQST-components.pkg</pkg-ref>
+</installer-gui-script>

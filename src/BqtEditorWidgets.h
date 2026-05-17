@@ -39,7 +39,8 @@ class BqtVuMeter final : public juce::Component
 public:
     BqtVuMeter(BqtAudioProcessor& processor, int sideIndex);
     void paint(juce::Graphics& g) override;
-    void updateLevel();
+    void setRenderScale(float newScale);
+    bool updateLevel();
 
 private:
     void rebuildStaticLayer();
@@ -51,4 +52,6 @@ private:
     juce::Image staticLayer;
     int staticLayerWidth = 0;
     int staticLayerHeight = 0;
+    float staticLayerScale = 0.0f;
+    float renderScale = 1.0f;
 };

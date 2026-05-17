@@ -36,6 +36,7 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
     addAndMakeVisible(presetNext);
     addAndMakeVisible(presetSave);
     addAndMakeVisible(presetMenuButton);
+    addAndMakeVisible(aboutButton);
     addAndMakeVisible(autoGain);
     addAndMakeVisible(eqBypass);
     addAndMakeVisible(satBypass);
@@ -51,11 +52,14 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
     addAndMakeVisible(readoutBubble);
     readoutBubble.setVisible(false);
     readoutBubble.setInterceptsMouseClicks(false, false);
+    addAndMakeVisible(aboutPanel);
+    aboutPanel.setVisible(false);
 
     presetPrevious.setButtonText("<");
     presetMenuButton.setButtonText("Default");
     presetNext.setButtonText(">");
     presetSave.setButtonText("save");
+    aboutButton.setButtonText("about");
     autoGain.setButtonText("autogain");
     eqBypass.setButtonText("eq in");
     satBypass.setButtonText("sat in");
@@ -75,6 +79,7 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
     setTopBarHelp(presetMenuButton, "Loads factory and user presets.");
     setTopBarHelp(presetNext, "Loads the next preset.");
     setTopBarHelp(presetSave, "Saves the current settings as a user preset.");
+    setTopBarHelp(aboutButton, "Shows plugin version, credits, and install details.");
     setTopBarHelp(inputTrim, "Adjusts level before the EQ and saturation. Control-drag compensates output trim.");
     setTopBarHelp(eqMode, "Chooses whether the EQ controls process left/right or mid/side.");
     setTopBarHelp(eqLink, "Links the two EQ sides.");
@@ -91,11 +96,14 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
         button->getProperties().set("bqtPushButton", true);
     for (auto* button : { &presetPrevious, &presetMenuButton, &presetNext, &presetSave })
         button->getProperties().set("bqtPushButton", true);
+    aboutButton.getProperties().set("bqtPushButton", true);
 
     presetPrevious.onClick = [this] { selectRelativePreset(-1); };
     presetMenuButton.onClick = [this] { showPresetMenu(); };
     presetNext.onClick = [this] { selectRelativePreset(1); };
     presetSave.onClick = [this] { saveUserPreset(); };
+    aboutButton.onClick = [this] { showAboutPanel(); };
+    aboutPanel.onClose = [this] { hideAboutPanel(); };
 
     sizeSelect.onChange = [this]
     {

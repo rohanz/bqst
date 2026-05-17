@@ -12,6 +12,12 @@ endif()
 
 add_subdirectory(external/JUCE)
 
+set(BQST_PLUGIN_FORMATS VST3 Standalone)
+
+if (APPLE)
+    list(APPEND BQST_PLUGIN_FORMATS AU)
+endif()
+
 juce_add_binary_data(BqtAssets
     SOURCES
         assets/gui/knob-large-skirted.png
@@ -25,7 +31,7 @@ juce_add_plugin(BQST
     COMPANY_NAME "Rohan"
     PLUGIN_MANUFACTURER_CODE RohK
     PLUGIN_CODE Bqs1
-    FORMATS VST3 AU Standalone
+    FORMATS ${BQST_PLUGIN_FORMATS}
     PRODUCT_NAME "BQST"
     IS_SYNTH FALSE
     NEEDS_MIDI_INPUT FALSE
