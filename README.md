@@ -8,9 +8,7 @@ Portfolio writeup: https://rohanjk.xyz/projects/bqst
 
 The recommended macOS release is the signed and notarized installer:
 
-```text
-BQST-1.0.0-macOS.pkg
-```
+[Download BQST 1.0.0 for macOS](https://www.rohanjk.xyz/downloads/bqst/BQST-1.0.0-macOS.pkg)
 
 The installer includes:
 
@@ -38,8 +36,6 @@ Factory presets are built into the plugin. User presets can be saved from the pl
 - macOS VST3
 - macOS Audio Unit
 - macOS Standalone app when building from source
-
-Windows packaging work is present in the repo, but the public release currently focuses on macOS.
 
 ## Build From Source
 
@@ -72,21 +68,12 @@ build-release/BQST_artefacts/Release/AU/BQST.component
 build-release/BQST_artefacts/Release/Standalone/BQST.app
 ```
 
-For local development installs:
-
-```sh
-scripts/install-local.sh
-```
-
-Use a custom VST3 folder if your DAW scans one:
-
-```sh
-BQST_VST3_DIR="/path/to/custom/vst3" scripts/install-local.sh
-```
+Additional developer build, validation, local install, and packaging notes are in
+[docs/build-notes.md](docs/build-notes.md).
 
 ## Validation
 
-The release VST3 has passed `pluginval` strictness level 10 during development. BQST has also been tested in Ableton for loading, UI interaction, parameter automation, preset recall, bypass behavior, and offline render paths.
+The release VST3 and Audio Unit builds have passed `pluginval` strictness level 10 during development. BQST has also been tested in Ableton for loading, UI interaction, parameter automation, preset recall, bypass behavior, sample-rate changes, fixed UI sizes, and offline render paths.
 
 ## Documentation
 
