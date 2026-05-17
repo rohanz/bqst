@@ -3,7 +3,7 @@ set -eu
 
 ROOT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 RELEASE_DIR="$ROOT_DIR/build-release/BQST_artefacts/Release"
-CUSTOM_VST3_DIR="$HOME/Library/CloudStorage/OneDrive-Personal/dailystuff/music/vst3"
+CUSTOM_VST3_DIR="${BQST_VST3_DIR:-$HOME/Library/Audio/Plug-Ins/VST3}"
 USER_COMPONENT_DIR="$HOME/Library/Audio/Plug-Ins/Components"
 
 mkdir -p "$CUSTOM_VST3_DIR"

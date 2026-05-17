@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Measure the downloaded Bereich03 Density reference files.
+"""Measure external saturation reference files.
 
 This uses only the Python standard library so it can run on a clean macOS
 machine. It is intentionally simple: the goal is to track level, crest factor,
-and residual energy for the OFF/ON examples while tuning BQST's Cream mode.
+and residual energy for dry/wet examples while tuning BQST's Cream mode.
 """
 
 from __future__ import annotations
@@ -64,11 +64,11 @@ def residual_metrics(dry: list[float], wet: list[float]) -> dict[str, float]:
 
 
 def main() -> int:
-    reference_dir = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("references/density")
+    reference_dir = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("references/saturation")
     files = [
-        ("off", reference_dir / "density-off.wav"),
-        ("density 3", reference_dir / "density-3.wav"),
-        ("density 3 boom+vint", reference_dir / "density-3-boom-vint.wav"),
+        ("dry", reference_dir / "dry.wav"),
+        ("wet moderate", reference_dir / "wet-moderate.wav"),
+        ("wet pushed", reference_dir / "wet-pushed.wav"),
     ]
 
     loaded: dict[str, list[float]] = {}
@@ -82,9 +82,9 @@ def main() -> int:
             f"{values['crest_db']:.2f},{values['dc']:+.6f}"
         )
 
-    dry = loaded["off"]
+    dry = loaded["dry"]
     print("\ncomparison,residual_dbfs,residual_vs_dry_db")
-    for label in ("density 3", "density 3 boom+vint"):
+    for label in ("wet moderate", "wet pushed"):
         values = residual_metrics(dry, loaded[label])
         print(f"{label},{values['residual_dbfs']:.2f},{values['residual_vs_dry_db']:.2f}")
 

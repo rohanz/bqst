@@ -6,20 +6,13 @@ This file is for AI coding agents working on BQST. Read it before changing code.
 
 BQST is a JUCE/C++ audio plugin with VST3, AU, and Standalone targets. It is a 500-series-inspired mastering tone tool: a Baxandall-style EQ module feeding a saturation module.
 
-Main repo path:
-
-```text
-/Users/rohan/Documents/progwork/bqt
-```
-
-User plugin install paths:
-
-```text
-/Users/rohan/Library/CloudStorage/OneDrive-Personal/dailystuff/music/vst3/BQST.vst3
-/Users/rohan/Library/Audio/Plug-Ins/Components/BQST.component
-```
-
 ## Build And Install
+
+Configure release builds when needed:
+
+```sh
+cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release
+```
 
 Build release:
 
@@ -33,20 +26,15 @@ Standalone only:
 cmake --build build-release --config Release --target BQST_Standalone -j 8
 ```
 
-After building, replace installed plugin bundles, clear xattrs, ad-hoc sign, and verify:
+After building, install local test bundles, clear xattrs, ad-hoc sign, and verify:
 
 ```sh
-rm -rf /Users/rohan/Library/CloudStorage/OneDrive-Personal/dailystuff/music/vst3/BQST.vst3
-rm -rf /Users/rohan/Library/Audio/Plug-Ins/Components/BQST.component
-cp -R build-release/BQST_artefacts/Release/VST3/BQST.vst3 /Users/rohan/Library/CloudStorage/OneDrive-Personal/dailystuff/music/vst3/BQST.vst3
-cp -R build-release/BQST_artefacts/Release/AU/BQST.component /Users/rohan/Library/Audio/Plug-Ins/Components/BQST.component
-xattr -cr /Users/rohan/Library/CloudStorage/OneDrive-Personal/dailystuff/music/vst3/BQST.vst3
-xattr -cr /Users/rohan/Library/Audio/Plug-Ins/Components/BQST.component
-codesign --force --deep -s - /Users/rohan/Library/CloudStorage/OneDrive-Personal/dailystuff/music/vst3/BQST.vst3
-codesign --force --deep -s - /Users/rohan/Library/Audio/Plug-Ins/Components/BQST.component
-codesign --verify --deep --strict /Users/rohan/Library/CloudStorage/OneDrive-Personal/dailystuff/music/vst3/BQST.vst3
-codesign --verify --deep --strict /Users/rohan/Library/Audio/Plug-Ins/Components/BQST.component
+scripts/install-local.sh
+codesign --verify --deep --strict "${BQST_VST3_DIR:-$HOME/Library/Audio/Plug-Ins/VST3}/BQST.vst3"
+codesign --verify --deep --strict "$HOME/Library/Audio/Plug-Ins/Components/BQST.component"
 ```
+
+Use `BQST_VST3_DIR=/path/to/custom/vst3 scripts/install-local.sh` if a DAW scans a nonstandard VST3 folder.
 
 Run `git diff --check` before committing.
 
@@ -157,11 +145,12 @@ Cream is smoother, dense, and polished. It uses:
 Cream tone filters:
 
 ```cpp
-densityPreEmphasis = high shelf 6.2 kHz, Q 0.55, +0.7 dB
-densityDeEmphasis  = high shelf 6.2 kHz, Q 0.55, -0.7 dB
+densityBodyFocus   = peak 720 Hz, Q 0.52, +0.85 dB
+densityPreEmphasis = high shelf 6.2 kHz, Q 0.55, -0.65 dB
+densityDeEmphasis  = high shelf 7.0 kHz, Q 0.50, -0.55 dB
 ```
 
-The pair shapes what enters the nonlinear stage without leaving a static treble cut. Vintage is the intentional top-softening control.
+The body focus and treble shaping make Cream smoother and less clipper-like when pushed. Vintage is the intentional additional top-softening control.
 
 ### Grit
 
@@ -170,11 +159,13 @@ Grit is transformer-inspired: firmer, more forward, more edge/bite than Cream.
 Grit tone filters:
 
 ```cpp
-transformerWeight = peak 240 Hz, Q 0.75, +0.35 dB
-transformerTop    = high shelf 8.2 kHz, Q 0.50, -0.6 dB
+transformerLowDrive   = low shelf 165 Hz, Q 0.62, +1.10 dB
+transformerLowRestore = low shelf 165 Hz, Q 0.62, -0.70 dB
+transformerWeight     = peak 245 Hz, Q 0.72, +0.55 dB
+transformerTop        = high shelf 7.8 kHz, Q 0.50, -0.75 dB
 ```
 
-The top filter is intentionally mild. It rounds Grit without making it dark.
+The low-drive/partial-restore pair makes low and low-mid content hit the nonlinear stage harder without simply adding a large final bass boost. The top filter is intentionally mild. It rounds Grit without making it dark.
 
 ### Low-End Guard
 
@@ -213,8 +204,8 @@ Why not live RMS/LUFS matching inside the plugin:
 Current curve in `BqtDsp.h`:
 
 ```cpp
-amount   = Cream ? 1.89 : 2.80
-exponent = Cream ? 1.70 : 1.59
+amount   = Cream ? 2.04 : 2.71
+exponent = Cream ? 1.67 : 1.48
 gain = 1 / (1 + pow(drive01, exponent) * amount)
 ```
 
@@ -225,10 +216,10 @@ Approximate compensation:
 ```text
 Drive    Cream      Grit
 1 dB     -0.1 dB    -0.2 dB
-3 dB     -0.7 dB    -1.3 dB
-6 dB     -2.2 dB    -3.5 dB
-12 dB    -5.8 dB    -7.9 dB
-18 dB    -9.2 dB    -11.6 dB
+3 dB     -0.8 dB    -1.5 dB
+6 dB     -2.4 dB    -3.7 dB
+12 dB    -6.2 dB    -7.9 dB
+18 dB    -9.7 dB    -11.4 dB
 ```
 
 These values were calibrated from offline sweeps using sine/two-tone/808-ish tests at several levels. If retuning, use multiple sources and keep the behavior predictable.

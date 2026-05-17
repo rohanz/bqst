@@ -1,6 +1,8 @@
 # BQST Project Plan
 
-BQST stands for Bax / Q / Tape-or-Transformer. It is planned as a mastering-friendly Baxandall-style EQ feeding a dedicated saturation module.
+This is a historical planning document from the initial build. For current implementation details, use `AGENTS.md`, `docs/design.md`, and `docs/manual.md`.
+
+BQST stands for Bax / Q / Saturation / Transformer. It is a mastering-friendly Baxandall-style EQ feeding a dedicated saturation module.
 
 ## Product Shape
 
@@ -71,16 +73,16 @@ EQ module:
 Saturation module:
 
 - Side A drive.
-- Side A saturation type: Density or Transformer.
+- Side A saturation type: Cream or Grit.
 - Side A mix.
 - Side A output trim.
 - Side A VU meter.
 - Side B drive.
-- Side B saturation type: Density or Transformer.
+- Side B saturation type: Cream or Grit.
 - Side B mix.
 - Side B output trim.
 - Side B VU meter.
-- Current prototype uses a dropdown for saturation type. Final faceplate should use a hardware-style two-position selector or two buttons with lamps next to Density and Transformer to show the selected mode.
+- Current implementation uses a hardware-style two-position Cream/Grit selector with lamps.
 
 Saturation module shared controls:
 
@@ -116,9 +118,9 @@ Initial gain range:
 
 The EQ uses broad, low-Q shelving curves rather than surgical shelves. The current shelf Q is deliberately gentle so the transition spreads over multiple octaves, closer to published mastering Bax-style curve families than to a normal parametric EQ shelf. High shelf points are clamped safely below Nyquist at lower sample rates, so the 18 kHz setting remains stable at 44.1/48 kHz but will sound subtle because it is an air-band shelf close to the top of the audible range.
 
-## Bereich03 BAX-EQ Reference
+## Mastering Bax EQ Reference Notes
 
-The Bereich03 BAX-EQ is useful as a curve and workflow reference, but it is not the same exact product shape as BQST's current EQ module.
+These notes were used to understand common mastering Bax EQ workflows. They are reference observations only, not a claim that BQST is a clone of any specific hardware unit.
 
 Important reference points from the page:
 
@@ -142,11 +144,11 @@ Graph observations:
 - The gain graphs show relatively small, mastering-oriented gain steps rather than large tone-shaping boosts.
 - The published THD graph is extremely clean for an analog EQ, so this EQ reference should inform BQST's linear EQ curves, not the saturation section.
 
-BQST currently keeps independent Side A and Side B controls because that was part of the concept. It also currently has only low/high shelves, not the Bereich03 mid bell. Potential later changes if we want workflow parity rather than just curve inspiration:
+BQST currently keeps independent Side A and Side B controls because that was part of the concept. It also currently has only low/high shelves, not a mid bell. Potential later changes if we want workflow parity with some mastering EQ layouts rather than just broad curve inspiration:
 
 - Add a selectable "BAX-EQ positions" frequency set using 35, 47, 62, 82, 120, 210 Hz and 1.2, 2.5, 4.7, 8, 11, 18 kHz.
 - Add a mid bell only if we want the EQ unit to become a three-band mastering EQ rather than a pure Bax shelf unit.
-- Consider per-band stereo/mid/side routing if we want to follow the Bereich03 workflow more closely.
+- Consider per-band stereo/mid/side routing if that becomes a useful workflow direction.
 - Consider optional stepped gain behavior, but keep 0.1 dB controls for now because BQST is a plugin and fine automation is useful.
 
 Potential later addition:
@@ -171,18 +173,18 @@ The plugin is calibrated around a nominal analog-style operating level of 0 VU =
 
 Continuous controls use short smoothing ramps to reduce zipper noise during moves and automation. Discrete switches and selectors remain stepped.
 
-Density mode:
+Cream mode:
 
-- Tape-like density and smoother peak softening.
-- Softer onset than the Transformer mode.
+- Smooth density and rounded peak softening.
+- Softer onset than the Grit mode.
 - Asymmetric low-drive behavior to emphasize 2nd harmonic density.
 - Gradually stronger 3rd harmonic content as Drive increases, but with a rounded onset so transient peaks do not clamp too abruptly.
-- Uses subtle high-frequency pre-emphasis before saturation and de-emphasis after saturation, so high-frequency edges round in a more tape-like way rather than just clipping broadband.
+- Uses tone shaping around saturation so high-frequency edges round in a smoother way rather than just clipping broadband.
 - Mastering-friendly at low Drive.
 - Optional Vintage behavior can soften the top end after saturation.
-- Vintage is approximated from the Density graph images as a broad high-frequency softening curve.
+- Vintage is implemented as a broad high-frequency softening curve.
 
-Transformer mode:
+Grit mode:
 
 - British console / transformer-inspired saturation.
 - Smooth asymmetric behavior with rounded peak handling.
@@ -194,7 +196,7 @@ Saturation mix:
 - 0% returns the EQ-only signal for that side.
 - 100% returns the fully saturated signal.
 - Mix is per side, not global.
-- With Auto Gain enabled, the wet saturation path is RMS-matched to the dry EQ output before Mix is applied, so changing Mix should mostly reveal tone rather than volume.
+- With Auto Gain enabled, the wet saturation path is statically compensated before Mix is applied, so changing Mix should mostly reveal tone rather than volume.
 
 VU meters:
 
@@ -212,7 +214,7 @@ These modes are inspired by broad analog behaviors, not claims of exact hardware
 2. Add parameter tree and state save/restore.
 3. Implement L/R and M/S routing.
 4. Implement Bax low/high shelves per side.
-5. Add Density and Transformer saturation curves.
+5. Add Cream and Grit saturation curves.
 6. Add Drive=0 true saturation bypass and optional autogain.
 7. Add realtime/render oversampling choices up to 8x.
 8. Build a plain functional UI.
