@@ -2,12 +2,13 @@
 set -eu
 
 ROOT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-BUILD_DIR="$ROOT_DIR/build-release"
+BUILD_DIR="${BUILD_DIR:-$ROOT_DIR/build-release}"
 RELEASE_DIR="$BUILD_DIR/BQST_artefacts/Release"
 DIST_DIR="$ROOT_DIR/dist"
 STAGE_DIR="$DIST_DIR/pkgroot"
 PKG_COMPONENT="$DIST_DIR/BQST-components.pkg"
-PKG_FINAL="$DIST_DIR/BQST-1.0.0-macOS.pkg"
+PKG_FLAVOR="${PKG_FLAVOR:-universal}"
+PKG_FINAL="${PKG_FINAL:-$DIST_DIR/BQST-1.0.0-macOS-$PKG_FLAVOR.pkg}"
 PRODUCT_DISTRIBUTION="$ROOT_DIR/packaging/macos/Distribution.xml"
 PRODUCT_RESOURCES="$ROOT_DIR/packaging/macos/resources"
 
@@ -17,10 +18,13 @@ PLUGIN_SIGN_IDENTITY="${PLUGIN_SIGN_IDENTITY:--}"
 INSTALLER_SIGN_IDENTITY="${INSTALLER_SIGN_IDENTITY:-}"
 NOTARY_PROFILE="${NOTARY_PROFILE:-}"
 NOTARIZE="${NOTARIZE:-0}"
+EXPECTED_MACOS_ARCHS="${EXPECTED_MACOS_ARCHS:-arm64 x86_64}"
 export COPYFILE_DISABLE=1
 
 VST3_SRC="$RELEASE_DIR/VST3/BQST.vst3"
 AU_SRC="$RELEASE_DIR/AU/BQST.component"
+VST3_BINARY="$VST3_SRC/Contents/MacOS/BQST"
+AU_BINARY="$AU_SRC/Contents/MacOS/BQST"
 
 die() {
     echo "error: $*" >&2
@@ -63,6 +67,15 @@ sign_bundle() {
     fi
 }
 
+verify_architectures() {
+    binary="$1"
+
+    for arch in $EXPECTED_MACOS_ARCHS; do
+        lipo "$binary" -verify_arch "$arch" >/dev/null 2>&1 \
+            || die "missing required architecture '$arch' in $binary"
+    done
+}
+
 if [ ! -d "$VST3_SRC" ]; then
     die "missing VST3 artifact: $VST3_SRC
 Run: cmake --build build-release --config Release"
@@ -73,8 +86,15 @@ if [ ! -d "$AU_SRC" ]; then
 Run: cmake --build build-release --config Release"
 fi
 
+[ -f "$VST3_BINARY" ] || die "missing VST3 binary: $VST3_BINARY"
+[ -f "$AU_BINARY" ] || die "missing AU binary: $AU_BINARY"
+
 [ -f "$PRODUCT_DISTRIBUTION" ] || die "missing product distribution: $PRODUCT_DISTRIBUTION"
 [ -d "$PRODUCT_RESOURCES" ] || die "missing product resources: $PRODUCT_RESOURCES"
+
+info "Verifying plugin architectures: $EXPECTED_MACOS_ARCHS"
+verify_architectures "$VST3_BINARY"
+verify_architectures "$AU_BINARY"
 
 if [ "$NOTARIZE" = "1" ] || [ -n "$NOTARY_PROFILE" ]; then
     [ -n "$NOTARY_PROFILE" ] || die "NOTARY_PROFILE is required when NOTARIZE=1"

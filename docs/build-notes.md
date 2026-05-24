@@ -34,9 +34,12 @@ BQST_VST3_DIR="/path/to/custom/vst3" scripts/install-local.sh
 ## Build Release
 
 ```sh
-cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release
-cmake --build build-release --config Release
+scripts/build-macos-release.sh
 ```
+
+By default, this creates a universal macOS release containing both Apple Silicon
+and Intel slices. To build an architecture-specific test artifact instead, pass
+`arm64` or `x86_64`.
 
 The release artifacts are written to:
 
@@ -75,7 +78,18 @@ Build a local installer package:
 scripts/package-macos.sh
 ```
 
-This produces `dist/BQST-1.0.0-macOS.pkg` with ad-hoc signed plugin bundles. It is useful for install testing, but it is not suitable for public distribution.
+This produces `dist/BQST-1.0.0-macOS-universal.pkg` with ad-hoc signed universal plugin bundles. It is useful for install testing, but it is not suitable for public distribution.
+
+The package script verifies that both VST3 and AU binaries include `arm64` and
+`x86_64` before staging the installer. For an architecture-specific internal
+package, override the build and expected architecture explicitly:
+
+```sh
+BUILD_DIR="$PWD/build-release-arm64" \
+PKG_FLAVOR="arm64" \
+EXPECTED_MACOS_ARCHS="arm64" \
+scripts/package-macos.sh
+```
 
 For a public macOS package, install the Developer ID Application and Developer ID Installer certificates, then create a notary keychain profile:
 

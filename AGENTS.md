@@ -11,13 +11,15 @@ BQST is a JUCE/C++ audio plugin with VST3, AU, and Standalone targets. It is a 5
 Configure release builds when needed:
 
 ```sh
-cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release
+scripts/build-macos-release.sh
 ```
 
-Build release:
+The default release build is universal macOS and must include both Apple Silicon
+and Intel slices. Verify with:
 
 ```sh
-cmake --build build-release --config Release -j 8
+lipo -info build-release/BQST_artefacts/Release/VST3/BQST.vst3/Contents/MacOS/BQST
+lipo -info build-release/BQST_artefacts/Release/AU/BQST.component/Contents/MacOS/BQST
 ```
 
 Standalone only:
@@ -35,6 +37,54 @@ codesign --verify --deep --strict "$HOME/Library/Audio/Plug-Ins/Components/BQST.
 ```
 
 Use `BQST_VST3_DIR=/path/to/custom/vst3 scripts/install-local.sh` if a DAW scans a nonstandard VST3 folder.
+
+## Public macOS Release Signing
+
+Do not embed Apple account passwords, app-specific passwords, private keys, or
+certificate exports in this repo.
+
+For public distribution, use Developer ID signing and notarization. Required
+local setup:
+
+- Valid `Developer ID Application: Rohan Kulshrestha (3KJDR8Q6RL)` identity in
+  the login keychain.
+- Valid `Developer ID Installer: Rohan Kulshrestha (3KJDR8Q6RL)` certificate in
+  the login keychain.
+- Stored notarytool profile named `bqst-notary`.
+
+Because Codex sandboxing can hide keychain identities, keychain/signing commands
+may need elevated execution. Check setup with:
+
+```sh
+security find-identity -v -p codesigning
+xcrun notarytool history --keychain-profile bqst-notary
+```
+
+Build, sign, notarize, staple, and verify the universal package:
+
+```sh
+scripts/build-macos-release.sh
+
+PLUGIN_SIGN_IDENTITY="Developer ID Application: Rohan Kulshrestha (3KJDR8Q6RL)" \
+INSTALLER_SIGN_IDENTITY="Developer ID Installer: Rohan Kulshrestha (3KJDR8Q6RL)" \
+NOTARY_PROFILE="bqst-notary" \
+NOTARIZE=1 \
+scripts/package-macos.sh
+```
+
+If there are duplicate Developer ID Application identities, use the SHA-1 hash
+from `security find-identity -v -p codesigning` as `PLUGIN_SIGN_IDENTITY`.
+
+Final verification:
+
+```sh
+pkgutil --check-signature dist/BQST-1.0.0-macOS-universal.pkg
+spctl -a -vv -t install dist/BQST-1.0.0-macOS-universal.pkg
+```
+
+Expected `spctl` result includes `accepted`, `source=Notarized Developer ID`,
+and the Developer ID Installer origin. Do not publish a package that reports
+`no signature` or `invalid signature`.
 
 Run `git diff --check` before committing.
 
