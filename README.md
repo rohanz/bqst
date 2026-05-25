@@ -17,6 +17,13 @@ The macOS installer includes:
 
 Factory presets are built into the plugin. User presets can be saved from the plugin UI as `.bqstpreset` files.
 
+## Support
+
+BQST is free to download. If it's useful to you and you want to support future
+development, you can buy me a coffee:
+
+https://paypal.me/rohanjkxyz/
+
 ## Features
 
 - Bax-style low and high shelves with broad, low-Q curves.
