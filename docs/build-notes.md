@@ -41,6 +41,11 @@ By default, this creates a universal macOS release containing both Apple Silicon
 and Intel slices. To build an architecture-specific test artifact instead, pass
 `arm64` or `x86_64`.
 
+The default deployment target is macOS 10.13 so the plugin can load on older
+Intel systems instead of inheriting the build machine's current macOS version.
+Override with `MACOS_DEPLOYMENT_TARGET=...` only when intentionally raising the
+minimum supported macOS version.
+
 The release artifacts are written to:
 
 ```text

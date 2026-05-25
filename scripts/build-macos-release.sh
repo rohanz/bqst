@@ -3,6 +3,7 @@ set -eu
 
 ROOT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 ARCH="${1:-universal}"
+MACOS_DEPLOYMENT_TARGET="${MACOS_DEPLOYMENT_TARGET:-10.13}"
 
 case "$ARCH" in
     universal)
@@ -25,6 +26,7 @@ esac
 
 cmake -S "$ROOT_DIR" -B "$BUILD_DIR" \
     -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_OSX_DEPLOYMENT_TARGET="$MACOS_DEPLOYMENT_TARGET" \
     -DCMAKE_OSX_ARCHITECTURES="$OSX_ARCHITECTURES"
 
 cmake --build "$BUILD_DIR" --config Release

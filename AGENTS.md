@@ -15,11 +15,14 @@ scripts/build-macos-release.sh
 ```
 
 The default release build is universal macOS and must include both Apple Silicon
-and Intel slices. Verify with:
+and Intel slices. It also pins `CMAKE_OSX_DEPLOYMENT_TARGET` to macOS 10.13 by
+default; do not let release builds inherit the current build machine's macOS
+version. Verify with:
 
 ```sh
 lipo -info build-release/BQST_artefacts/Release/VST3/BQST.vst3/Contents/MacOS/BQST
 lipo -info build-release/BQST_artefacts/Release/AU/BQST.component/Contents/MacOS/BQST
+otool -l build-release/BQST_artefacts/Release/AU/BQST.component/Contents/MacOS/BQST | grep -A3 LC_BUILD_VERSION
 ```
 
 Standalone only:
