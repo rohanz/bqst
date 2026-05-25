@@ -22,7 +22,7 @@ Factory presets are built into the plugin. User presets can be saved from the pl
 BQST is free to download. If it's useful to you and you want to support future
 development, you can buy me a coffee:
 
-https://paypal.me/rohanjkxyz/
+https://ko-fi.com/rohanjk
 
 ## Features
 
