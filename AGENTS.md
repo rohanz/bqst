@@ -79,14 +79,16 @@ local setup:
   the login keychain.
 - Valid `Developer ID Installer: Rohan Kulshrestha (3KJDR8Q6RL)` certificate in
   the login keychain.
-- Stored notarytool profile named `bqst-notary`.
+- Stored notarytool profile named `apple-notary` (backed by an App Store Connect API
+  key — preferred). The older `bqst-notary` (app-specific password) still works as a
+  fallback. The key id / issuer / `.p8` location are in `AGENTS.local.md`.
 
 Because Codex sandboxing can hide keychain identities, keychain/signing commands
 may need elevated execution. Check setup with:
 
 ```sh
 security find-identity -v -p codesigning
-xcrun notarytool history --keychain-profile bqst-notary
+xcrun notarytool history --keychain-profile apple-notary
 ```
 
 Build, sign, notarize, staple, and verify the universal package:
@@ -96,7 +98,7 @@ scripts/build-macos-release.sh
 
 PLUGIN_SIGN_IDENTITY="<Developer ID Application SHA-1 — see AGENTS.local.md>" \
 INSTALLER_SIGN_IDENTITY="Developer ID Installer: Rohan Kulshrestha (3KJDR8Q6RL)" \
-NOTARY_PROFILE="bqst-notary" \
+NOTARY_PROFILE="apple-notary" \
 NOTARIZE=1 \
 scripts/package-macos.sh
 ```
