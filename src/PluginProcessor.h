@@ -8,7 +8,8 @@
 
 #include "BqtDsp.h"
 
-class BqtAudioProcessor final : public juce::AudioProcessor
+class BqtAudioProcessor final : public juce::AudioProcessor,
+                                private juce::AsyncUpdater
 {
 public:
     BqtAudioProcessor();
@@ -38,7 +39,6 @@ public:
     void setStateInformation(const void* data, int sizeInBytes) override;
 
     juce::AudioProcessorValueTreeState& state() { return parameters; }
-    juce::UndoManager& undoManager() { return parameterUndoManager; }
     float getMeterLevel(int sideIndex) const;
 
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
@@ -65,16 +65,17 @@ private:
 
     void updateFilters();
     void updateSaturationToneFilters();
+    void cacheParameterPointers();
     void processChain(float* left, float* right, int numSamples);
     void processEq(float* samples, int numSamples, int sideIndex);
     void processSide(float* samples, int numSamples, int sideIndex);
-    void processSaturation(float* samples, int numSamples, int sideIndex, float drive01, float driveGainValue, bqt::SaturationType satType);
     void applyLatencyDelay(float* samples, int numSamples, int sideIndex);
     void updateMeter(int sideIndex, const float* samples, int numSamples);
     int getActiveOversamplingIndex() const;
+    int computeLatencySamples() const;
     void updateLatency();
+    void handleAsyncUpdate() override;
 
-    juce::UndoManager parameterUndoManager;
     juce::AudioProcessorValueTreeState parameters;
     std::array<SideFilters, 2> filters;
     std::array<std::unique_ptr<juce::dsp::Oversampling<float>>, 3> oversamplers;
@@ -92,7 +93,36 @@ private:
     std::array<std::atomic<float>, 2> meterLevels {};
     std::array<float, 2> meterRms {};
     double currentSampleRate = 44100.0;
-    int currentLatencySamples = 0;
+    std::atomic<int> currentLatencySamples { 0 };
+
+    // Raw parameter pointers cached once after construction so the audio thread never
+    // builds juce::Strings or does map lookups to read parameter values.
+    struct ParameterPointers
+    {
+        std::array<std::atomic<float>*, 2> lowGain { nullptr, nullptr };
+        std::array<std::atomic<float>*, 2> highGain { nullptr, nullptr };
+        std::array<std::atomic<float>*, 2> lowFreq { nullptr, nullptr };
+        std::array<std::atomic<float>*, 2> highFreq { nullptr, nullptr };
+        std::array<std::atomic<float>*, 2> drive { nullptr, nullptr };
+        std::array<std::atomic<float>*, 2> satType { nullptr, nullptr };
+        std::array<std::atomic<float>*, 2> mix { nullptr, nullptr };
+        std::array<std::atomic<float>*, 2> outputTrim { nullptr, nullptr };
+        std::atomic<float>* inputTrim = nullptr;
+        std::atomic<float>* eqMode = nullptr;
+        std::atomic<float>* satMode = nullptr;
+        std::atomic<float>* eqBypass = nullptr;
+        std::atomic<float>* satBypass = nullptr;
+        std::atomic<float>* autoGain = nullptr;
+        std::atomic<float>* vintage = nullptr;
+        std::atomic<float>* bypass = nullptr;
+        std::atomic<float>* osRealtime = nullptr;
+        std::atomic<float>* osRender = nullptr;
+    } paramPtrs;
+
+    // The saturation tone filters depend only on the sample rate and the vintage flag,
+    // so they are rebuilt only when one of those actually changes (never per block).
+    double satToneSampleRate = 0.0;
+    int satToneVintage = -1;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(BqtAudioProcessor)
 };

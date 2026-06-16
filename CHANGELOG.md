@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.0.2
+
+- Fixed the About panel being hidden behind the bypass dimming when bypass is on.
+- Released under the EBR Audio Tech brand: manufacturer name and bundle id updated. Plugin identity codes are unchanged, so existing sessions still recall the plugin.
+- Removed all heap allocation from the audio thread (in-place IIR coefficients via ArrayCoefficients, cached atomic parameter pointers) to prevent dropouts under load.
+- Smoothed Drive, Mix, and autogain per sample so automating them no longer steps/zippers; steady-state sound is unchanged.
+- Reported plugin latency to the host off the audio thread.
+- Validated untrusted state and presets: non-finite (NaN/Inf) and out-of-range values are rejected before reaching the DSP.
+- User presets now load self-contained (reset to defaults first); presets save atomically with a failure message; state and presets carry a format version.
+- Cached the static faceplate to an offscreen image for smoother repaints (undo/redo, bypass).
+- Guarded processBlock against non-stereo buffers; stop the editor timer on close; removed dead code.
+- Build now defaults to a universal arm64+x86_64 / macOS 10.13 binary; signing no longer uses `codesign --deep`; added DSP unit tests and `scripts/check.sh`.
+
 ## 1.0.0
 
 - Bumped the plugin version to 1.0.0.

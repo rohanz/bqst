@@ -36,6 +36,35 @@ void BqtAudioProcessorEditor::paint(juce::Graphics& g)
                juce::Justification::centredLeft);
 }
 
+void BqtAudioProcessorEditor::RackComponent::paint(juce::Graphics& g)
+{
+    const auto layerScale = juce::jlimit(1.0f, 4.0f,
+                                         juce::Component::getApproximateScaleFactorForComponent(this));
+    const auto desiredWidth = static_cast<int>(std::ceil(static_cast<float>(getWidth()) * layerScale));
+    const auto desiredHeight = static_cast<int>(std::ceil(static_cast<float>(getHeight()) * layerScale));
+
+    if ((! faceplateCache.isValid() || faceplateCacheWidth != desiredWidth || faceplateCacheHeight != desiredHeight
+         || ! juce::approximatelyEqual(faceplateCacheScale, layerScale))
+        && desiredWidth > 0 && desiredHeight > 0)
+    {
+        faceplateCache = juce::Image(juce::Image::ARGB, desiredWidth, desiredHeight, true);
+        juce::Graphics cacheGraphics(faceplateCache);
+        cacheGraphics.addTransform(juce::AffineTransform::scale(layerScale));
+        editor.paintRack(cacheGraphics);
+
+        faceplateCacheWidth = desiredWidth;
+        faceplateCacheHeight = desiredHeight;
+        faceplateCacheScale = layerScale;
+    }
+
+    if (faceplateCache.isValid())
+    {
+        g.setImageResamplingQuality(juce::Graphics::highResamplingQuality);
+        g.drawImage(faceplateCache, 0, 0, getWidth(), getHeight(),
+                    0, 0, faceplateCache.getWidth(), faceplateCache.getHeight());
+    }
+}
+
 void BqtAudioProcessorEditor::paintRack(juce::Graphics& g)
 {
     auto rack = rackComponent.getLocalBounds().toFloat();
@@ -336,6 +365,11 @@ void BqtAudioProcessorEditor::requestRackBypassVisualState(bool shouldBeBypassed
     rackBypassOverlay.setVisible(shouldBeBypassed);
     rackBypassOverlay.toFront(false);
     readoutBubble.toFront(false);
+
+    // This runs on the 60 Hz timer too, so re-assert the About panel above the bypass dimming;
+    // otherwise the overlay keeps coming to the front and buries an open About panel.
+    if (aboutPanel.isVisible())
+        aboutPanel.toFront(false);
 
     if (shouldBeBypassed && wasBypassed != shouldBeBypassed)
         rackBypassOverlay.repaint();

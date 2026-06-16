@@ -22,7 +22,6 @@ constexpr auto screwInsetYInches = (5.25f - 4.938f) * 0.5f;
 constexpr auto baseEditorWidth = 865;
 constexpr auto baseEditorHeight = 874;
 constexpr auto outerEditorMargin = 14;
-constexpr auto fixedEditorScale = 1.25f;
 
 inline const juce::StringArray lowFreqLabels { "74", "84", "98", "116", "131", "166", "230", "361" };
 inline const juce::StringArray highFreqLabels { "1.6k", "1.8k", "2.1k", "2.5k", "3.4k", "4.8k", "7.1k", "18k" };

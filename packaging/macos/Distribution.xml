@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <installer-gui-script minSpecVersion="1">
-    <title>BQST 1.0.0</title>
+    <title>BQST 1.0.2</title>
     <background file="background.png" alignment="center" scaling="proportional"/>
     <welcome file="Welcome.html"/>
     <readme file="ReadMe.html"/>
@@ -12,11 +12,11 @@
     </choices-outline>
 
     <choice id="bqst.plugins" title="BQST Plugins" description="Installs the BQST VST3 and Audio Unit plugins.">
-        <pkg-ref id="xyz.rohanjk.bqst.plugins"/>
+        <pkg-ref id="tech.ebraudio.bqst.plugins"/>
     </choice>
 
-    <pkg-ref id="xyz.rohanjk.bqst.plugins"
-             version="1.0.0"
+    <pkg-ref id="tech.ebraudio.bqst.plugins"
+             version="1.0.2"
              auth="Root"
              onConclusion="none">BQST-components.pkg</pkg-ref>
 </installer-gui-script>

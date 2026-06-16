@@ -83,7 +83,7 @@ Build a local installer package:
 scripts/package-macos.sh
 ```
 
-This produces `dist/BQST-1.0.0-macOS-universal.pkg` with ad-hoc signed universal plugin bundles. It is useful for install testing, but it is not suitable for public distribution.
+This produces `dist/BQST-1.0.2-macOS-universal.pkg` with ad-hoc signed universal plugin bundles. It is useful for install testing, but it is not suitable for public distribution.
 
 The package script verifies that both VST3 and AU binaries include `arm64` and
 `x86_64` before staging the installer. For an architecture-specific internal
@@ -126,19 +126,14 @@ scripts/package-macos.sh
 
 The script signs the VST3/AU bundles, signs the installer package, submits it with `notarytool`, staples the notarization ticket, and verifies the final package with `spctl`.
 
-The macOS installer uses `packaging/macos/Distribution.xml` with Welcome and Read Me pages. The installer artwork is generated from the BQST project banner in the website redesign:
-
-```text
-/Users/rohan/Documents/progwork/www/rohan-website-redesign/assets/images/projects/bqst/banner.png
-```
+The macOS installer uses `packaging/macos/Distribution.xml` with Welcome and Read Me pages. The installer artwork is generated from the BQST project banner in the separate website-redesign repo (`assets/images/projects/bqst/banner.png` within it).
 
 ## Windows Installer
 
 The Windows installer project uses Inno Setup 6 and the cropped artwork in `packaging/windows`.
 
-The GitHub Actions workflow `.github/workflows/windows-installer.yml` builds the Windows VST3 on `windows-latest`, runs Inno Setup, verifies the expected output files, and uploads the VST3 and installer as artifacts.
-
-On Windows:
+The Windows installer is built locally on Windows (there is no CI workflow in this repo).
+Build the VST3, then run the packaging script:
 
 ```powershell
 cmake -S . -B build-windows -DCMAKE_BUILD_TYPE=Release
@@ -155,7 +150,7 @@ build-windows/BQST_artefacts/Release/VST3/BQST.vst3
 It writes:
 
 ```text
-dist/BQST-1.0.0-Windows.exe
+dist/BQST-1.0.2-Windows.exe
 ```
 
 ## Current Build Status

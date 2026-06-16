@@ -3,7 +3,14 @@
 void BqtAudioProcessorEditor::refreshPresetMenu()
 {
     presetManager.refresh();
-    selectedPresetIndex = juce::jlimit(0, juce::jmax(0, presetManager.getPresets().size() - 1), selectedPresetIndex);
+
+    // Re-resolve the selection by its stable key so it follows the preset even when the list
+    // was rebuilt (e.g. another user preset was added/removed). Fall back to a clamped index
+    // only if the selected preset no longer exists.
+    const auto resolved = presetManager.findPreset(selectedPresetKey);
+    selectedPresetIndex = resolved >= 0
+                              ? resolved
+                              : juce::jlimit(0, juce::jmax(0, presetManager.getPresets().size() - 1), selectedPresetIndex);
     updatePresetButtonText();
 }
 
@@ -71,6 +78,7 @@ void BqtAudioProcessorEditor::loadPreset(int index)
     if (presetManager.loadPreset(index))
     {
         selectedPresetIndex = index;
+        selectedPresetKey = presetManager.getPresetKey(index);
         inputTrimCompensationStart = inputTrim.getValue();
         for (size_t side = 0; side < sideControls.size(); ++side)
             outputTrimCompensationStart[side] = sideControls[side].outputTrim.getValue();
@@ -114,10 +122,20 @@ void BqtAudioProcessorEditor::saveUserPreset()
                                                if (! preset.factory && preset.name == savedName)
                                                {
                                                    selectedPresetIndex = i;
+                                                   selectedPresetKey = presetManager.getPresetKey(i);
                                                    updatePresetButtonText();
                                                    break;
                                                }
                                            }
+                                       }
+                                       else
+                                       {
+                                           juce::NativeMessageBox::showMessageBoxAsync(
+                                               juce::MessageBoxIconType::WarningIcon,
+                                               "Preset Not Saved",
+                                               "BQST could not write the preset to:\n"
+                                                   + file.withFileExtension(".bqstpreset").getFullPathName(),
+                                               this);
                                        }
                                    });
 }

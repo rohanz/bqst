@@ -1,5 +1,7 @@
 #include "BqtPresetManager.h"
 
+#include <cmath>
+
 namespace
 {
 struct ParameterValue
@@ -88,8 +90,18 @@ constexpr ParameterValue defaultValues[] {
 
 void setValueNotifyingHost(juce::RangedAudioParameter& parameter, float rawValue)
 {
+    // Presets and host state are untrusted input: a crafted/corrupt file can carry
+    // NaN/Inf (juce::String parses "nan"/"inf") or out-of-range values, which would
+    // otherwise pass straight through convertTo0to1 (jlimit leaves NaN unchanged) and
+    // reach the DSP as e.g. roundToInt(NaN) -> an out-of-bounds choice index.
+    if (! std::isfinite(rawValue))
+        return;
+
+    const auto& range = parameter.getNormalisableRange();
+    const auto clamped = juce::jlimit(range.start, range.end, rawValue);
+
     parameter.beginChangeGesture();
-    parameter.setValueNotifyingHost(parameter.convertTo0to1(rawValue));
+    parameter.setValueNotifyingHost(parameter.convertTo0to1(clamped));
     parameter.endChangeGesture();
 }
 
@@ -147,6 +159,28 @@ void BqtPresetManager::refresh()
     }
 }
 
+juce::String BqtPresetManager::getPresetKey(int index) const
+{
+    if (! juce::isPositiveAndBelow(index, presets.size()))
+        return {};
+
+    const auto& preset = presets.getReference(index);
+    return preset.factory ? "factory:" + preset.category + "/" + preset.name
+                          : "user:" + preset.file.getFullPathName();
+}
+
+int BqtPresetManager::findPreset(const juce::String& key) const
+{
+    if (key.isEmpty())
+        return -1;
+
+    for (int i = 0; i < presets.size(); ++i)
+        if (getPresetKey(i) == key)
+            return i;
+
+    return -1;
+}
+
 bool BqtPresetManager::loadPreset(int index)
 {
     if (! juce::isPositiveAndBelow(index, presets.size()))
@@ -160,6 +194,13 @@ bool BqtPresetManager::loadPreset(int index)
 
     if (auto xml = juce::parseXML(presets.getReference(index).file))
     {
+        // Reset to defaults first (like the factory path) so a user preset is self-contained:
+        // any musical parameter the file omits returns to its default instead of keeping the
+        // previously loaded preset's value. defaultValues excludes workflow state (oversampling,
+        // bypass), so this does not disturb the user's session settings.
+        for (const auto& value : defaultValues)
+            setParameter(value.id, value.value);
+
         for (auto* child : xml->getChildIterator())
         {
             if (! child->hasTagName("PARAM"))
@@ -180,6 +221,9 @@ bool BqtPresetManager::saveUserPreset(const juce::File& file) const
 {
     if (auto xml = state.copyState().createXml())
     {
+        // Stamp a format version so a future BQST can detect and migrate older presets.
+        xml->setAttribute("bqstPresetVersion", 1);
+
         for (int i = xml->getNumChildElements(); --i >= 0;)
         {
             if (auto* child = xml->getChildElement(i))
@@ -191,7 +235,12 @@ bool BqtPresetManager::saveUserPreset(const juce::File& file) const
 
         const auto target = file.withFileExtension(".bqstpreset");
         target.getParentDirectory().createDirectory();
-        return xml->writeTo(target);
+
+        // Write to a sibling temp file and atomically swap it in, so an interrupted or failed
+        // write can't leave a truncated/corrupt .bqstpreset where a valid one used to be.
+        juce::TemporaryFile temp(target);
+        if (xml->writeTo(temp.getFile()))
+            return temp.overwriteTargetFileWithTemporary();
     }
 
     return false;

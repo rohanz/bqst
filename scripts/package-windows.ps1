@@ -9,7 +9,7 @@ $ErrorActionPreference = "Stop"
 $RootDir = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $BuildPath = Join-Path $RootDir $BuildDir
 $Vst3Path = Join-Path $BuildPath "BQST_artefacts\$Config\VST3\BQST.vst3"
-$InstallerPath = Join-Path $RootDir "dist\BQST-1.0.0-Windows.exe"
+$InstallerPath = Join-Path $RootDir "dist\BQST-1.0.2-Windows.exe"
 $InstallerScript = Join-Path $RootDir "packaging\windows\BQST.iss"
 
 if (-not (Test-Path $Vst3Path)) {

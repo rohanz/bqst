@@ -88,13 +88,21 @@ private:
             setOpaque(true);
         }
 
-        void paint(juce::Graphics& g) override { editor.paintRack(g); }
+        void paint(juce::Graphics& g) override;
         void setBypassed(bool shouldBeBypassed);
         bool isBypassed() const { return bypassed; }
 
     private:
         BqtAudioProcessorEditor& editor;
         bool bypassed = false;
+
+        // The faceplate is static (only its size/scale changes), but it is expensive to draw
+        // (procedural grain). Cache it to an offscreen image and only rebuild on a size/scale
+        // change, so repaints (undo/redo, bypass toggles) just blit instead of redrawing.
+        juce::Image faceplateCache;
+        int faceplateCacheWidth = 0;
+        int faceplateCacheHeight = 0;
+        float faceplateCacheScale = 0.0f;
     };
 
     void configureSlider(juce::Slider& slider);
@@ -124,7 +132,6 @@ private:
     void mouseExit(const juce::MouseEvent& event) override;
     void mouseDoubleClick(const juce::MouseEvent& event) override;
     void updateLinkedControlStates();
-    void updateDynamicTooltips();
     void updateDragValueReadout(juce::Slider& slider);
     void hideDragValueReadout();
     void syncHoverTargetsFromMouse();
@@ -186,13 +193,10 @@ private:
     std::unique_ptr<ComboBoxAttachment> osRenderAttachment;
     std::unique_ptr<SliderAttachment> inputTrimAttachment;
     std::unique_ptr<ButtonAttachment> autoGainAttachment;
-    std::unique_ptr<ButtonAttachment> eqBypassAttachment;
-    std::unique_ptr<ButtonAttachment> satBypassAttachment;
     std::unique_ptr<ButtonAttachment> eqLinkAttachment;
     std::unique_ptr<ButtonAttachment> satLinkAttachment;
     std::unique_ptr<ButtonAttachment> vintageAttachment;
     std::unique_ptr<ButtonAttachment> bypassAttachment;
-    juce::TooltipWindow tooltipWindow { this, 700 };
     BqtReadoutBubble readoutBubble;
     bool isMirroringLinkedControl = false;
     juce::Slider* activeReadoutSlider = nullptr;
@@ -208,6 +212,7 @@ private:
     double inputTrimCompensationStart = 0.0;
     std::array<double, 2> outputTrimCompensationStart { 0.0, 0.0 };
     int selectedPresetIndex = 0;
+    juce::String selectedPresetKey;
     juce::Array<juce::RangedAudioParameter*> activeMirroredGestureParameters;
     std::vector<std::pair<juce::String, float>> pendingUndoState;
     std::vector<std::vector<std::pair<juce::String, float>>> undoStack;

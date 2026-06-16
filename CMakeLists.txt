@@ -1,6 +1,18 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(BQST VERSION 1.0.0 LANGUAGES C CXX)
+# Default macOS builds to a universal binary pinned to macOS 10.13, matching the
+# release invariant in AGENTS.md. Set before project() so the deployment target is
+# baked in correctly, and do not let a release build inherit the build machine's
+# macOS version. Any -D override (e.g. from scripts/build-macos-release.sh) wins,
+# because the cache entry it creates makes these variables already defined.
+if (NOT CMAKE_OSX_ARCHITECTURES)
+    set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "macOS build architectures")
+endif()
+if (NOT CMAKE_OSX_DEPLOYMENT_TARGET)
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "10.13" CACHE STRING "Minimum macOS deployment target")
+endif()
+
+project(BQST VERSION 1.0.2 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -28,7 +40,8 @@ juce_add_binary_data(BqtAssets
 )
 
 juce_add_plugin(BQST
-    COMPANY_NAME "Rohan"
+    COMPANY_NAME "EBR Audio Tech"
+    BUNDLE_ID tech.ebraudio.bqst
     PLUGIN_MANUFACTURER_CODE RohK
     PLUGIN_CODE Bqs1
     FORMATS ${BQST_PLUGIN_FORMATS}
@@ -77,3 +90,15 @@ target_link_libraries(BQST
         juce::juce_recommended_lto_flags
         juce::juce_recommended_warning_flags
 )
+
+option(BQST_BUILD_TESTS "Build BQST unit tests" ON)
+
+if (BQST_BUILD_TESTS)
+    enable_testing()
+
+    # Pure DSP tests: no JUCE link, just the header-only helpers in src/BqtDsp.h.
+    add_executable(BqstDspTests tests/dsp_tests.cpp)
+    set_target_properties(BqstDspTests PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+
+    add_test(NAME BqstDspTests COMMAND BqstDspTests)
+endif()

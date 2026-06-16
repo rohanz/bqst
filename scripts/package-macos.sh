@@ -8,12 +8,12 @@ DIST_DIR="$ROOT_DIR/dist"
 STAGE_DIR="$DIST_DIR/pkgroot"
 PKG_COMPONENT="$DIST_DIR/BQST-components.pkg"
 PKG_FLAVOR="${PKG_FLAVOR:-universal}"
-PKG_FINAL="${PKG_FINAL:-$DIST_DIR/BQST-1.0.0-macOS-$PKG_FLAVOR.pkg}"
+PKG_FINAL="${PKG_FINAL:-$DIST_DIR/BQST-1.0.2-macOS-$PKG_FLAVOR.pkg}"
 PRODUCT_DISTRIBUTION="$ROOT_DIR/packaging/macos/Distribution.xml"
 PRODUCT_RESOURCES="$ROOT_DIR/packaging/macos/resources"
 
-VERSION="1.0.0"
-IDENTIFIER="xyz.rohanjk.bqst"
+VERSION="1.0.2"
+IDENTIFIER="tech.ebraudio.bqst"
 PLUGIN_SIGN_IDENTITY="${PLUGIN_SIGN_IDENTITY:--}"
 INSTALLER_SIGN_IDENTITY="${INSTALLER_SIGN_IDENTITY:-}"
 NOTARY_PROFILE="${NOTARY_PROFILE:-}"
@@ -59,10 +59,13 @@ sign_bundle() {
     identity="$1"
     bundle="$2"
 
+    # Apple discourages --deep for *applying* signatures; these bundles have a single
+    # Mach-O and no nested code, so signing the bundle directly is equivalent and correct.
+    # --deep is still used (and recommended) for verification below.
     if [ "$identity" = "-" ]; then
-        codesign --force --deep -s - "$bundle"
+        codesign --force -s - "$bundle"
     else
-        codesign --force --deep --options runtime --timestamp -s "$identity" "$bundle"
+        codesign --force --options runtime --timestamp -s "$identity" "$bundle"
         codesign --verify --deep --strict --verbose=2 "$bundle"
     fi
 }
@@ -151,7 +154,14 @@ fi
 
 rm -f "$PKG_COMPONENT"
 
-pkgutil --check-signature "$PKG_FINAL" || true
+if [ -n "$INSTALLER_SIGN_IDENTITY" ]; then
+    info "Verifying installer signature"
+    pkgutil --check-signature "$PKG_FINAL" \
+        || die "installer signature verification failed: $PKG_FINAL"
+else
+    # Unsigned build: pkgutil reports "no signature" (non-zero), which is expected here.
+    pkgutil --check-signature "$PKG_FINAL" || true
+fi
 
 if [ "$NOTARIZE" = "1" ] || [ -n "$NOTARY_PROFILE" ]; then
     info "Submitting installer for notarization"

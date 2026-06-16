@@ -36,21 +36,18 @@ scripts/package-macos.sh
 The output is:
 
 ```text
-dist/BQST-1.0.0-macOS.pkg
+dist/BQST-1.0.2-macOS-universal.pkg
 ```
 
 ## Windows
 
-The repo includes a GitHub Actions workflow at `.github/workflows/windows-installer.yml`.
-Run it from GitHub with `Actions > Windows Installer > Run workflow`.
+The Windows installer is built locally on Windows with `scripts/package-windows.ps1`
+(Inno Setup 6). See [../docs/build-notes.md](../docs/build-notes.md) for the full steps.
 
-The workflow verifies that:
+The script expects:
 
-- the Windows VST3 bundle exists
-- the bundle contains a Windows `.vst3` binary
-- `dist/BQST-1.0.0-Windows.exe` exists and is non-empty
-
-It uploads both the VST3 bundle and the installer as workflow artifacts.
+- the Windows VST3 bundle to exist and contain a Windows `.vst3` binary
+- `dist/BQST-1.0.2-Windows.exe` to be produced and non-empty
 
 Build BQST on Windows first:
 
@@ -68,7 +65,7 @@ powershell -ExecutionPolicy Bypass -File scripts/package-windows.ps1
 The installer output is:
 
 ```text
-dist/BQST-1.0.0-Windows.exe
+dist/BQST-1.0.2-Windows.exe
 ```
 
 The installer places the VST3 bundle in:

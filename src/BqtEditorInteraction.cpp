@@ -53,7 +53,6 @@ void BqtAudioProcessorEditor::timerCallback()
     }
 
     updateLinkedControlStates();
-    updateDynamicTooltips();
 
     if (activeReadoutSlider != nullptr)
     {
@@ -675,10 +674,6 @@ void BqtAudioProcessorEditor::restorePluginEditState(const std::vector<std::pair
     updateLinkedControlStates();
     requestRackBypassVisualState(audioProcessor.state().getRawParameterValue("bypass")->load() > 0.5f);
     repaint();
-}
-
-void BqtAudioProcessorEditor::updateDynamicTooltips()
-{
 }
 
 void BqtAudioProcessorEditor::updateLinkedControlStates()

@@ -112,7 +112,7 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
             switch (sizeSelect.getSelectedId())
             {
                 case 1: return 0.75f;
-                case 3: return fixedEditorScale;
+                case 3: return 1.25f;
                 case 4: return 1.50f;
                 default: return 1.0f;
             }
@@ -274,6 +274,7 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
 
 BqtAudioProcessorEditor::~BqtAudioProcessorEditor()
 {
+    stopTimer();
     endLinkedMirrorGestures();
     removeKeyListener(this);
 
@@ -327,7 +328,8 @@ void BqtAudioProcessorEditor::configureSlider(juce::Slider& slider)
 
 void BqtAudioProcessorEditor::configureCombo(juce::ComboBox& combo)
 {
-    combo.setTooltip("Click to choose a stepped setting.");
+    // No JUCE tooltip: combos use the custom top-bar help system (setTopBarHelp), so a tooltip
+    // here would show a second, redundant hint on hover.
     combo.setColour(juce::ComboBox::textColourId, juce::Colour(ink));
     addAndMakeVisible(combo);
 }

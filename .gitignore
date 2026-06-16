@@ -12,3 +12,6 @@ DerivedData/
 *.component
 *.aaxplugin
 references/**/*.wav
+
+# Local-only agent notes: machine-specific paths + signing cert hash (never commit)
+AGENTS.local.md

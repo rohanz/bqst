@@ -1,6 +1,6 @@
 #define AppName "BQST"
-#define AppVersion "1.0.0"
-#define Publisher "Rohan Kulshrestha"
+#define AppVersion "1.0.2"
+#define Publisher "EBR Audio Tech"
 #define AppId "{{6DBFE011-DBD6-44B8-A7C4-47D8986320F2}"
 
 [Setup]
