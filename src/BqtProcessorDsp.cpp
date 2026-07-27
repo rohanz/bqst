@@ -80,6 +80,10 @@ void BqtAudioProcessor::cacheParameterPointers()
 void BqtAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
 {
     currentSampleRate = sampleRate;
+    // Some hosts probe with a zero block size; clamp so the chunk loop in processBlock can
+    // never fail to advance and every buffer below is sized to at least one sample.
+    preparedBlockSize = juce::jmax(1, samplesPerBlock);
+    samplesPerBlock = preparedBlockSize;
 
     const juce::dsp::ProcessSpec spec { sampleRate, static_cast<juce::uint32>(samplesPerBlock), 1 };
     for (auto& side : filters)
@@ -260,9 +264,10 @@ void BqtAudioProcessor::processSide(float* samples, int numSamples, int sideInde
 
     if (driveActive && mixActive)
     {
+        // Sized to preparedBlockSize * 8 in prepareToPlay, and processBlock chunks to
+        // preparedBlockSize, so 8x oversampling is an exact ceiling. No audio-thread realloc.
         auto& dryBuffer = dryBuffers[dryBufferIndex];
-        if (dryBuffer.getNumSamples() < numSamples)
-            dryBuffer.setSize(1, numSamples, false, false, true);
+        jassert(dryBuffer.getNumSamples() >= numSamples);
 
         dryBuffer.copyFrom(0, 0, samples, numSamples);
         const auto* dry = dryBuffer.getReadPointer(0);
@@ -498,11 +503,26 @@ void BqtAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
     if (buffer.getNumChannels() < 2)
         return;
 
+    // A host is not obliged to honour the samplesPerBlock it passed to prepareToPlay, and every
+    // internal buffer plus each oversampler's internal storage is sized from that value.
+    // juce::dsp::Oversampling guards its bounds with jassert only, which compiles out in release,
+    // so an oversized block would write past the end of its buffer. Split into prepared-size
+    // chunks instead: that makes those sizes provable ceilings and keeps the audio thread free of
+    // any reallocation. A zero-length block falls straight out of the loop.
+    auto* left = buffer.getWritePointer(0);
+    auto* right = buffer.getWritePointer(1);
+    const auto totalSamples = buffer.getNumSamples();
+
+    for (int offset = 0; offset < totalSamples; offset += preparedBlockSize)
+        processSubBlock(left + offset, right + offset, juce::jmin(preparedBlockSize, totalSamples - offset));
+}
+
+void BqtAudioProcessor::processSubBlock(float* left, float* right, int numSamples)
+{
     const auto hostSampleRate = getSampleRate();
     currentSampleRate = hostSampleRate;
     updateLatency();
 
-    const auto numSamples = buffer.getNumSamples();
     const auto bypassEnabled = loadFlag(paramPtrs.bypass);
     globalBypassMix.setTargetValue(bypassEnabled ? 1.0f : 0.0f);
     const auto needsBypassCrossfade = bypassEnabled || globalBypassMix.isSmoothing() || globalBypassMix.getCurrentValue() > 0.0f;
@@ -511,19 +531,20 @@ void BqtAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
     // is running. If they are only fed during a crossfade they hold reset() zeros the first time
     // bypass is engaged (so the crossfade dips toward silence) and stale audio from the previous
     // un-bypass every time after that. The delayed copy is still only *consumed* when crossfading.
-    if (bypassDryBuffer.getNumSamples() < numSamples)
-        bypassDryBuffer.setSize(2, numSamples, false, false, true);
-
-    bypassDryBuffer.copyFrom(0, 0, buffer, 0, 0, numSamples);
-    bypassDryBuffer.copyFrom(1, 0, buffer, 1, 0, numSamples);
-    applyLatencyDelay(bypassDryBuffer.getWritePointer(0), numSamples, 0);
-    applyLatencyDelay(bypassDryBuffer.getWritePointer(1), numSamples, 1);
+    // processBlock chunks to preparedBlockSize, which is what this buffer was sized from.
+    jassert(bypassDryBuffer.getNumSamples() >= numSamples);
+    auto* dryLeft = bypassDryBuffer.getWritePointer(0);
+    auto* dryRight = bypassDryBuffer.getWritePointer(1);
+    juce::FloatVectorOperations::copy(dryLeft, left, numSamples);
+    juce::FloatVectorOperations::copy(dryRight, right, numSamples);
+    applyLatencyDelay(dryLeft, numSamples, 0);
+    applyLatencyDelay(dryRight, numSamples, 1);
 
     if (needsBypassCrossfade && bypassEnabled && !globalBypassMix.isSmoothing()
         && globalBypassMix.getCurrentValue() >= 1.0f)
     {
-        buffer.copyFrom(0, 0, bypassDryBuffer, 0, 0, numSamples);
-        buffer.copyFrom(1, 0, bypassDryBuffer, 1, 0, numSamples);
+        juce::FloatVectorOperations::copy(left, dryLeft, numSamples);
+        juce::FloatVectorOperations::copy(right, dryRight, numSamples);
         return;
     }
 
@@ -532,7 +553,8 @@ void BqtAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
     if (oversamplingIndex >= 0)
     {
         auto& oversampler = *oversamplers[static_cast<size_t>(oversamplingIndex)];
-        juce::dsp::AudioBlock<float> block(buffer);
+        float* channels[2] { left, right };
+        juce::dsp::AudioBlock<float> block(channels, 2, static_cast<size_t>(numSamples));
         const auto upsampledBlock = oversampler.processSamplesUp(block);
         currentSampleRate = hostSampleRate * static_cast<double>(oversampler.getOversamplingFactor());
         processChain(upsampledBlock.getChannelPointer(0),
@@ -543,16 +565,11 @@ void BqtAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
     }
     else
     {
-        processChain(buffer.getWritePointer(0), buffer.getWritePointer(1), numSamples);
+        processChain(left, right, numSamples);
     }
 
     if (needsBypassCrossfade)
     {
-        auto* left = buffer.getWritePointer(0);
-        auto* right = buffer.getWritePointer(1);
-        const auto* dryLeft = bypassDryBuffer.getReadPointer(0);
-        const auto* dryRight = bypassDryBuffer.getReadPointer(1);
-
         for (int sample = 0; sample < numSamples; ++sample)
         {
             const auto bypassMix = globalBypassMix.getNextValue();

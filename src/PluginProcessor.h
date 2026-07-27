@@ -74,6 +74,7 @@ private:
     void updateFilters();
     void updateSaturationToneFilters();
     void cacheParameterPointers();
+    void processSubBlock(float* left, float* right, int numSamples);
     void processChain(float* left, float* right, int numSamples);
     void processEq(float* samples, int numSamples, int sideIndex);
     void processSide(float* samples, int numSamples, int sideIndex);
@@ -101,6 +102,10 @@ private:
     std::array<std::atomic<float>, 2> meterLevels {};
     std::array<float, 2> meterRms {};
     double currentSampleRate = 44100.0;
+    // The block size prepareToPlay sized every internal buffer and oversampler from. processBlock
+    // splits anything larger into chunks of this size, which makes those sizes provable ceilings
+    // and removes the need to ever grow a buffer on the audio thread.
+    int preparedBlockSize = 1;
     std::atomic<int> currentLatencySamples { 0 };
 
     // Raw parameter pointers cached once after construction so the audio thread never
