@@ -343,6 +343,11 @@ void BqtAudioProcessor::applyLatencyDelay(float* samples, int numSamples, int si
 
 void BqtAudioProcessor::updateMeter(int sideIndex, const float* samples, int numSamples)
 {
+    // A zero-length block would divide by zero here. The resulting NaN is not transient: it
+    // latches into meterRms permanently, because the release/attack blend leaves 0 * NaN = NaN.
+    if (numSamples <= 0)
+        return;
+
     auto rectifiedSum = 0.0f;
     for (int sample = 0; sample < numSamples; ++sample)
         rectifiedSum += std::abs(samples[sample]);
@@ -502,22 +507,24 @@ void BqtAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
     globalBypassMix.setTargetValue(bypassEnabled ? 1.0f : 0.0f);
     const auto needsBypassCrossfade = bypassEnabled || globalBypassMix.isSmoothing() || globalBypassMix.getCurrentValue() > 0.0f;
 
-    if (needsBypassCrossfade)
+    // Feed the latency-compensating dry delay lines on every block, not just while a crossfade
+    // is running. If they are only fed during a crossfade they hold reset() zeros the first time
+    // bypass is engaged (so the crossfade dips toward silence) and stale audio from the previous
+    // un-bypass every time after that. The delayed copy is still only *consumed* when crossfading.
+    if (bypassDryBuffer.getNumSamples() < numSamples)
+        bypassDryBuffer.setSize(2, numSamples, false, false, true);
+
+    bypassDryBuffer.copyFrom(0, 0, buffer, 0, 0, numSamples);
+    bypassDryBuffer.copyFrom(1, 0, buffer, 1, 0, numSamples);
+    applyLatencyDelay(bypassDryBuffer.getWritePointer(0), numSamples, 0);
+    applyLatencyDelay(bypassDryBuffer.getWritePointer(1), numSamples, 1);
+
+    if (needsBypassCrossfade && bypassEnabled && !globalBypassMix.isSmoothing()
+        && globalBypassMix.getCurrentValue() >= 1.0f)
     {
-        if (bypassDryBuffer.getNumSamples() < numSamples)
-            bypassDryBuffer.setSize(2, numSamples, false, false, true);
-
-        bypassDryBuffer.copyFrom(0, 0, buffer, 0, 0, numSamples);
-        bypassDryBuffer.copyFrom(1, 0, buffer, 1, 0, numSamples);
-        applyLatencyDelay(bypassDryBuffer.getWritePointer(0), numSamples, 0);
-        applyLatencyDelay(bypassDryBuffer.getWritePointer(1), numSamples, 1);
-
-        if (bypassEnabled && !globalBypassMix.isSmoothing() && globalBypassMix.getCurrentValue() >= 1.0f)
-        {
-            buffer.copyFrom(0, 0, bypassDryBuffer, 0, 0, numSamples);
-            buffer.copyFrom(1, 0, bypassDryBuffer, 1, 0, numSamples);
-            return;
-        }
+        buffer.copyFrom(0, 0, bypassDryBuffer, 0, 0, numSamples);
+        buffer.copyFrom(1, 0, bypassDryBuffer, 1, 0, numSamples);
+        return;
     }
 
     const auto oversamplingIndex = getActiveOversamplingIndex();

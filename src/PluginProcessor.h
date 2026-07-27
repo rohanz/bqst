@@ -23,6 +23,14 @@ public:
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override { return true; }
 
+    // Designate our own "bypass" parameter as the host bypass. Without this the wrapper supplies
+    // its own hidden bypass, so the host's bypass button sidesteps the latency-compensated
+    // crossfade in processBlock and the plugin ends up exposing two separate bypasses.
+    juce::AudioProcessorParameter* getBypassParameter() const override
+    {
+        return parameters.getParameter("bypass");
+    }
+
     const juce::String getName() const override { return JucePlugin_Name; }
     bool acceptsMidi() const override { return false; }
     bool producesMidi() const override { return false; }
