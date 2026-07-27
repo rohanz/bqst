@@ -10,6 +10,11 @@ constexpr auto vuSineAverageToRms = 1.110720735f;
 constexpr auto parameterSmoothingSeconds = 0.02;
 constexpr auto baxShelfQ = 0.38f;
 constexpr auto saturationDriveScale = 0.40f;
+// The saturation stage's linear coloration fades in over the first third of the drive range, so
+// it reaches full strength at 6 dB of the 18 dB range. Above that the chain is bit-identical to
+// the previous voicing, which also keeps the autogain calibration valid where it matters.
+constexpr auto colorationRampScale = 3.0f;
+constexpr auto dcBlockerHz = 5.0f;
 
 // Stack-based coefficient factory: returns a std::array by value, so assigning it into
 // an already-sized Filter coefficients object updates it in place with no heap allocation
@@ -172,6 +177,8 @@ void BqtAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
     currentLatencySamples.store(computeLatencySamples());
     setLatencySamples(currentLatencySamples.load());
     meterRms = {};
+    dcBlockPreviousInput = {};
+    dcBlockPreviousOutput = {};
 }
 
 void BqtAudioProcessor::updateFilters()
@@ -281,6 +288,18 @@ void BqtAudioProcessor::processSide(float* samples, int numSamples, int sideInde
         auto& sideFilters = filters[smoothIndex];
         const auto isDensity = satType == bqt::SaturationType::density;
 
+        // The coloration filters below are linear and were previously applied at full,
+        // drive-independent strength inside this branch. Because the branch itself is gated on
+        // drive being non-zero, nudging Drive from 0.0 to 0.1 dB snapped roughly 1.9 dB of tilt
+        // into place with no ramp (+0.85 dB at 720 Hz, -1.2 dB at the top, for Cream). Blending
+        // each filter toward its input by a drive-derived amount makes the whole stage converge
+        // to unity as drive -> 0, so zero drive really is transparent. The filters still process
+        // every sample, so their state stays warm and the blend can rise without a transient.
+        const auto dcBlockCoefficient = std::exp(-2.0f * juce::MathConstants<float>::pi
+                                                 * dcBlockerHz / static_cast<float>(currentSampleRate));
+        auto& previousInput = dcBlockPreviousInput[smoothIndex];
+        auto& previousOutput = dcBlockPreviousOutput[smoothIndex];
+
         for (int sample = 0; sample < numSamples; ++sample)
         {
             // Smooth drive, pre-drive gain, mix and the drive-derived autogain per sample so
@@ -290,16 +309,22 @@ void BqtAudioProcessor::processSide(float* samples, int numSamples, int sideInde
             const auto mix = saturationMix[smoothIndex].getNextValue();
             const auto compensation = autoGainEnabled ? bqt::saturationAutoGain(drive, satType) : 1.0f;
 
-            auto value = sideFilters.saturationLowGuardPre.processSample(samples[sample]);
+            const auto color = juce::jmin(1.0f, drive * colorationRampScale);
+            const auto colored = [color](Filter& filter, float input)
+            {
+                return input + (filter.processSample(input) - input) * color;
+            };
+
+            auto value = colored(sideFilters.saturationLowGuardPre, samples[sample]);
             if (isDensity)
             {
-                value = sideFilters.densityBodyFocus.processSample(value);
-                value = sideFilters.densityPreEmphasis.processSample(value);
+                value = colored(sideFilters.densityBodyFocus, value);
+                value = colored(sideFilters.densityPreEmphasis, value);
             }
             else
             {
-                value = sideFilters.transformerLowDrive.processSample(value);
-                value = sideFilters.transformerWeight.processSample(value);
+                value = colored(sideFilters.transformerLowDrive, value);
+                value = colored(sideFilters.transformerWeight, value);
             }
 
             value *= driveGainValue;
@@ -307,16 +332,26 @@ void BqtAudioProcessor::processSide(float* samples, int numSamples, int sideInde
 
             if (isDensity)
             {
-                value = sideFilters.densityDeEmphasis.processSample(value);
+                value = colored(sideFilters.densityDeEmphasis, value);
             }
             else
             {
-                value = sideFilters.transformerLowRestore.processSample(value);
-                value = sideFilters.transformerTop.processSample(value);
+                value = colored(sideFilters.transformerLowRestore, value);
+                value = colored(sideFilters.transformerTop, value);
             }
 
-            value = sideFilters.saturationLowGuardPost.processSample(value);
-            value = sideFilters.vintage.processSample(value);
+            value = colored(sideFilters.saturationLowGuardPost, value);
+            value = colored(sideFilters.vintage, value);
+
+            // Both curves are asymmetric and only subtract a constant tanh(bias), so they leave a
+            // signal-dependent DC offset (measured -0.059, about -24.6 dBFS, at full Cream drive)
+            // which the +2.2 dB post low-shelf then lifts further. Nothing downstream removed it.
+            // Blended by the same colour factor so drive -> 0 stays exactly transparent; there is
+            // negligible DC to remove at low drive anyway.
+            const auto blocked = value - previousInput + dcBlockCoefficient * previousOutput;
+            previousInput = value;
+            previousOutput = blocked;
+            value += (blocked - value) * color;
 
             const auto wet = value * compensation;
             samples[sample] = dry[sample] + (wet - dry[sample]) * mix;
@@ -533,6 +568,9 @@ void BqtAudioProcessor::applyOversamplingFactorChange(int oversamplingIndex, dou
 
         for (auto& delay : dryMixDelays)
             delay.reset();
+
+        dcBlockPreviousInput = {};
+        dcBlockPreviousOutput = {};
     }
 }
 

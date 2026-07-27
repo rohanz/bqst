@@ -103,6 +103,9 @@ private:
     std::array<juce::SmoothedValue<float, juce::ValueSmoothingTypes::Multiplicative>, 2> outputTrimGain;
     std::array<std::atomic<float>, 2> meterLevels {};
     std::array<float, 2> meterRms {};
+    // One-pole DC blocker state for the wet saturation path, per side.
+    std::array<float, 2> dcBlockPreviousInput {};
+    std::array<float, 2> dcBlockPreviousOutput {};
     double currentSampleRate = 44100.0;
     // The block size prepareToPlay sized every internal buffer and oversampler from. processBlock
     // splits anything larger into chunks of this size, which makes those sizes provable ceilings
