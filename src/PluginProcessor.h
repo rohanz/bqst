@@ -8,6 +8,12 @@
 
 #include "BqtDsp.h"
 
+// Set by the BqstChainTests target, which links the processor without the editor or its binary
+// assets so DSP behaviour can be asserted headlessly.
+#ifndef BQST_HEADLESS_TESTS
+ #define BQST_HEADLESS_TESTS 0
+#endif
+
 class BqtAudioProcessor final : public juce::AudioProcessor,
                                 private juce::AsyncUpdater
 {
@@ -21,7 +27,7 @@ public:
     void processBlock(juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
 
     juce::AudioProcessorEditor* createEditor() override;
-    bool hasEditor() const override { return true; }
+    bool hasEditor() const override { return ! BQST_HEADLESS_TESTS; }
 
     // Designate our own "bypass" parameter as the host bypass. Without this the wrapper supplies
     // its own hidden bypass, so the host's bypass button sidesteps the latency-compensated

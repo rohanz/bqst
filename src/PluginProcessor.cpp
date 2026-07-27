@@ -1,5 +1,10 @@
 #include "PluginProcessor.h"
-#include "PluginEditor.h"
+
+// The chain tests link the processor without the editor, its binary assets or a GUI, so that
+// DSP behaviour can be asserted headlessly. Nothing else defines this.
+#if ! BQST_HEADLESS_TESTS
+ #include "PluginEditor.h"
+#endif
 
 #include <cmath>
 
@@ -68,7 +73,11 @@ void BqtAudioProcessor::setStateInformation(const void* data, int sizeInBytes)
 
 juce::AudioProcessorEditor* BqtAudioProcessor::createEditor()
 {
+#if BQST_HEADLESS_TESTS
+    return nullptr;
+#else
     return new BqtAudioProcessorEditor(*this);
+#endif
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()

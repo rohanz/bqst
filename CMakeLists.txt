@@ -101,4 +101,37 @@ if (BQST_BUILD_TESTS)
     set_target_properties(BqstDspTests PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
 
     add_test(NAME BqstDspTests COMMAND BqstDspTests)
+
+    # Chain tests: drive the real processor through processBlock. These must link JUCE, but not
+    # the editor or its binary assets, so BQST_HEADLESS_TESTS compiles createEditor out.
+    juce_add_console_app(BqstChainTests PRODUCT_NAME "BqstChainTests")
+
+    target_sources(BqstChainTests
+        PRIVATE
+            tests/chain_tests.cpp
+            src/PluginProcessor.cpp
+            src/BqtParameterLayout.cpp
+            src/BqtProcessorDsp.cpp
+    )
+
+    target_compile_definitions(BqstChainTests
+        PRIVATE
+            BQST_HEADLESS_TESTS=1
+            JUCE_WEB_BROWSER=0
+            JUCE_USE_CURL=0
+            JUCE_STANDALONE_APPLICATION=1
+            JucePlugin_Name="BQST"
+    )
+
+    target_link_libraries(BqstChainTests
+        PRIVATE
+            juce::juce_audio_processors
+            juce::juce_audio_utils
+            juce::juce_dsp
+        PUBLIC
+            juce::juce_recommended_config_flags
+            juce::juce_recommended_warning_flags
+    )
+
+    add_test(NAME BqstChainTests COMMAND BqstChainTests)
 endif()
