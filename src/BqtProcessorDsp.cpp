@@ -162,6 +162,12 @@ void BqtAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
 
     updateFilters();
     updateSaturationToneFilters();
+
+    // Set the saturation-side smoothers to the oversampled rate they will actually be consumed
+    // at. State is already reset above, so no second reset is needed here.
+    lastActiveOversamplingIndex = getActiveOversamplingIndex();
+    applyOversamplingFactorChange(lastActiveOversamplingIndex, sampleRate, false);
+
     // prepareToPlay runs on the message thread, so set the host latency directly here.
     currentLatencySamples.store(computeLatencySamples());
     setLatencySamples(currentLatencySamples.load());
@@ -472,6 +478,64 @@ int BqtAudioProcessor::getActiveOversamplingIndex() const
     return juce::jlimit(0, numOversamplingFactors - 1, choice - 1);
 }
 
+void BqtAudioProcessor::applyOversamplingFactorChange(int oversamplingIndex, double hostSampleRate, bool resetState)
+{
+    const auto factor = oversamplingIndex >= 0
+                      ? static_cast<double>(oversamplers[static_cast<size_t>(oversamplingIndex)]->getOversamplingFactor())
+                      : 1.0;
+    const auto effectiveRate = hostSampleRate * factor;
+
+    // These smoothers are consumed once per OVERSAMPLED sample inside processSide, so their ramp
+    // length has to be derived from the oversampled rate. Resetting them at the base rate made a
+    // 20 ms ramp finish in 2.5 ms at 8x, and made the same automation move sound different
+    // depending on the oversampling setting. Preserve both the current and target value so
+    // re-rating mid-ramp continues the ramp rather than snapping (SmoothedValue::reset() would
+    // jump straight to the target).
+    const auto rerate = [effectiveRate](auto& smoother)
+    {
+        const auto current = smoother.getCurrentValue();
+        const auto target = smoother.getTargetValue();
+        smoother.reset(effectiveRate, parameterSmoothingSeconds);
+        smoother.setCurrentAndTargetValue(current);
+        smoother.setTargetValue(target);
+    };
+
+    for (int side = 0; side < 2; ++side)
+    {
+        const auto index = static_cast<size_t>(side);
+        rerate(driveAmount[index]);
+        rerate(driveGain[index]);
+        rerate(saturationMix[index]);
+        rerate(outputTrimGain[index]);
+    }
+
+    if (resetState)
+    {
+        // The selected oversampler may not have run for minutes, and the saturation filters were
+        // designed for the previous rate while holding state accumulated at it. The dry delay
+        // lines are also misaligned because the reported latency just changed.
+        if (oversamplingIndex >= 0)
+            oversamplers[static_cast<size_t>(oversamplingIndex)]->reset();
+
+        for (auto& side : filters)
+        {
+            side.vintage.reset();
+            side.densityBodyFocus.reset();
+            side.densityPreEmphasis.reset();
+            side.densityDeEmphasis.reset();
+            side.saturationLowGuardPre.reset();
+            side.saturationLowGuardPost.reset();
+            side.transformerLowDrive.reset();
+            side.transformerLowRestore.reset();
+            side.transformerWeight.reset();
+            side.transformerTop.reset();
+        }
+
+        for (auto& delay : dryMixDelays)
+            delay.reset();
+    }
+}
+
 int BqtAudioProcessor::computeLatencySamples() const
 {
     const auto oversamplingIndex = getActiveOversamplingIndex();
@@ -559,6 +623,15 @@ void BqtAudioProcessor::processSubBlock(float* left, float* right, int numSample
     }
 
     const auto oversamplingIndex = getActiveOversamplingIndex();
+
+    // Covers both a user change to the oversampling control and the realtime -> render
+    // transition, which switches from osRealtime to osRender without a prepareToPlay in hosts
+    // that do not re-prepare for offline bounces.
+    if (oversamplingIndex != lastActiveOversamplingIndex)
+    {
+        applyOversamplingFactorChange(oversamplingIndex, hostSampleRate, true);
+        lastActiveOversamplingIndex = oversamplingIndex;
+    }
 
     // The EQ is linear, so it runs at the host rate outside the oversampled region: cheaper, and
     // its curve no longer depends on the oversampling factor. Only the saturation, which is what

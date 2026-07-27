@@ -82,6 +82,7 @@ private:
     void applyLatencyDelay(float* samples, int numSamples, int sideIndex);
     void updateMeter(int sideIndex, const float* samples, int numSamples);
     int getActiveOversamplingIndex() const;
+    void applyOversamplingFactorChange(int oversamplingIndex, double hostSampleRate, bool resetState);
     int computeLatencySamples() const;
     void updateLatency();
     void handleAsyncUpdate() override;
@@ -107,6 +108,9 @@ private:
     // splits anything larger into chunks of this size, which makes those sizes provable ceilings
     // and removes the need to ever grow a buffer on the audio thread.
     int preparedBlockSize = 1;
+    // Sentinel distinct from every valid index (-1 means "oversampling off"), so the first block
+    // after prepareToPlay does not look like a factor change.
+    int lastActiveOversamplingIndex = -2;
     std::atomic<int> currentLatencySamples { 0 };
 
     // Raw parameter pointers cached once after construction so the audio thread never
