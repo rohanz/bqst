@@ -72,7 +72,12 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
     osRealtime.addItemList(juce::StringArray { "realtime off", "realtime 2x", "realtime 4x", "realtime 8x" }, 1);
     osRender.addItemList(juce::StringArray { "render off", "render 2x", "render 4x", "render 8x" }, 1);
     sizeSelect.addItemList(juce::StringArray { "75%", "100%", "125%", "150%" }, 1);
-    sizeSelect.setSelectedId(2, juce::dontSendNotification);
+    // Both the view size and the selected preset are session state, restored from the APVTS tree
+    // so reopening the editor does not silently reset the size or claim "Default" while the DSP
+    // is still on a loaded preset.
+    sizeSelect.setSelectedId(audioProcessor.state().state.getProperty("editorScale", 2),
+                             juce::dontSendNotification);
+    selectedPresetKey = audioProcessor.state().state.getProperty("selectedPresetKey", juce::String()).toString();
     refreshPresetMenu();
 
     setTopBarHelp(presetPrevious, "Loads the previous preset.");
@@ -118,9 +123,15 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
             }
         }();
 
+        audioProcessor.state().state.setProperty("editorScale", sizeSelect.getSelectedId(), nullptr);
         setSize(static_cast<int>(std::round(static_cast<float>(baseEditorWidth) * nextScale)),
                 static_cast<int>(std::round(static_cast<float>(baseEditorHeight) * nextScale)));
     };
+
+    // The restored view size was set with dontSendNotification (the handler did not exist yet),
+    // so apply it now that it does.
+    if (sizeSelect.getSelectedId() != 2 && sizeSelect.onChange != nullptr)
+        sizeSelect.onChange();
 
     eqModeAttachment = std::make_unique<ComboBoxAttachment>(audioProcessor.state(), "eqMode", eqMode);
     satModeAttachment = std::make_unique<ComboBoxAttachment>(audioProcessor.state(), "satMode", satMode);

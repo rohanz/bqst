@@ -75,10 +75,17 @@ void BqtAudioProcessorEditor::showPresetMenu()
 
 void BqtAudioProcessorEditor::loadPreset(int index)
 {
+    // Loading writes every parameter, which drives the sliders through their attachments. Fence
+    // the link mirror for the whole operation so a linked pair cannot collapse onto one side.
+    const juce::ScopedValueSetter<bool> scopedMirror(isMirroringLinkedControl, true);
+
     if (presetManager.loadPreset(index))
     {
         selectedPresetIndex = index;
         selectedPresetKey = presetManager.getPresetKey(index);
+        // Persist alongside the parameters so the button does not read "Default" after the editor
+        // is reopened while the DSP is still on the loaded preset.
+        audioProcessor.state().state.setProperty("selectedPresetKey", selectedPresetKey, nullptr);
         inputTrimCompensationStart = inputTrim.getValue();
         for (size_t side = 0; side < sideControls.size(); ++side)
             outputTrimCompensationStart[side] = sideControls[side].outputTrim.getValue();
