@@ -359,6 +359,18 @@ void BqtAudioProcessorEditor::AboutPanel::mouseUp(const juce::MouseEvent& event)
 void BqtAudioProcessorEditor::requestRackBypassVisualState(bool shouldBeBypassed)
 {
     const auto wasBypassed = rackComponent.isBypassed();
+
+    // This is called unconditionally from the 60 Hz timer. The toFront() pair below ping-pongs --
+    // whichever is raised last displaces the other, so both moved every tick forever -- and
+    // Component::toFront -> reorderChildInternal calls repaintParent(), which has no visibility
+    // guard, so the hidden overlay still dirtied the whole rack. That repainted all 16 rotaries
+    // through high-quality image rotation and dispatched two synthetic mouse-moves per tick, on a
+    // completely idle UI. Bail out unless something actually changed.
+    if (wasBypassed == shouldBeBypassed
+        && rackBypassOverlay.isVisible() == shouldBeBypassed
+        && rackBypassOverlay.getBounds() == rackComponent.getBounds())
+        return;
+
     rackComponent.setBypassed(shouldBeBypassed);
 
     rackBypassOverlay.setBounds(rackComponent.getBounds());

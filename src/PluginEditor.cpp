@@ -166,18 +166,31 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
     for (int side = 0; side < 2; ++side)
         configureSide(sideControls[static_cast<size_t>(side)], side);
 
+    // Mirror only for a real user gesture on the source control.
+    //
+    // onValueChange also fires when a SliderAttachment writes the slider in response to a
+    // parameter change, which is how host automation, preset loads and setStateInformation all
+    // arrive. Mirroring those corrupted state: an asymmetric pair with link on is reachable
+    // (ctrl-drag inverts the link, see shouldMirrorLinkedControls), and restoring one made side A
+    // mirror onto B, then B mirror back onto A, collapsing both onto whichever was restored last
+    // and pushing the wrong values back to the host via setValueNotifyingHost.
+    //
+    // restorePluginEditState already fences the undo/redo path this way; these are the two entry
+    // points that were missed.
     auto mirrorSlider = [this](juce::Slider& source, juce::Slider& dest)
     {
-        if (isMirroringLinkedControl)
+        if (isMirroringLinkedControl || ! (source.isMouseButtonDown() || source.isMouseOverOrDragging()))
             return;
 
         const juce::ScopedValueSetter<bool> scopedMirror(isMirroringLinkedControl, true);
         dest.setValue(source.getValue(), juce::sendNotificationSync);
     };
 
+    // The satType combos are hidden and driven by satTypeButton, so they are never moused; an
+    // explicit flag set for the duration of that click stands in for the gesture test.
     auto mirrorChoice = [this](juce::ComboBox& source, juce::ComboBox& dest)
     {
-        if (isMirroringLinkedControl)
+        if (isMirroringLinkedControl || ! isUserSatTypeClick)
             return;
 
         const juce::ScopedValueSetter<bool> scopedMirror(isMirroringLinkedControl, true);
@@ -398,6 +411,8 @@ void BqtAudioProcessorEditor::configureSide(SideControls& controls, int sideInde
     controls.satTypeButton.onClick = [this, &combo = controls.satType, &button = controls.satTypeButton]
     {
         const auto next = combo.getSelectedItemIndex() == 0 ? 1 : 0;
+        // Marks this combo change as user-driven so the link mirror will act on it.
+        const juce::ScopedValueSetter<bool> scopedUserClick(isUserSatTypeClick, true);
         combo.setSelectedItemIndex(next, juce::sendNotificationSync);
         button.setToggleState(next == 1, juce::dontSendNotification);
 
