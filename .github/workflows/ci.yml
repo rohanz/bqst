@@ -1,0 +1,44 @@
+name: CI
+
+# There was no CI at all: scripts/check.sh was the only gate and ran only when someone
+# remembered to. This runs the same gate on every push and pull request.
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Build, test and validate (macOS)
+    runs-on: macos-latest
+
+    steps:
+      - name: Check out with JUCE submodule
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Cache build directory
+        uses: actions/cache@v4
+        with:
+          path: build
+          key: bqst-build-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', '.gitmodules') }}
+          restore-keys: bqst-build-${{ runner.os }}-
+
+      - name: Install pluginval
+        run: |
+          set -euo pipefail
+          curl -fsSL -o pluginval.zip \
+            https://github.com/Tracktion/pluginval/releases/download/v1.0.3/pluginval_macOS.zip
+          unzip -q pluginval.zip -d "$RUNNER_TEMP/pluginval"
+          echo "PLUGINVAL=$RUNNER_TEMP/pluginval/pluginval.app/Contents/MacOS/pluginval" >> "$GITHUB_ENV"
+
+      # Native-arch build, matching the local developer gate. The universal 10.13 release build
+      # is produced separately by scripts/build-macos-release.sh.
+      - name: Run scripts/check.sh
+        run: scripts/check.sh

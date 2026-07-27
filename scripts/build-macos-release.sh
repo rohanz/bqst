@@ -24,6 +24,12 @@ case "$ARCH" in
         ;;
 esac
 
+# Configure from scratch. An incremental build does not regenerate the bundle Info.plist, so
+# after a version bump the artefacts kept the OLD CFBundleShortVersionString while
+# package-macos.sh stamped the new number onto the installer -- a package whose payload disagreed
+# with its own version. A release build is infrequent enough that the rebuild cost is worth it.
+rm -rf "$BUILD_DIR"
+
 cmake -S "$ROOT_DIR" -B "$BUILD_DIR" \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_OSX_DEPLOYMENT_TARGET="$MACOS_DEPLOYMENT_TARGET" \

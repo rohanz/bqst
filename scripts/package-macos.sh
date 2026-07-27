@@ -92,6 +92,16 @@ fi
 [ -f "$VST3_BINARY" ] || die "missing VST3 binary: $VST3_BINARY"
 [ -f "$AU_BINARY" ] || die "missing AU binary: $AU_BINARY"
 
+# The built bundles must agree with the version being stamped onto the installer. VERSION here is
+# maintained by hand, separately from project(... VERSION ...) in CMakeLists.txt, so a bump to one
+# and not the other (or a stale incremental build tree) would otherwise ship an installer whose
+# payload reports a different version than its own filename.
+for bundle in "$VST3_SRC" "$AU_SRC"; do
+    bundle_version=$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$bundle/Contents/Info.plist" 2>/dev/null || echo "")
+    [ "$bundle_version" = "$VERSION" ] || die "version mismatch: $bundle reports '$bundle_version', packaging as '$VERSION'.
+Bump project(... VERSION ...) in CMakeLists.txt and rebuild with scripts/build-macos-release.sh"
+done
+
 [ -f "$PRODUCT_DISTRIBUTION" ] || die "missing product distribution: $PRODUCT_DISTRIBUTION"
 [ -d "$PRODUCT_RESOURCES" ] || die "missing product resources: $PRODUCT_RESOURCES"
 

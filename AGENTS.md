@@ -55,7 +55,8 @@ the VST3 there via `BQST_VST3_DIR`. The AU still must go to
 ## Fast Local Checks
 
 For day-to-day work, prefer a native (non-universal) build and the check script,
-which is the local equivalent of CI (there is no cloud CI):
+which is the same gate CI runs (`.github/workflows/ci.yml` runs `scripts/check.sh` on
+every push and pull request):
 
 ```sh
 scripts/check.sh   # configure native arch, build VST3 + unit tests, run ctest, pluginval s10
