@@ -151,7 +151,7 @@ private:
     std::vector<std::pair<juce::String, float>> capturePluginEditState() const;
     void refreshPresetMenu();
     void showPresetMenu();
-    void loadPreset(int index);
+    bool loadPreset(int index);
     void selectRelativePreset(int offset);
     void saveUserPreset();
     void updatePresetButtonText();
@@ -198,12 +198,22 @@ private:
     std::unique_ptr<ButtonAttachment> vintageAttachment;
     std::unique_ptr<ButtonAttachment> bypassAttachment;
     BqtReadoutBubble readoutBubble;
+    // The meters are driven from the display's vertical blank rather than the 60 Hz message
+    // timer. A 60 Hz juce::Timer beats against a 60 Hz refresh -- message-loop granularity
+    // delivers two ticks inside one frame and none in the next -- which is what made the needle
+    // look intermittently low-framerate.
+    juce::VBlankAttachment meterVBlank;
+    double lastMeterTickSeconds = 0.0;
     bool isMirroringLinkedControl = false;
-    juce::Slider* activeReadoutSlider = nullptr;
-    juce::Slider* hoveredReadoutSlider = nullptr;
+    bool isUserSatTypeClick = false;
+    juce::Component::SafePointer<juce::Slider> activeReadoutSlider;
+    // SafePointers, and only ever set to components inside this editor: the hover source is the
+    // process-global mouse, so these used to be able to latch controls belonging to another BQST
+    // instance and dangle when that instance's editor closed.
+    juce::Component::SafePointer<juce::Slider> hoveredReadoutSlider;
     juce::uint32 hoverReadoutStartMs = 0;
     bool hoverReadoutVisible = false;
-    juce::Component* hoveredHelpComponent = nullptr;
+    juce::Component::SafePointer<juce::Component> hoveredHelpComponent;
     juce::String hoveredHelpText;
     juce::uint32 helpHoverStartMs = 0;
     bool helpVisible = false;

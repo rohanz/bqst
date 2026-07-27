@@ -16,6 +16,9 @@ void BqtAudioProcessorEditor::refreshPresetMenu()
 
 void BqtAudioProcessorEditor::showPresetMenu()
 {
+    // Pick up presets added or removed on disk since the list was last built.
+    refreshPresetMenu();
+
     const auto& presets = presetManager.getPresets();
     if (presets.isEmpty())
         return;
@@ -73,26 +76,49 @@ void BqtAudioProcessorEditor::showPresetMenu()
                        });
 }
 
-void BqtAudioProcessorEditor::loadPreset(int index)
+bool BqtAudioProcessorEditor::loadPreset(int index)
 {
+    // Loading writes every parameter, which drives the sliders through their attachments. Fence
+    // the link mirror for the whole operation so a linked pair cannot collapse onto one side.
+    const juce::ScopedValueSetter<bool> scopedMirror(isMirroringLinkedControl, true);
+
     if (presetManager.loadPreset(index))
     {
         selectedPresetIndex = index;
         selectedPresetKey = presetManager.getPresetKey(index);
+        // Persist alongside the parameters so the button does not read "Default" after the editor
+        // is reopened while the DSP is still on the loaded preset.
+        audioProcessor.state().state.setProperty("selectedPresetKey", selectedPresetKey, nullptr);
         inputTrimCompensationStart = inputTrim.getValue();
         for (size_t side = 0; side < sideControls.size(); ++side)
             outputTrimCompensationStart[side] = sideControls[side].outputTrim.getValue();
         updatePresetButtonText();
+        return true;
     }
+
+    return false;
 }
 
 void BqtAudioProcessorEditor::selectRelativePreset(int offset)
 {
+    // Rescan first: a preset added or deleted in Finder since the list was last built would
+    // otherwise leave a dead entry here.
+    refreshPresetMenu();
+
     const auto count = presetManager.getPresets().size();
     if (count <= 0)
         return;
 
-    loadPreset((selectedPresetIndex + offset + count) % count);
+    // Step past entries that fail to load rather than stalling on them. loadPreset returns false
+    // for a file that has been deleted or is malformed, and the selection is not advanced in that
+    // case -- so without this loop the next press recomputed the same dead index forever.
+    auto index = selectedPresetIndex;
+    for (int attempt = 0; attempt < count; ++attempt)
+    {
+        index = (index + offset + count) % count;
+        if (loadPreset(index))
+            return;
+    }
 }
 
 void BqtAudioProcessorEditor::saveUserPreset()
@@ -115,11 +141,11 @@ void BqtAudioProcessorEditor::saveUserPreset()
                                        if (presetManager.saveUserPreset(file))
                                        {
                                            refreshPresetMenu();
-                                           const auto savedName = file.withFileExtension(".bqstpreset").getFileNameWithoutExtension();
+                                           const auto savedFile = file.withFileExtension(".bqstpreset");
                                            for (int i = 0; i < presetManager.getPresets().size(); ++i)
                                            {
                                                const auto& preset = presetManager.getPresets().getReference(i);
-                                               if (! preset.factory && preset.name == savedName)
+                                               if (! preset.factory && preset.file == savedFile)
                                                {
                                                    selectedPresetIndex = i;
                                                    selectedPresetKey = presetManager.getPresetKey(i);

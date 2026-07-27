@@ -40,7 +40,9 @@ public:
     BqtVuMeter(BqtAudioProcessor& processor, int sideIndex);
     void paint(juce::Graphics& g) override;
     void setRenderScale(float newScale);
-    bool updateLevel();
+    // secondsElapsed is the real time since the previous call. The needle smoothing used to use a
+    // fixed per-tick coefficient, which made its speed depend on how punctually the timer fired.
+    bool updateLevel(double secondsElapsed);
 
 private:
     void rebuildStaticLayer();

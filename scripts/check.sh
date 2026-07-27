@@ -21,19 +21,31 @@ info() { echo "==> $*"; }
 info "Configuring ($ARCH) in $BUILD_DIR"
 cmake -S "$ROOT_DIR" -B "$BUILD_DIR" -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="$ARCH" >/dev/null
 
-info "Building VST3 + unit tests"
-cmake --build "$BUILD_DIR" --target BQST_VST3 BqstDspTests -j "$JOBS"
+info "Building all plugin formats + unit tests"
+TARGETS="BQST_VST3 BQST_Standalone BqstDspTests BqstChainTests"
+if [ "$(uname)" = "Darwin" ]; then
+    # An AU-only compile break used to survive every pre-release check.
+    TARGETS="$TARGETS BQST_AU"
+fi
+# shellcheck disable=SC2086
+cmake --build "$BUILD_DIR" --target $TARGETS -j "$JOBS"
 
 info "Running unit tests"
 ctest --test-dir "$BUILD_DIR" --output-on-failure
 
 VST3=$(find "$BUILD_DIR" -name 'BQST.vst3' -type d | head -1)
 
+# pluginval is a release gate, so a missing binary must fail rather than quietly pass. Set
+# SKIP_PLUGINVAL=1 to opt out deliberately; the final message then says so.
 if [ -x "$PLUGINVAL" ] && [ -n "$VST3" ]; then
     info "Validating with pluginval (strictness $STRICTNESS)"
     "$PLUGINVAL" --strictness-level "$STRICTNESS" --validate "$VST3"
+    info "All checks passed."
+elif [ "${SKIP_PLUGINVAL:-0}" = "1" ]; then
+    info "All checks passed EXCEPT pluginval, which was skipped via SKIP_PLUGINVAL=1."
 else
-    info "Skipping pluginval (not found at '$PLUGINVAL', or VST3 missing). Set PLUGINVAL to override."
+    echo "ERROR: pluginval not found at '$PLUGINVAL'${VST3:+}" >&2
+    [ -n "$VST3" ] || echo "ERROR: no built BQST.vst3 found under '$BUILD_DIR'" >&2
+    echo "Set PLUGINVAL=/path/to/pluginval, or SKIP_PLUGINVAL=1 to bypass deliberately." >&2
+    exit 1
 fi
-
-info "All checks passed."

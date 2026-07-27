@@ -1,5 +1,10 @@
 #include "PluginProcessor.h"
-#include "PluginEditor.h"
+
+// The chain tests link the processor without the editor, its binary assets or a GUI, so that
+// DSP behaviour can be asserted headlessly. Nothing else defines this.
+#if ! BQST_HEADLESS_TESTS
+ #include "PluginEditor.h"
+#endif
 
 #include <cmath>
 
@@ -17,11 +22,13 @@ BqtAudioProcessor::BqtAudioProcessor()
       parameters(*this, nullptr, "PARAMETERS", createParameterLayout())
 {
     cacheParameterPointers();
+    startTimerHz(20);
 }
 
 void BqtAudioProcessor::releaseResources()
 {
 }
+
 
 bool BqtAudioProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const
 {
@@ -63,12 +70,37 @@ void BqtAudioProcessor::setStateInformation(const void* data, int sizeInBytes)
             && ! std::isfinite(child->getDoubleAttribute("value")))
             child->removeAttribute("value");
 
+    // Fill in any parameter the incoming state does not mention. JUCE's replaceState only applies
+    // values for adapters that have a matching PARAM child; for the rest it creates a fresh child
+    // and flushes the adapter's CURRENT value into it (juce_AudioProcessorValueTreeState.cpp,
+    // updateParameterConnectionsToChildTrees). So an older state that predates a parameter would
+    // silently inherit whatever the previous preset left there, making the same file recall
+    // differently depending on what was loaded before it.
+    juce::StringArray present;
+    for (auto* child : xml->getChildIterator())
+        if (child->hasTagName("PARAM"))
+            present.add(child->getStringAttribute("id"));
+
+    for (auto* parameter : getParameters())
+        if (auto* withId = dynamic_cast<juce::AudioProcessorParameterWithID*>(parameter))
+            if (! present.contains(withId->paramID))
+                if (auto* ranged = dynamic_cast<juce::RangedAudioParameter*>(parameter))
+                {
+                    auto* child = xml->createNewChildElement("PARAM");
+                    child->setAttribute("id", withId->paramID);
+                    child->setAttribute("value", ranged->convertFrom0to1(ranged->getDefaultValue()));
+                }
+
     parameters.replaceState(juce::ValueTree::fromXml(*xml));
 }
 
 juce::AudioProcessorEditor* BqtAudioProcessor::createEditor()
 {
+#if BQST_HEADLESS_TESTS
+    return nullptr;
+#else
     return new BqtAudioProcessorEditor(*this);
+#endif
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()

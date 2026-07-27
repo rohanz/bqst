@@ -239,8 +239,8 @@ void BqtAudioProcessorEditor::paintRack(juce::Graphics& g)
 
     auto drawEqCenterText = [&g](const juce::Slider& left, const juce::Slider& right, const juce::String& text, float yOffset)
     {
-        const auto x = (left.getBounds().getCentreX() + right.getBounds().getCentreX()) * 0.5f;
-        const auto y = (left.getY() + right.getY()) * 0.5f + yOffset;
+        const auto x = static_cast<float>(left.getBounds().getCentreX() + right.getBounds().getCentreX()) * 0.5f;
+        const auto y = static_cast<float>(left.getY() + right.getY()) * 0.5f + yOffset;
         drawPanelText(g, text, juce::Rectangle<float>(120.0f, 42.0f).withCentre({ x, y }),
                       juce::Justification::centred, 34.0f);
     };
@@ -262,8 +262,8 @@ void BqtAudioProcessorEditor::paintRack(juce::Graphics& g)
 
     auto drawSatCenterText = [&g](const juce::Slider& left, const juce::Slider& right, const juce::String& text, float yOffset)
     {
-        const auto x = (left.getBounds().getCentreX() + right.getBounds().getCentreX()) * 0.5f;
-        const auto y = (left.getBottom() + right.getBottom()) * 0.5f + yOffset;
+        const auto x = static_cast<float>(left.getBounds().getCentreX() + right.getBounds().getCentreX()) * 0.5f;
+        const auto y = static_cast<float>(left.getBottom() + right.getBottom()) * 0.5f + yOffset;
         drawPanelText(g, text, juce::Rectangle<float>(132.0f, 42.0f).withCentre({ x, y }),
                       juce::Justification::centred, 34.0f);
     };
@@ -318,10 +318,11 @@ void BqtAudioProcessorEditor::AboutPanel::paint(juce::Graphics& g)
     g.drawRoundedRectangle(card, 6.0f, 1.0f);
 
     g.setColour(juce::Colour(ink).withAlpha(0.72f));
-    g.drawLine(closeBounds.getX() + 10.0f, closeBounds.getY() + 10.0f,
-               closeBounds.getRight() - 10.0f, closeBounds.getBottom() - 10.0f, 1.2f);
-    g.drawLine(closeBounds.getRight() - 10.0f, closeBounds.getY() + 10.0f,
-               closeBounds.getX() + 10.0f, closeBounds.getBottom() - 10.0f, 1.2f);
+    const auto closeCross = closeBounds.toFloat();
+    g.drawLine(closeCross.getX() + 10.0f, closeCross.getY() + 10.0f,
+               closeCross.getRight() - 10.0f, closeCross.getBottom() - 10.0f, 1.2f);
+    g.drawLine(closeCross.getRight() - 10.0f, closeCross.getY() + 10.0f,
+               closeCross.getX() + 10.0f, closeCross.getBottom() - 10.0f, 1.2f);
 
     auto content = card.reduced(28.0f, 26.0f);
     g.setColour(juce::Colour(ink));
@@ -359,6 +360,18 @@ void BqtAudioProcessorEditor::AboutPanel::mouseUp(const juce::MouseEvent& event)
 void BqtAudioProcessorEditor::requestRackBypassVisualState(bool shouldBeBypassed)
 {
     const auto wasBypassed = rackComponent.isBypassed();
+
+    // This is called unconditionally from the 60 Hz timer. The toFront() pair below ping-pongs --
+    // whichever is raised last displaces the other, so both moved every tick forever -- and
+    // Component::toFront -> reorderChildInternal calls repaintParent(), which has no visibility
+    // guard, so the hidden overlay still dirtied the whole rack. That repainted all 16 rotaries
+    // through high-quality image rotation and dispatched two synthetic mouse-moves per tick, on a
+    // completely idle UI. Bail out unless something actually changed.
+    if (wasBypassed == shouldBeBypassed
+        && rackBypassOverlay.isVisible() == shouldBeBypassed
+        && rackBypassOverlay.getBounds() == rackComponent.getBounds())
+        return;
+
     rackComponent.setBypassed(shouldBeBypassed);
 
     rackBypassOverlay.setBounds(rackComponent.getBounds());
@@ -550,8 +563,8 @@ void BqtAudioProcessorEditor::resized()
 
     const auto meterTop = satPanel.getY() - 32;
     constexpr int vuSize = 286;
-    const auto screwX1 = satPanel.getX() + satPanel.getWidth() * 0.25f;
-    const auto screwX2 = satPanel.getX() + satPanel.getWidth() * 0.75f;
+    const auto screwX1 = static_cast<float>(satPanel.getX()) + static_cast<float>(satPanel.getWidth()) * 0.25f;
+    const auto screwX2 = static_cast<float>(satPanel.getX()) + static_cast<float>(satPanel.getWidth()) * 0.75f;
     const auto previousVuSize = 272.0f;
     const auto leftMeterX = screwX1 - previousVuSize * 0.5f - 13.0f;
     const auto rightMeterRight = screwX2 + previousVuSize * 0.5f + 13.0f;

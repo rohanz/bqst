@@ -13,7 +13,7 @@
     </style>
 </head>
 <body>
-    <h1>BQST 1.0.2</h1>
+    <h1>BQST @BQST_VERSION@</h1>
     <p>BQST combines a broad Baxandall-style EQ with two saturation modes for mix bus, master bus, and group processing.</p>
 
     <h2>Installed Files</h2>

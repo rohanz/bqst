@@ -4,6 +4,9 @@
 
 namespace
 {
+// Stamped into saved presets; loading refuses anything newer than this.
+constexpr int bqstPresetFormatVersion = 1;
+
 struct ParameterValue
 {
     const char* id;
@@ -146,7 +149,10 @@ void BqtPresetManager::refresh()
         return;
 
     juce::Array<juce::File> files;
-    directory.findChildFiles(files, juce::File::findFiles, true, "*.bqstpreset");
+    // Do not follow symlinks: a link pointing at an ancestor makes this recursive scan loop
+    // forever on the message thread, hanging the UI when the editor opens.
+    directory.findChildFiles(files, juce::File::findFiles, true, "*.bqstpreset",
+                             juce::File::FollowSymlinks::no);
     files.sort();
 
     for (const auto& file : files)
@@ -194,6 +200,17 @@ bool BqtPresetManager::loadPreset(int index)
 
     if (auto xml = juce::parseXML(presets.getReference(index).file))
     {
+        // Validate before touching a single parameter. Any well-formed XML with the right
+        // extension used to be accepted: no root-tag check, and the bqstPresetVersion stamped by
+        // saveUserPreset was never read back. A foreign file therefore matched no PARAM children,
+        // silently reset every parameter to its default, and still reported success.
+        //
+        // A missing version attribute reads as 0, which is a pre-versioning preset and must still
+        // load; only a version from the future is rejected.
+        if (! xml->hasTagName(state.state.getType())
+            || xml->getIntAttribute("bqstPresetVersion", 0) > bqstPresetFormatVersion)
+            return false;
+
         // Reset to defaults first (like the factory path) so a user preset is self-contained:
         // any musical parameter the file omits returns to its default instead of keeping the
         // previously loaded preset's value. defaultValues excludes workflow state (oversampling,
@@ -222,7 +239,11 @@ bool BqtPresetManager::saveUserPreset(const juce::File& file) const
     if (auto xml = state.copyState().createXml())
     {
         // Stamp a format version so a future BQST can detect and migrate older presets.
-        xml->setAttribute("bqstPresetVersion", 1);
+        xml->setAttribute("bqstPresetVersion", bqstPresetFormatVersion);
+
+        // Session-only UI state must not travel inside a preset.
+        xml->removeAttribute("selectedPresetKey");
+        xml->removeAttribute("editorScale");
 
         for (int i = xml->getNumChildElements(); --i >= 0;)
         {

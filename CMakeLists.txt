@@ -12,7 +12,13 @@ if (NOT CMAKE_OSX_DEPLOYMENT_TARGET)
     set(CMAKE_OSX_DEPLOYMENT_TARGET "10.13" CACHE STRING "Minimum macOS deployment target")
 endif()
 
-project(BQST VERSION 1.0.2 LANGUAGES C CXX)
+project(BQST VERSION 1.0.3 LANGUAGES C CXX)
+
+# Single source of truth for the version and bundle identifier. Everything downstream -- the
+# plugin bundles, the generated packaging templates, and the shell/PowerShell packaging scripts
+# via scripts/lib/project-info.sh -- derives from these two lines.
+set(BQST_VERSION "${PROJECT_VERSION}")
+set(BQST_IDENTIFIER "tech.ebraudio.bqst")
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -41,7 +47,7 @@ juce_add_binary_data(BqtAssets
 
 juce_add_plugin(BQST
     COMPANY_NAME "EBR Audio Tech"
-    BUNDLE_ID tech.ebraudio.bqst
+    BUNDLE_ID ${BQST_IDENTIFIER}
     PLUGIN_MANUFACTURER_CODE RohK
     PLUGIN_CODE Bqs1
     FORMATS ${BQST_PLUGIN_FORMATS}
@@ -91,7 +97,31 @@ target_link_libraries(BQST
         juce::juce_recommended_warning_flags
 )
 
+# Generate the versioned packaging files from the templates next to them, so nothing restates the
+# version. These used to be maintained by hand in nine separate places, where a half-landed bump
+# produced an installer whose payload disagreed with its own filename.
+foreach(template
+        packaging/macos/Distribution.xml
+        packaging/macos/resources/Welcome.html
+        packaging/macos/resources/ReadMe.html
+        packaging/windows/BQST.iss)
+    configure_file("${CMAKE_CURRENT_SOURCE_DIR}/${template}.in"
+                   "${CMAKE_CURRENT_BINARY_DIR}/${template}"
+                   @ONLY)
+endforeach()
+
+# The installer resources directory must hold the generated HTML alongside the static artwork
+# that Distribution.xml references, so copy the non-template files in beside them.
+file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/packaging/macos/resources/"
+     DESTINATION "${CMAKE_CURRENT_BINARY_DIR}/packaging/macos/resources"
+     PATTERN "*.in" EXCLUDE)
+
 option(BQST_BUILD_TESTS "Build BQST unit tests" ON)
+option(BQST_WERROR "Treat compiler warnings as errors" OFF)
+
+if (BQST_WERROR)
+    target_compile_options(BQST PRIVATE -Werror)
+endif()
 
 if (BQST_BUILD_TESTS)
     enable_testing()
@@ -99,6 +129,40 @@ if (BQST_BUILD_TESTS)
     # Pure DSP tests: no JUCE link, just the header-only helpers in src/BqtDsp.h.
     add_executable(BqstDspTests tests/dsp_tests.cpp)
     set_target_properties(BqstDspTests PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+    target_link_libraries(BqstDspTests PRIVATE juce::juce_recommended_warning_flags)
 
     add_test(NAME BqstDspTests COMMAND BqstDspTests)
+
+    # Chain tests: drive the real processor through processBlock. These must link JUCE, but not
+    # the editor or its binary assets, so BQST_HEADLESS_TESTS compiles createEditor out.
+    juce_add_console_app(BqstChainTests PRODUCT_NAME "BqstChainTests")
+
+    target_sources(BqstChainTests
+        PRIVATE
+            tests/chain_tests.cpp
+            src/PluginProcessor.cpp
+            src/BqtParameterLayout.cpp
+            src/BqtProcessorDsp.cpp
+    )
+
+    target_compile_definitions(BqstChainTests
+        PRIVATE
+            BQST_HEADLESS_TESTS=1
+            JUCE_WEB_BROWSER=0
+            JUCE_USE_CURL=0
+            JUCE_STANDALONE_APPLICATION=1
+            JucePlugin_Name="BQST"
+    )
+
+    target_link_libraries(BqstChainTests
+        PRIVATE
+            juce::juce_audio_processors
+            juce::juce_audio_utils
+            juce::juce_dsp
+        PUBLIC
+            juce::juce_recommended_config_flags
+            juce::juce_recommended_warning_flags
+    )
+
+    add_test(NAME BqstChainTests COMMAND BqstChainTests)
 endif()

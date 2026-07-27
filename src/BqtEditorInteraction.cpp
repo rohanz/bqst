@@ -43,15 +43,6 @@ void BqtAudioProcessorEditor::timerCallback()
     for (auto& controls : sideControls)
         controls.satTypeButton.setToggleState(controls.satType.getSelectedItemIndex() == 1, juce::dontSendNotification);
 
-    if (! rackComponent.isBypassed())
-    {
-        if (meterA.updateLevel())
-            meterA.repaint();
-
-        if (meterB.updateLevel())
-            meterB.repaint();
-    }
-
     updateLinkedControlStates();
 
     if (activeReadoutSlider != nullptr)
@@ -400,6 +391,13 @@ void BqtAudioProcessorEditor::syncHoverTargetsFromMouse()
         return;
 
     auto* component = juce::Desktop::getInstance().getMainMouseSource().getComponentUnderMouse();
+
+    // getMainMouseSource() is process-global, so this can be a component belonging to a different
+    // BQST instance (or another plugin entirely). The help walk below breaks on any component
+    // carrying "bqtHelpText", which every instance sets on its own controls, so without this
+    // guard instance A would show a readout for instance B's knob -- and keep a pointer to it.
+    if (component != nullptr && component != this && ! isParentOf(component))
+        component = nullptr;
 
     auto& mainControls = sideControls[0];
     if (mainControls.satTypeButton.isParentOf(component) || component == &mainControls.satTypeButton)

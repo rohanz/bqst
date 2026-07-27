@@ -72,7 +72,12 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
     osRealtime.addItemList(juce::StringArray { "realtime off", "realtime 2x", "realtime 4x", "realtime 8x" }, 1);
     osRender.addItemList(juce::StringArray { "render off", "render 2x", "render 4x", "render 8x" }, 1);
     sizeSelect.addItemList(juce::StringArray { "75%", "100%", "125%", "150%" }, 1);
-    sizeSelect.setSelectedId(2, juce::dontSendNotification);
+    // Both the view size and the selected preset are session state, restored from the APVTS tree
+    // so reopening the editor does not silently reset the size or claim "Default" while the DSP
+    // is still on a loaded preset.
+    sizeSelect.setSelectedId(audioProcessor.state().state.getProperty("editorScale", 2),
+                             juce::dontSendNotification);
+    selectedPresetKey = audioProcessor.state().state.getProperty("selectedPresetKey", juce::String()).toString();
     refreshPresetMenu();
 
     setTopBarHelp(presetPrevious, "Loads the previous preset.");
@@ -118,9 +123,15 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
             }
         }();
 
+        audioProcessor.state().state.setProperty("editorScale", sizeSelect.getSelectedId(), nullptr);
         setSize(static_cast<int>(std::round(static_cast<float>(baseEditorWidth) * nextScale)),
                 static_cast<int>(std::round(static_cast<float>(baseEditorHeight) * nextScale)));
     };
+
+    // The restored view size was set with dontSendNotification (the handler did not exist yet),
+    // so apply it now that it does.
+    if (sizeSelect.getSelectedId() != 2 && sizeSelect.onChange != nullptr)
+        sizeSelect.onChange();
 
     eqModeAttachment = std::make_unique<ComboBoxAttachment>(audioProcessor.state(), "eqMode", eqMode);
     satModeAttachment = std::make_unique<ComboBoxAttachment>(audioProcessor.state(), "satMode", satMode);
@@ -166,18 +177,31 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
     for (int side = 0; side < 2; ++side)
         configureSide(sideControls[static_cast<size_t>(side)], side);
 
+    // Mirror only for a real user gesture on the source control.
+    //
+    // onValueChange also fires when a SliderAttachment writes the slider in response to a
+    // parameter change, which is how host automation, preset loads and setStateInformation all
+    // arrive. Mirroring those corrupted state: an asymmetric pair with link on is reachable
+    // (ctrl-drag inverts the link, see shouldMirrorLinkedControls), and restoring one made side A
+    // mirror onto B, then B mirror back onto A, collapsing both onto whichever was restored last
+    // and pushing the wrong values back to the host via setValueNotifyingHost.
+    //
+    // restorePluginEditState already fences the undo/redo path this way; these are the two entry
+    // points that were missed.
     auto mirrorSlider = [this](juce::Slider& source, juce::Slider& dest)
     {
-        if (isMirroringLinkedControl)
+        if (isMirroringLinkedControl || ! (source.isMouseButtonDown() || source.isMouseOverOrDragging()))
             return;
 
         const juce::ScopedValueSetter<bool> scopedMirror(isMirroringLinkedControl, true);
         dest.setValue(source.getValue(), juce::sendNotificationSync);
     };
 
+    // The satType combos are hidden and driven by satTypeButton, so they are never moused; an
+    // explicit flag set for the duration of that click stands in for the gesture test.
     auto mirrorChoice = [this](juce::ComboBox& source, juce::ComboBox& dest)
     {
-        if (isMirroringLinkedControl)
+        if (isMirroringLinkedControl || ! isUserSatTypeClick)
             return;
 
         const juce::ScopedValueSetter<bool> scopedMirror(isMirroringLinkedControl, true);
@@ -267,6 +291,25 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
         if (shouldMirrorLinkedControls("satLink"))
             mirrorChoice(right.satType, left.satType);
     };
+
+    // Meter animation runs on the display refresh, not the message timer, and advances by real
+    // elapsed time so a late frame still covers the right distance.
+    lastMeterTickSeconds = juce::Time::getMillisecondCounterHiRes() * 0.001;
+    meterVBlank = juce::VBlankAttachment(this, [this]
+    {
+        const auto now = juce::Time::getMillisecondCounterHiRes() * 0.001;
+        const auto elapsed = now - lastMeterTickSeconds;
+        lastMeterTickSeconds = now;
+
+        if (rackComponent.isBypassed())
+            return;
+
+        if (meterA.updateLevel(elapsed))
+            meterA.repaint();
+
+        if (meterB.updateLevel(elapsed))
+            meterB.repaint();
+    });
 
     startTimerHz(60);
     updateLinkedControlStates();
@@ -398,6 +441,8 @@ void BqtAudioProcessorEditor::configureSide(SideControls& controls, int sideInde
     controls.satTypeButton.onClick = [this, &combo = controls.satType, &button = controls.satTypeButton]
     {
         const auto next = combo.getSelectedItemIndex() == 0 ? 1 : 0;
+        // Marks this combo change as user-driven so the link mirror will act on it.
+        const juce::ScopedValueSetter<bool> scopedUserClick(isUserSatTypeClick, true);
         combo.setSelectedItemIndex(next, juce::sendNotificationSync);
         button.setToggleState(next == 1, juce::dontSendNotification);
 
