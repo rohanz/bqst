@@ -151,7 +151,7 @@ private:
     std::vector<std::pair<juce::String, float>> capturePluginEditState() const;
     void refreshPresetMenu();
     void showPresetMenu();
-    void loadPreset(int index);
+    bool loadPreset(int index);
     void selectRelativePreset(int offset);
     void saveUserPreset();
     void updatePresetButtonText();

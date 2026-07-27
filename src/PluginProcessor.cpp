@@ -22,11 +22,13 @@ BqtAudioProcessor::BqtAudioProcessor()
       parameters(*this, nullptr, "PARAMETERS", createParameterLayout())
 {
     cacheParameterPointers();
+    startTimerHz(20);
 }
 
 void BqtAudioProcessor::releaseResources()
 {
 }
+
 
 bool BqtAudioProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const
 {

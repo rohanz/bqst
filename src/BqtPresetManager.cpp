@@ -149,7 +149,10 @@ void BqtPresetManager::refresh()
         return;
 
     juce::Array<juce::File> files;
-    directory.findChildFiles(files, juce::File::findFiles, true, "*.bqstpreset");
+    // Do not follow symlinks: a link pointing at an ancestor makes this recursive scan loop
+    // forever on the message thread, hanging the UI when the editor opens.
+    directory.findChildFiles(files, juce::File::findFiles, true, "*.bqstpreset",
+                             juce::File::FollowSymlinks::no);
     files.sort();
 
     for (const auto& file : files)

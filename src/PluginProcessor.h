@@ -15,7 +15,7 @@
 #endif
 
 class BqtAudioProcessor final : public juce::AudioProcessor,
-                                private juce::AsyncUpdater
+                                private juce::Timer
 {
 public:
     BqtAudioProcessor();
@@ -43,6 +43,11 @@ public:
     bool isMidiEffect() const override { return false; }
     double getTailLengthSeconds() const override { return 0.0; }
 
+    // Deliberately a single program. Serving the seven factory presets as host programs was
+    // tried and reverted: setCurrentProgram has to write parameters, which then races APVTS
+    // state restore, and pluginval caught it as parameters not being restored by
+    // setStateInformation. A host calling setCurrentProgram around session load could clobber
+    // saved settings, so the Logic factory-preset menu is not worth the risk here.
     int getNumPrograms() override { return 1; }
     int getCurrentProgram() override { return 0; }
     void setCurrentProgram(int) override {}
@@ -123,7 +128,10 @@ private:
     void applyOversamplingFactorChange(int oversamplingIndex, double hostSampleRate, bool resetState);
     int computeLatencySamples() const;
     void updateLatency();
-    void handleAsyncUpdate() override;
+    // Message-thread poll for the latency flag raised on the audio thread; see updateLatency().
+    // Lives on the processor rather than the editor so it still runs with no editor open.
+    void timerCallback() override;
+
 
     juce::AudioProcessorValueTreeState parameters;
     std::array<SideFilters, 2> filters;
@@ -157,6 +165,7 @@ private:
     float structuralGain = 1.0f;
     float structuralStep = 1.0f;
     std::atomic<int> currentLatencySamples { 0 };
+    std::atomic<bool> latencyNeedsReporting { false };
 
     // Raw parameter pointers cached once after construction so the audio thread never
     // builds juce::Strings or does map lookups to read parameter values.

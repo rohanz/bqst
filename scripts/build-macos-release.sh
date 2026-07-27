@@ -30,8 +30,12 @@ esac
 # with its own version. A release build is infrequent enough that the rebuild cost is worth it.
 rm -rf "$BUILD_DIR"
 
+# Tests off for release builds. BqstChainTests links juce_audio_processors, so leaving it on
+# meant every release build compiled a universal (both-arch) test binary that is never shipped --
+# most of the build time, for nothing. scripts/check.sh and CI still build and run it.
 cmake -S "$ROOT_DIR" -B "$BUILD_DIR" \
     -DCMAKE_BUILD_TYPE=Release \
+    -DBQST_BUILD_TESTS=OFF \
     -DCMAKE_OSX_DEPLOYMENT_TARGET="$MACOS_DEPLOYMENT_TARGET" \
     -DCMAKE_OSX_ARCHITECTURES="$OSX_ARCHITECTURES"
 

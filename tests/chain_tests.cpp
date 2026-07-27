@@ -172,7 +172,7 @@ int main()
 
             // Find where the envelope has fallen 90% of the way to the new level.
             const auto startLevel = 0.5, endLevel = 0.5 * std::pow(10.0, -12.0 / 20.0);
-            const auto threshold = startLevel - 0.9 * (startLevel - endLevel);
+            const auto threshold = static_cast<float>(startLevel - 0.9 * (startLevel - endLevel));
             size_t crossing = 0;
             for (size_t i = 0; i + 64 < out.size(); ++i)
             {
@@ -213,7 +213,7 @@ int main()
         oversized.clear();
         for (int i = 0; i < oversized.getNumSamples(); ++i)
         {
-            const auto v = 0.4f * std::sin(0.05 * i);
+            const auto v = 0.4f * static_cast<float>(std::sin(0.05 * i));
             oversized.setSample(0, i, v);
             oversized.setSample(1, i, v);
         }

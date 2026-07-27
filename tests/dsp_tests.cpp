@@ -71,7 +71,7 @@ int main()
     // Saturation is an exact bypass at zero drive (so 0 dB drive is truly transparent).
     for (auto type : bothTypes)
         for (float sample = -2.0f; sample <= 2.0f; sample += 0.05f)
-            check(saturate(type, sample, 0.0f) == sample, "saturation is exact bypass at zero drive");
+            check(std::abs(saturate(type, sample, 0.0f) - sample) == 0.0f, "saturation is exact bypass at zero drive");
 
     // Saturation output stays finite and bounded for finite input across the whole drive range.
     for (auto type : bothTypes)

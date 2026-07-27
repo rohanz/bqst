@@ -117,6 +117,11 @@ file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/packaging/macos/resources/"
      PATTERN "*.in" EXCLUDE)
 
 option(BQST_BUILD_TESTS "Build BQST unit tests" ON)
+option(BQST_WERROR "Treat compiler warnings as errors" OFF)
+
+if (BQST_WERROR)
+    target_compile_options(BQST PRIVATE -Werror)
+endif()
 
 if (BQST_BUILD_TESTS)
     enable_testing()
@@ -124,6 +129,7 @@ if (BQST_BUILD_TESTS)
     # Pure DSP tests: no JUCE link, just the header-only helpers in src/BqtDsp.h.
     add_executable(BqstDspTests tests/dsp_tests.cpp)
     set_target_properties(BqstDspTests PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+    target_link_libraries(BqstDspTests PRIVATE juce::juce_recommended_warning_flags)
 
     add_test(NAME BqstDspTests COMMAND BqstDspTests)
 
