@@ -36,7 +36,7 @@ scripts/package-macos.sh
 The output is:
 
 ```text
-dist/BQST-1.0.2-macOS-universal.pkg
+dist/BQST-$BQST_VERSION-macOS-universal.pkg
 ```
 
 ## Windows
@@ -47,7 +47,7 @@ The Windows installer is built locally on Windows with `scripts/package-windows.
 The script expects:
 
 - the Windows VST3 bundle to exist and contain a Windows `.vst3` binary
-- `dist/BQST-1.0.2-Windows.exe` to be produced and non-empty
+- `dist/BQST-$BQST_VERSION-Windows.exe` to be produced and non-empty
 
 Build BQST on Windows first:
 
@@ -65,7 +65,7 @@ powershell -ExecutionPolicy Bypass -File scripts/package-windows.ps1
 The installer output is:
 
 ```text
-dist/BQST-1.0.2-Windows.exe
+dist/BQST-$BQST_VERSION-Windows.exe
 ```
 
 The installer places the VST3 bundle in:

@@ -14,6 +14,12 @@ endif()
 
 project(BQST VERSION 1.0.2 LANGUAGES C CXX)
 
+# Single source of truth for the version and bundle identifier. Everything downstream -- the
+# plugin bundles, the generated packaging templates, and the shell/PowerShell packaging scripts
+# via scripts/lib/project-info.sh -- derives from these two lines.
+set(BQST_VERSION "${PROJECT_VERSION}")
+set(BQST_IDENTIFIER "tech.ebraudio.bqst")
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -41,7 +47,7 @@ juce_add_binary_data(BqtAssets
 
 juce_add_plugin(BQST
     COMPANY_NAME "EBR Audio Tech"
-    BUNDLE_ID tech.ebraudio.bqst
+    BUNDLE_ID ${BQST_IDENTIFIER}
     PLUGIN_MANUFACTURER_CODE RohK
     PLUGIN_CODE Bqs1
     FORMATS ${BQST_PLUGIN_FORMATS}
@@ -90,6 +96,25 @@ target_link_libraries(BQST
         juce::juce_recommended_lto_flags
         juce::juce_recommended_warning_flags
 )
+
+# Generate the versioned packaging files from the templates next to them, so nothing restates the
+# version. These used to be maintained by hand in nine separate places, where a half-landed bump
+# produced an installer whose payload disagreed with its own filename.
+foreach(template
+        packaging/macos/Distribution.xml
+        packaging/macos/resources/Welcome.html
+        packaging/macos/resources/ReadMe.html
+        packaging/windows/BQST.iss)
+    configure_file("${CMAKE_CURRENT_SOURCE_DIR}/${template}.in"
+                   "${CMAKE_CURRENT_BINARY_DIR}/${template}"
+                   @ONLY)
+endforeach()
+
+# The installer resources directory must hold the generated HTML alongside the static artwork
+# that Distribution.xml references, so copy the non-template files in beside them.
+file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/packaging/macos/resources/"
+     DESTINATION "${CMAKE_CURRENT_BINARY_DIR}/packaging/macos/resources"
+     PATTERN "*.in" EXCLUDE)
 
 option(BQST_BUILD_TESTS "Build BQST unit tests" ON)
 
