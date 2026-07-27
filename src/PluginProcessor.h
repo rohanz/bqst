@@ -75,7 +75,8 @@ private:
     void updateSaturationToneFilters();
     void cacheParameterPointers();
     void processSubBlock(float* left, float* right, int numSamples);
-    void processChain(float* left, float* right, int numSamples);
+    void processEqStage(float* left, float* right, int numSamples);
+    void processSaturationStage(float* left, float* right, int numSamples);
     void processEq(float* samples, int numSamples, int sideIndex);
     void processSide(float* samples, int numSamples, int sideIndex);
     void applyLatencyDelay(float* samples, int numSamples, int sideIndex);

@@ -182,10 +182,10 @@ void BqtAudioProcessor::updateFilters()
         eqHighGainDb[sideIndex].setTargetValue(highGainDb);
 
         if (! eqLowGainDb[sideIndex].isSmoothing())
-            *filters[sideIndex].lowShelf.coefficients = ArrayCoeffs::makeLowShelf(currentSampleRate, lowFreq, baxShelfQ, dbToGain(lowGainDb));
+            *filters[sideIndex].lowShelf.coefficients = bqt::makeMatchedShelf(currentSampleRate, lowFreq, baxShelfQ, dbToGain(lowGainDb), false);
 
         if (! eqHighGainDb[sideIndex].isSmoothing())
-            *filters[sideIndex].highShelf.coefficients = ArrayCoeffs::makeHighShelf(currentSampleRate, highFreq, baxShelfQ, dbToGain(highGainDb));
+            *filters[sideIndex].highShelf.coefficients = bqt::makeMatchedShelf(currentSampleRate, highFreq, baxShelfQ, dbToGain(highGainDb), true);
     }
 }
 
@@ -229,10 +229,10 @@ void BqtAudioProcessor::processEq(float* samples, int numSamples, int sideIndex)
     for (int sample = 0; sample < numSamples; ++sample)
     {
         if (eqLowGainDb[filterIndex].isSmoothing())
-            *filters[filterIndex].lowShelf.coefficients = ArrayCoeffs::makeLowShelf(currentSampleRate, lowFreq, baxShelfQ, dbToGain(eqLowGainDb[filterIndex].getNextValue()));
+            *filters[filterIndex].lowShelf.coefficients = bqt::makeMatchedShelf(currentSampleRate, lowFreq, baxShelfQ, dbToGain(eqLowGainDb[filterIndex].getNextValue()), false);
 
         if (eqHighGainDb[filterIndex].isSmoothing())
-            *filters[filterIndex].highShelf.coefficients = ArrayCoeffs::makeHighShelf(currentSampleRate, highFreq, baxShelfQ, dbToGain(eqHighGainDb[filterIndex].getNextValue()));
+            *filters[filterIndex].highShelf.coefficients = bqt::makeMatchedShelf(currentSampleRate, highFreq, baxShelfQ, dbToGain(eqHighGainDb[filterIndex].getNextValue()), true);
 
         auto value = samples[sample];
         value = filters[filterIndex].lowShelf.processSample(value);
@@ -372,15 +372,16 @@ float BqtAudioProcessor::getMeterLevel(int sideIndex) const
     return meterLevels[static_cast<size_t>(juce::jlimit(0, 1, sideIndex))].load();
 }
 
-void BqtAudioProcessor::processChain(float* left, float* right, int numSamples)
+// Runs at the host sample rate, before any upsampling. The shelves are linear, so oversampling
+// them bought nothing but CPU -- and because their coefficients were designed at whatever the
+// oversampled rate happened to be, the EQ curve moved when the oversampling control moved.
+// bqt::makeMatchedShelf now tracks the analog prototype at the host rate, so the curve is fixed.
+void BqtAudioProcessor::processEqStage(float* left, float* right, int numSamples)
 {
     updateFilters();
-    updateSaturationToneFilters();
 
     const auto eqMidSide = loadChoice(paramPtrs.eqMode) == static_cast<int>(bqt::ChannelMode::midSide);
-    const auto satMidSide = loadChoice(paramPtrs.satMode) == static_cast<int>(bqt::ChannelMode::midSide);
     const auto eqBypassed = loadFlag(paramPtrs.eqBypass);
-    const auto satBypassed = loadFlag(paramPtrs.satBypass);
 
     inputTrimGain.setTargetValue(dbToGain(loadValue(paramPtrs.inputTrim)));
     for (int sample = 0; sample < numSamples; ++sample)
@@ -417,6 +418,15 @@ void BqtAudioProcessor::processChain(float* left, float* right, int numSamples)
             right[i] = r;
         }
     }
+}
+
+// Runs inside the oversampled region: this is the stage that actually generates harmonics.
+void BqtAudioProcessor::processSaturationStage(float* left, float* right, int numSamples)
+{
+    updateSaturationToneFilters();
+
+    const auto satMidSide = loadChoice(paramPtrs.satMode) == static_cast<int>(bqt::ChannelMode::midSide);
+    const auto satBypassed = loadFlag(paramPtrs.satBypass);
 
     if (!satBypassed && satMidSide)
     {
@@ -550,6 +560,11 @@ void BqtAudioProcessor::processSubBlock(float* left, float* right, int numSample
 
     const auto oversamplingIndex = getActiveOversamplingIndex();
 
+    // The EQ is linear, so it runs at the host rate outside the oversampled region: cheaper, and
+    // its curve no longer depends on the oversampling factor. Only the saturation, which is what
+    // actually generates harmonics, needs the oversampled region.
+    processEqStage(left, right, numSamples);
+
     if (oversamplingIndex >= 0)
     {
         auto& oversampler = *oversamplers[static_cast<size_t>(oversamplingIndex)];
@@ -557,15 +572,15 @@ void BqtAudioProcessor::processSubBlock(float* left, float* right, int numSample
         juce::dsp::AudioBlock<float> block(channels, 2, static_cast<size_t>(numSamples));
         const auto upsampledBlock = oversampler.processSamplesUp(block);
         currentSampleRate = hostSampleRate * static_cast<double>(oversampler.getOversamplingFactor());
-        processChain(upsampledBlock.getChannelPointer(0),
-                     upsampledBlock.getChannelPointer(1),
-                     static_cast<int>(upsampledBlock.getNumSamples()));
+        processSaturationStage(upsampledBlock.getChannelPointer(0),
+                               upsampledBlock.getChannelPointer(1),
+                               static_cast<int>(upsampledBlock.getNumSamples()));
         oversampler.processSamplesDown(block);
         currentSampleRate = hostSampleRate;
     }
     else
     {
-        processChain(left, right, numSamples);
+        processSaturationStage(left, right, numSamples);
     }
 
     if (needsBypassCrossfade)
