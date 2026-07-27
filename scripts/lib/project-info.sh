@@ -10,7 +10,7 @@
 bqst_read_version() {
     _root="$1"
     _line=$(grep -m1 -E '^[[:space:]]*project\([[:space:]]*BQST[[:space:]]+VERSION' "$_root/CMakeLists.txt" 2>/dev/null || true)
-    # project(BQST VERSION 1.0.2 LANGUAGES C CXX) -> 1.0.2
+    # project(BQST VERSION 1.2.3 LANGUAGES C CXX) -> 1.2.3
     echo "$_line" | sed -E 's/.*VERSION[[:space:]]+([0-9]+\.[0-9]+\.[0-9]+).*/\1/'
 }
 

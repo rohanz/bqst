@@ -1,5 +1,50 @@
 # Changelog
 
+## 1.0.3
+
+Sound changes:
+
+- Zero drive is now genuinely transparent. The saturation stage's tone shaping (and the Vintage
+  shelf) used to snap on at full strength the instant Drive left 0.0, applying about 1.9 dB of
+  tilt with no ramp. It now fades in with drive, reaching full strength at 6 dB. Settings above
+  6 dB of drive are unchanged.
+- The EQ curve no longer changes with the oversampling setting. The shelves were designed at
+  whatever the oversampled rate happened to be, so the same nominal curve measured differently at
+  2x than at 8x — and since realtime defaults to 2x and render to 4x, a bounce did not match
+  playback. They now use a decramped design that tracks the analog prototype at the host rate to
+  within 0.24 dB (previously up to 1.21 dB off at the 18 kHz position). The high shelf, especially
+  the 18 kHz setting at 44.1/48 kHz, is the most affected.
+- Parameter ramps now take the same time at every oversampling factor. Smoothing was set from the
+  base rate but consumed per oversampled sample, so a 20 ms ramp finished in 2.5 ms at 8x.
+- Added a DC blocker to the saturation path. Both curves are asymmetric and left a measurable DC
+  offset (about -24.6 dBFS at full Cream drive) that nothing downstream removed.
+- Switching oversampling, and entering an offline bounce, no longer clicks from stale filter state.
+- The bypass crossfade no longer dips toward silence the first time bypass is engaged.
+- The host's own bypass button now uses the plugin's latency-compensated crossfade.
+
+Fixes:
+
+- Fixed a potential crash: a host block larger than the prepared size could write past the end of
+  the oversampler's buffer. Oversized blocks are now split, which also removed the last two
+  allocations from the audio thread.
+- Fixed linked EQ/saturation sides collapsing onto one value when a session or preset was loaded.
+- Fixed the meters latching to NaN after a zero-length process block.
+- Fixed the VU needle looking intermittently low-framerate: it is now synced to the display
+  refresh with time-based rather than per-frame smoothing.
+- Fixed hover readouts being able to latch onto a different instance of the plugin.
+- Fixed a full-UI repaint running 60 times a second while the interface was idle.
+- The selected preset name and the view size are now remembered when the editor is reopened.
+- Preset files are validated before being applied; a malformed file no longer silently resets
+  every parameter.
+- Parameters missing from an older saved state now reset to their defaults instead of inheriting
+  whatever was previously loaded.
+
+Internal:
+
+- Added chain-level tests covering the whole processing chain, not just the DSP helpers.
+- Added CI, and `scripts/check.sh` now builds all formats and fails if validation did not run.
+- The version and bundle identifier now live in one place instead of nine.
+
 ## 1.0.2
 
 - Fixed the About panel being hidden behind the bypass dimming when bypass is on.
