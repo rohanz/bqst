@@ -77,6 +77,38 @@ private:
         Filter transformerTop;
     };
 
+    // The discrete switches, latched. Changing any of them steps filter coefficients or reroutes
+    // the signal with live filter state, which clicks. The DSP reads these latched values rather
+    // than the parameters directly, so a change can be adopted at the bottom of a short fade
+    // instead of mid-signal.
+    struct StructuralConfig
+    {
+        int eqMode = 0;
+        int satMode = 0;
+        bool eqBypassed = false;
+        bool satBypassed = false;
+        bool vintage = false;
+        std::array<int, 2> satType { 0, 0 };
+        std::array<int, 2> lowFreq { 0, 0 };
+        std::array<int, 2> highFreq { 0, 0 };
+
+        bool operator==(const StructuralConfig& other) const
+        {
+            return eqMode == other.eqMode && satMode == other.satMode
+                && eqBypassed == other.eqBypassed && satBypassed == other.satBypassed
+                && vintage == other.vintage && satType == other.satType
+                && lowFreq == other.lowFreq && highFreq == other.highFreq;
+        }
+        bool operator!=(const StructuralConfig& other) const { return ! (*this == other); }
+    };
+
+    enum class StructuralTransition { idle, fadingOut, fadingIn };
+
+    StructuralConfig readStructuralConfig() const;
+    void adoptPendingStructuralConfig(const StructuralConfig& pending);
+    void advanceStructuralTransition(double hostSampleRate);
+    void applyStructuralTransitionGain(float* left, float* right, int numSamples);
+
     void updateFilters();
     void updateSaturationToneFilters();
     void cacheParameterPointers();
@@ -120,6 +152,10 @@ private:
     // Sentinel distinct from every valid index (-1 means "oversampling off"), so the first block
     // after prepareToPlay does not look like a factor change.
     int lastActiveOversamplingIndex = -2;
+    StructuralConfig activeConfig;
+    StructuralTransition structuralTransition = StructuralTransition::idle;
+    float structuralGain = 1.0f;
+    float structuralStep = 1.0f;
     std::atomic<int> currentLatencySamples { 0 };
 
     // Raw parameter pointers cached once after construction so the audio thread never

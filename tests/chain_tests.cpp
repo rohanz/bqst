@@ -237,6 +237,66 @@ int main()
               "a zero-length block does not latch NaN into the meters");
     }
 
+    // 8. Flipping a discrete switch mid-signal must not produce a step discontinuity. Each of
+    //    these used to jump coefficients or reroute channels with live filter state.
+    {
+        struct Switch { const char* id; float from; float to; };
+        const Switch switches[] {
+            { "eqMode",    0.0f, 1.0f },   // L/R -> M/S
+            { "satMode",   0.0f, 1.0f },
+            { "eqBypass",  0.0f, 1.0f },
+            { "satBypass", 0.0f, 1.0f },
+            { "vintage",   0.0f, 1.0f },
+            { "aHighFreq", 0.0f, 7.0f },   // 1.6 kHz -> 18 kHz
+            { "aLowFreq",  0.0f, 7.0f },
+            { "aSatType",  0.0f, 1.0f },
+        };
+
+        for (const auto& item : switches)
+        {
+            auto processor = makeProcessor();
+            setParam(*processor, "aDrive", 6.0f);
+            setParam(*processor, "bDrive", 6.0f);
+            setParam(*processor, "aHighGain", 4.0f);
+            setParam(*processor, "aLowGain", 4.0f);
+            setParam(*processor, item.id, item.from);
+
+            juce::AudioBuffer<float> buffer(2, blockSize);
+            juce::MidiBuffer midi;
+            auto phase = 0.0;
+            const auto increment = 2.0 * juce::MathConstants<double>::pi * 220.0 / sampleRate;
+            std::vector<float> out;
+
+            const auto totalBlocks = 60;
+            for (int block = 0; block < totalBlocks; ++block)
+            {
+                if (block == totalBlocks / 3)
+                    setParam(*processor, item.id, item.to);
+
+                for (int i = 0; i < blockSize; ++i)
+                {
+                    const auto v = 0.5f * static_cast<float>(std::sin(phase));
+                    buffer.setSample(0, i, v);
+                    buffer.setSample(1, i, v);
+                    phase += increment;
+                }
+                processor->processBlock(buffer, midi);
+                for (int i = 0; i < blockSize; ++i)
+                    out.push_back(buffer.getSample(0, i));
+            }
+
+            // Largest sample-to-sample jump. A 220 Hz sine at 0.5 moves at most ~0.015 per
+            // sample, so anything much above that is a discontinuity rather than signal.
+            auto worstStep = 0.0f;
+            for (size_t i = 1; i < out.size(); ++i)
+                worstStep = std::fmax(worstStep, std::abs(out[i] - out[i - 1]));
+
+            check(worstStep < 0.05f, "discrete switch does not produce a step discontinuity");
+            if (worstStep >= 0.05f)
+                std::printf("  (%s: worst sample step %.4f)\n", item.id, worstStep);
+        }
+    }
+
     if (failures == 0)
     {
         std::printf("All chain tests passed.\n");

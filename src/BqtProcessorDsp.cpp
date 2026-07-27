@@ -20,6 +20,10 @@ constexpr auto dcBlockerHz = 5.0f;
 // unchanged; only the derived values are refreshed every N samples. At 48 kHz this is ~3 kHz,
 // which is ~60 updates across a 20 ms ramp -- far finer than anything audible.
 constexpr auto controlRateInterval = 16;
+// Length of the fade applied when a discrete switch (routing, stage bypass, saturation type,
+// shelf frequency, vintage) changes. Short enough to read as an instant switch, long enough that
+// the coefficient/routing change underneath it is inaudible.
+constexpr auto structuralFadeSeconds = 0.004;
 
 // Stack-based coefficient factory: returns a std::array by value, so assigning it into
 // an already-sized Filter coefficients object updates it in place with no heap allocation
@@ -170,6 +174,12 @@ void BqtAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
         oversamplers[static_cast<size_t>(factorIndex)]->reset();
     }
 
+    // Latch the discrete switches so the first block does not look like a change.
+    activeConfig = readStructuralConfig();
+    structuralTransition = StructuralTransition::idle;
+    structuralGain = 1.0f;
+    structuralStep = static_cast<float>(1.0 / juce::jmax(1.0, structuralFadeSeconds * sampleRate));
+
     updateFilters();
     updateSaturationToneFilters();
 
@@ -193,8 +203,8 @@ void BqtAudioProcessor::updateFilters()
         const auto sideIndex = static_cast<size_t>(side);
         const auto lowGainDb = loadValue(paramPtrs.lowGain[sideIndex]);
         const auto highGainDb = loadValue(paramPtrs.highGain[sideIndex]);
-        const auto lowFreq = clampShelfFrequency(currentSampleRate, bqt::lowShelfFrequenciesHz[static_cast<size_t>(loadChoice(paramPtrs.lowFreq[sideIndex]))]);
-        const auto highFreq = clampShelfFrequency(currentSampleRate, bqt::highShelfFrequenciesHz[static_cast<size_t>(loadChoice(paramPtrs.highFreq[sideIndex]))]);
+        const auto lowFreq = clampShelfFrequency(currentSampleRate, bqt::lowShelfFrequenciesHz[static_cast<size_t>(activeConfig.lowFreq[sideIndex])]);
+        const auto highFreq = clampShelfFrequency(currentSampleRate, bqt::highShelfFrequenciesHz[static_cast<size_t>(activeConfig.highFreq[sideIndex])]);
 
         eqLowGainDb[sideIndex].setTargetValue(lowGainDb);
         eqHighGainDb[sideIndex].setTargetValue(highGainDb);
@@ -209,7 +219,7 @@ void BqtAudioProcessor::updateFilters()
 
 void BqtAudioProcessor::updateSaturationToneFilters()
 {
-    const auto vintageEnabled = loadFlag(paramPtrs.vintage) ? 1 : 0;
+    const auto vintageEnabled = activeConfig.vintage ? 1 : 0;
 
     // These coefficients only change with the sample rate or the vintage flag, so skip the
     // rebuild (and its trig) on every block where neither moved. currentSampleRate already
@@ -238,11 +248,110 @@ void BqtAudioProcessor::updateSaturationToneFilters()
     }
 }
 
+BqtAudioProcessor::StructuralConfig BqtAudioProcessor::readStructuralConfig() const
+{
+    StructuralConfig config;
+    config.eqMode = loadChoice(paramPtrs.eqMode);
+    config.satMode = loadChoice(paramPtrs.satMode);
+    config.eqBypassed = loadFlag(paramPtrs.eqBypass);
+    config.satBypassed = loadFlag(paramPtrs.satBypass);
+    config.vintage = loadFlag(paramPtrs.vintage);
+
+    for (size_t side = 0; side < 2; ++side)
+    {
+        config.satType[side] = loadChoice(paramPtrs.satType[side]);
+        config.lowFreq[side] = juce::jlimit(0, static_cast<int>(bqt::lowShelfFrequenciesHz.size()) - 1,
+                                            loadChoice(paramPtrs.lowFreq[side]));
+        config.highFreq[side] = juce::jlimit(0, static_cast<int>(bqt::highShelfFrequenciesHz.size()) - 1,
+                                             loadChoice(paramPtrs.highFreq[side]));
+    }
+
+    return config;
+}
+
+void BqtAudioProcessor::adoptPendingStructuralConfig(const StructuralConfig& pending)
+{
+    activeConfig = pending;
+
+    // Adopt at the bottom of the fade, and clear the filter state that the old configuration
+    // accumulated. Without this the new routing/coefficients would ring out the old state as a
+    // transient, which is the second half of the click.
+    for (auto& side : filters)
+    {
+        side.lowShelf.reset();
+        side.highShelf.reset();
+        side.vintage.reset();
+        side.densityBodyFocus.reset();
+        side.densityPreEmphasis.reset();
+        side.densityDeEmphasis.reset();
+        side.saturationLowGuardPre.reset();
+        side.saturationLowGuardPost.reset();
+        side.transformerLowDrive.reset();
+        side.transformerLowRestore.reset();
+        side.transformerWeight.reset();
+        side.transformerTop.reset();
+    }
+
+    dcBlockPreviousInput = {};
+    dcBlockPreviousOutput = {};
+
+    // Force a coefficient rebuild for the new frequency/vintage selection.
+    satToneSampleRate = 0.0;
+    satToneVintage = -1;
+    updateFilters();
+}
+
+void BqtAudioProcessor::advanceStructuralTransition(double hostSampleRate)
+{
+    const auto pending = readStructuralConfig();
+    const auto fadeSamples = juce::jmax(1.0, structuralFadeSeconds * hostSampleRate);
+    structuralStep = static_cast<float>(1.0 / fadeSamples);
+
+    switch (structuralTransition)
+    {
+        case StructuralTransition::idle:
+            if (pending != activeConfig)
+                structuralTransition = StructuralTransition::fadingOut;
+            break;
+
+        case StructuralTransition::fadingOut:
+            if (structuralGain <= 0.0f)
+            {
+                adoptPendingStructuralConfig(pending);
+                structuralTransition = StructuralTransition::fadingIn;
+            }
+            break;
+
+        case StructuralTransition::fadingIn:
+            if (structuralGain >= 1.0f)
+                structuralTransition = pending != activeConfig ? StructuralTransition::fadingOut
+                                                               : StructuralTransition::idle;
+            break;
+    }
+}
+
+void BqtAudioProcessor::applyStructuralTransitionGain(float* left, float* right, int numSamples)
+{
+    if (structuralTransition == StructuralTransition::idle && structuralGain >= 1.0f)
+        return;
+
+    const auto direction = structuralTransition == StructuralTransition::fadingOut ? -1.0f : 1.0f;
+
+    for (int sample = 0; sample < numSamples; ++sample)
+    {
+        structuralGain = juce::jlimit(0.0f, 1.0f, structuralGain + direction * structuralStep);
+        // Raised cosine, so the dip has no corner at either end.
+        const auto shaped = 0.5f - 0.5f * std::cos(structuralGain * juce::MathConstants<float>::pi);
+        left[sample] *= shaped;
+        right[sample] *= shaped;
+    }
+}
+
 void BqtAudioProcessor::processEq(float* samples, int numSamples, int sideIndex)
 {
     const auto filterIndex = static_cast<size_t>(sideIndex);
-    const auto lowFreq = clampShelfFrequency(currentSampleRate, bqt::lowShelfFrequenciesHz[static_cast<size_t>(loadChoice(paramPtrs.lowFreq[filterIndex]))]);
-    const auto highFreq = clampShelfFrequency(currentSampleRate, bqt::highShelfFrequenciesHz[static_cast<size_t>(loadChoice(paramPtrs.highFreq[filterIndex]))]);
+    const auto lowFreq = clampShelfFrequency(currentSampleRate, bqt::lowShelfFrequenciesHz[static_cast<size_t>(activeConfig.lowFreq[filterIndex])]);
+    const auto highFreq = clampShelfFrequency(currentSampleRate, bqt::highShelfFrequenciesHz[static_cast<size_t>(activeConfig.highFreq[filterIndex])]);
 
     for (int sample = 0; sample < numSamples; ++sample)
     {
@@ -276,7 +385,7 @@ void BqtAudioProcessor::processSide(float* samples, int numSamples, int sideInde
     const auto smoothIndex = static_cast<size_t>(sideIndex);
     const auto dryBufferIndex = smoothIndex;
     const auto driveDb = loadValue(paramPtrs.drive[smoothIndex]);
-    const auto satType = static_cast<bqt::SaturationType>(loadChoice(paramPtrs.satType[smoothIndex]));
+    const auto satType = static_cast<bqt::SaturationType>(activeConfig.satType[smoothIndex]);
     const auto autoGainEnabled = loadFlag(paramPtrs.autoGain);
 
     driveAmount[smoothIndex].setTargetValue(driveDb / 18.0f);
@@ -445,8 +554,8 @@ void BqtAudioProcessor::processEqStage(float* left, float* right, int numSamples
 {
     updateFilters();
 
-    const auto eqMidSide = loadChoice(paramPtrs.eqMode) == static_cast<int>(bqt::ChannelMode::midSide);
-    const auto eqBypassed = loadFlag(paramPtrs.eqBypass);
+    const auto eqMidSide = activeConfig.eqMode == static_cast<int>(bqt::ChannelMode::midSide);
+    const auto eqBypassed = activeConfig.eqBypassed;
 
     inputTrimGain.setTargetValue(dbToGain(loadValue(paramPtrs.inputTrim)));
     for (int sample = 0; sample < numSamples; ++sample)
@@ -490,8 +599,8 @@ void BqtAudioProcessor::processSaturationStage(float* left, float* right, int nu
 {
     updateSaturationToneFilters();
 
-    const auto satMidSide = loadChoice(paramPtrs.satMode) == static_cast<int>(bqt::ChannelMode::midSide);
-    const auto satBypassed = loadFlag(paramPtrs.satBypass);
+    const auto satMidSide = activeConfig.satMode == static_cast<int>(bqt::ChannelMode::midSide);
+    const auto satBypassed = activeConfig.satBypassed;
 
     if (!satBypassed && satMidSide)
     {
@@ -684,6 +793,10 @@ void BqtAudioProcessor::processSubBlock(float* left, float* right, int numSample
         return;
     }
 
+    // A discrete switch changing mid-signal steps coefficients or reroutes channels with live
+    // filter state, which clicks. Adopt any change at the bottom of a short fade instead.
+    advanceStructuralTransition(hostSampleRate);
+
     const auto oversamplingIndex = getActiveOversamplingIndex();
 
     // Covers both a user change to the oversampling control and the realtime -> render
@@ -717,6 +830,9 @@ void BqtAudioProcessor::processSubBlock(float* left, float* right, int numSample
     {
         processSaturationStage(left, right, numSamples);
     }
+
+    // Applied to the processed signal only, so the bypass dry path below stays untouched.
+    applyStructuralTransitionGain(left, right, numSamples);
 
     if (needsBypassCrossfade)
     {
