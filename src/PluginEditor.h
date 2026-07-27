@@ -198,6 +198,12 @@ private:
     std::unique_ptr<ButtonAttachment> vintageAttachment;
     std::unique_ptr<ButtonAttachment> bypassAttachment;
     BqtReadoutBubble readoutBubble;
+    // The meters are driven from the display's vertical blank rather than the 60 Hz message
+    // timer. A 60 Hz juce::Timer beats against a 60 Hz refresh -- message-loop granularity
+    // delivers two ticks inside one frame and none in the next -- which is what made the needle
+    // look intermittently low-framerate.
+    juce::VBlankAttachment meterVBlank;
+    double lastMeterTickSeconds = 0.0;
     bool isMirroringLinkedControl = false;
     bool isUserSatTypeClick = false;
     juce::Component::SafePointer<juce::Slider> activeReadoutSlider;

@@ -43,15 +43,6 @@ void BqtAudioProcessorEditor::timerCallback()
     for (auto& controls : sideControls)
         controls.satTypeButton.setToggleState(controls.satType.getSelectedItemIndex() == 1, juce::dontSendNotification);
 
-    if (! rackComponent.isBypassed())
-    {
-        if (meterA.updateLevel())
-            meterA.repaint();
-
-        if (meterB.updateLevel())
-            meterB.repaint();
-    }
-
     updateLinkedControlStates();
 
     if (activeReadoutSlider != nullptr)

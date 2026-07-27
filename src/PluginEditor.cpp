@@ -292,6 +292,25 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
             mirrorChoice(right.satType, left.satType);
     };
 
+    // Meter animation runs on the display refresh, not the message timer, and advances by real
+    // elapsed time so a late frame still covers the right distance.
+    lastMeterTickSeconds = juce::Time::getMillisecondCounterHiRes() * 0.001;
+    meterVBlank = juce::VBlankAttachment(this, [this]
+    {
+        const auto now = juce::Time::getMillisecondCounterHiRes() * 0.001;
+        const auto elapsed = now - lastMeterTickSeconds;
+        lastMeterTickSeconds = now;
+
+        if (rackComponent.isBypassed())
+            return;
+
+        if (meterA.updateLevel(elapsed))
+            meterA.repaint();
+
+        if (meterB.updateLevel(elapsed))
+            meterB.repaint();
+    });
+
     startTimerHz(60);
     updateLinkedControlStates();
 }

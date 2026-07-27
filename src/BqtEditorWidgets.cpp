@@ -656,7 +656,7 @@ void BqtVuMeter::rebuildStaticLayer()
                juce::Justification::centred);
 }
 
-bool BqtVuMeter::updateLevel()
+bool BqtVuMeter::updateLevel(double secondsElapsed)
 {
     const auto raw = audioProcessor.getMeterLevel(side);
     const auto db = juce::Decibels::gainToDecibels(raw, -60.0f);
@@ -664,8 +664,17 @@ bool BqtVuMeter::updateLevel()
     const auto clampedVu = juce::jlimit(-20.0f, 3.0f, vu);
     targetLevel = clampedVu <= 0.0f ? ((clampedVu + 20.0f) / 20.0f) * 0.82f
                                     : 0.82f + (clampedVu / 3.0f) * 0.18f;
+    // Time-based smoothing. This was a fixed 0.18 per tick, which meant the needle's speed was a
+    // function of how punctually the timer fired rather than of elapsed time: a late or dropped
+    // frame still advanced only 18% of the remaining distance, so jitter turned into visibly
+    // uneven, steppy motion instead of degrading gracefully. Now a late frame covers exactly the
+    // distance it should have.
+    constexpr auto needleTimeConstantSeconds = 0.09;
+    const auto clampedElapsed = juce::jlimit(0.0, 0.25, secondsElapsed);
+    const auto alpha = static_cast<float>(1.0 - std::exp(-clampedElapsed / needleTimeConstantSeconds));
+
     const auto previousLevel = displayedLevel;
-    displayedLevel += (targetLevel - displayedLevel) * 0.18f;
+    displayedLevel += (targetLevel - displayedLevel) * alpha;
 
     if (std::abs(targetLevel - displayedLevel) < 0.0005f)
         displayedLevel = targetLevel;

@@ -15,6 +15,11 @@ constexpr auto saturationDriveScale = 0.40f;
 // the previous voicing, which also keeps the autogain calibration valid where it matters.
 constexpr auto colorationRampScale = 3.0f;
 constexpr auto dcBlockerHz = 5.0f;
+// Control-rate subdivision for the expensive per-sample recomputations (shelf coefficient
+// redesign and the autogain pow). Smoothers still advance every sample, so ramp timing is
+// unchanged; only the derived values are refreshed every N samples. At 48 kHz this is ~3 kHz,
+// which is ~60 updates across a 20 ms ramp -- far finer than anything audible.
+constexpr auto controlRateInterval = 16;
 
 // Stack-based coefficient factory: returns a std::array by value, so assigning it into
 // an already-sized Filter coefficients object updates it in place with no heap allocation
@@ -241,11 +246,23 @@ void BqtAudioProcessor::processEq(float* samples, int numSamples, int sideIndex)
 
     for (int sample = 0; sample < numSamples; ++sample)
     {
-        if (eqLowGainDb[filterIndex].isSmoothing())
-            *filters[filterIndex].lowShelf.coefficients = bqt::makeMatchedShelf(currentSampleRate, lowFreq, baxShelfQ, dbToGain(eqLowGainDb[filterIndex].getNextValue()), false);
+        // Advance the smoothers every sample so ramp timing is exact, but redesign the biquads
+        // only at the control rate. A full matched-shelf redesign is ~10 sqrt plus exp/cos/cosh
+        // in double, and doing it per sample for two shelves on two sides meant ~200k redesigns
+        // a second for the entire duration of an EQ knob drag.
+        const auto lowSmoothing = eqLowGainDb[filterIndex].isSmoothing();
+        const auto highSmoothing = eqHighGainDb[filterIndex].isSmoothing();
+        const auto lowGainDb = lowSmoothing ? eqLowGainDb[filterIndex].getNextValue() : 0.0f;
+        const auto highGainDb = highSmoothing ? eqHighGainDb[filterIndex].getNextValue() : 0.0f;
 
-        if (eqHighGainDb[filterIndex].isSmoothing())
-            *filters[filterIndex].highShelf.coefficients = bqt::makeMatchedShelf(currentSampleRate, highFreq, baxShelfQ, dbToGain(eqHighGainDb[filterIndex].getNextValue()), true);
+        if (sample % controlRateInterval == 0)
+        {
+            if (lowSmoothing)
+                *filters[filterIndex].lowShelf.coefficients = bqt::makeMatchedShelf(currentSampleRate, lowFreq, baxShelfQ, dbToGain(lowGainDb), false);
+
+            if (highSmoothing)
+                *filters[filterIndex].highShelf.coefficients = bqt::makeMatchedShelf(currentSampleRate, highFreq, baxShelfQ, dbToGain(highGainDb), true);
+        }
 
         auto value = samples[sample];
         value = filters[filterIndex].lowShelf.processSample(value);
@@ -299,6 +316,7 @@ void BqtAudioProcessor::processSide(float* samples, int numSamples, int sideInde
                                                  * dcBlockerHz / static_cast<float>(currentSampleRate));
         auto& previousInput = dcBlockPreviousInput[smoothIndex];
         auto& previousOutput = dcBlockPreviousOutput[smoothIndex];
+        auto compensation = 1.0f;
 
         for (int sample = 0; sample < numSamples; ++sample)
         {
@@ -307,7 +325,13 @@ void BqtAudioProcessor::processSide(float* samples, int numSamples, int sideInde
             const auto drive = driveAmount[smoothIndex].getNextValue();
             const auto driveGainValue = driveGain[smoothIndex].getNextValue();
             const auto mix = saturationMix[smoothIndex].getNextValue();
-            const auto compensation = autoGainEnabled ? bqt::saturationAutoGain(drive, satType) : 1.0f;
+
+            // saturationAutoGain calls std::pow, which at 8x oversampling ran ~768k times a
+            // second in stereo whenever drive was non-zero. It is a smooth function of drive, so
+            // refreshing it at the control rate is inaudible; when drive is not smoothing it is
+            // exactly constant anyway.
+            if (sample % controlRateInterval == 0)
+                compensation = autoGainEnabled ? bqt::saturationAutoGain(drive, satType) : 1.0f;
 
             const auto color = juce::jmin(1.0f, drive * colorationRampScale);
             const auto colored = [color](Filter& filter, float input)
