@@ -80,6 +80,31 @@ private:
         Filter transformerLowRestore;
         Filter transformerWeight;
         Filter transformerTop;
+
+        // Every filter the saturation stage uses. Keep this the single list: prepare, reset on
+        // structural change and reset on oversampling change all go through it.
+        template <typename Fn>
+        void forEachSaturationFilter(Fn&& fn)
+        {
+            fn(vintage);
+            fn(densityBodyFocus);
+            fn(densityPreEmphasis);
+            fn(densityDeEmphasis);
+            fn(saturationLowGuardPre);
+            fn(saturationLowGuardPost);
+            fn(transformerLowDrive);
+            fn(transformerLowRestore);
+            fn(transformerWeight);
+            fn(transformerTop);
+        }
+
+        template <typename Fn>
+        void forEachFilter(Fn&& fn)
+        {
+            fn(lowShelf);
+            fn(highShelf);
+            forEachSaturationFilter(fn);
+        }
     };
 
     // The discrete switches, latched. Changing any of them steps filter coefficients or reroutes
@@ -116,6 +141,7 @@ private:
 
     void updateFilters();
     void updateSaturationToneFilters();
+    void resetSaturationState();
     void cacheParameterPointers();
     void processSubBlock(float* left, float* right, int numSamples);
     void processEqStage(float* left, float* right, int numSamples);

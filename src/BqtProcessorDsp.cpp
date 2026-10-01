@@ -100,32 +100,7 @@ void BqtAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
 
     const juce::dsp::ProcessSpec spec { sampleRate, static_cast<juce::uint32>(samplesPerBlock), 1 };
     for (auto& side : filters)
-    {
-        side.lowShelf.prepare(spec);
-        side.highShelf.prepare(spec);
-        side.vintage.prepare(spec);
-        side.densityBodyFocus.prepare(spec);
-        side.densityPreEmphasis.prepare(spec);
-        side.densityDeEmphasis.prepare(spec);
-        side.saturationLowGuardPre.prepare(spec);
-        side.saturationLowGuardPost.prepare(spec);
-        side.transformerLowDrive.prepare(spec);
-        side.transformerLowRestore.prepare(spec);
-        side.transformerWeight.prepare(spec);
-        side.transformerTop.prepare(spec);
-        side.lowShelf.reset();
-        side.highShelf.reset();
-        side.vintage.reset();
-        side.densityBodyFocus.reset();
-        side.densityPreEmphasis.reset();
-        side.densityDeEmphasis.reset();
-        side.saturationLowGuardPre.reset();
-        side.saturationLowGuardPost.reset();
-        side.transformerLowDrive.reset();
-        side.transformerLowRestore.reset();
-        side.transformerWeight.reset();
-        side.transformerTop.reset();
-    }
+        side.forEachFilter([&spec](Filter& filter) { filter.prepare(spec); filter.reset(); });
 
     for (auto& dryBuffer : dryBuffers)
         dryBuffer.setSize(1, samplesPerBlock * 8, false, false, true);
@@ -191,8 +166,7 @@ void BqtAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
     currentLatencySamples.store(computeLatencySamples());
     setLatencySamples(currentLatencySamples.load());
     meterRms = {};
-    dcBlockPreviousInput = {};
-    dcBlockPreviousOutput = {};
+    resetSaturationState();
 }
 
 void BqtAudioProcessor::updateFilters()
@@ -247,6 +221,15 @@ void BqtAudioProcessor::updateSaturationToneFilters()
     }
 }
 
+void BqtAudioProcessor::resetSaturationState()
+{
+    for (auto& side : filters)
+        side.forEachSaturationFilter([](Filter& filter) { filter.reset(); });
+
+    dcBlockPreviousInput = {};
+    dcBlockPreviousOutput = {};
+}
+
 BqtAudioProcessor::StructuralConfig BqtAudioProcessor::readStructuralConfig() const
 {
     StructuralConfig config;
@@ -279,20 +262,8 @@ void BqtAudioProcessor::adoptPendingStructuralConfig(const StructuralConfig& pen
     {
         side.lowShelf.reset();
         side.highShelf.reset();
-        side.vintage.reset();
-        side.densityBodyFocus.reset();
-        side.densityPreEmphasis.reset();
-        side.densityDeEmphasis.reset();
-        side.saturationLowGuardPre.reset();
-        side.saturationLowGuardPost.reset();
-        side.transformerLowDrive.reset();
-        side.transformerLowRestore.reset();
-        side.transformerWeight.reset();
-        side.transformerTop.reset();
     }
-
-    dcBlockPreviousInput = {};
-    dcBlockPreviousOutput = {};
+    resetSaturationState();
 
     // Force a coefficient rebuild for the new frequency/vintage selection.
     satToneSampleRate = 0.0;
@@ -652,25 +623,10 @@ void BqtAudioProcessor::applyOversamplingFactorChange(int oversamplingIndex, dou
         if (oversamplingIndex >= 0)
             oversamplers[static_cast<size_t>(oversamplingIndex)]->reset();
 
-        for (auto& side : filters)
-        {
-            side.vintage.reset();
-            side.densityBodyFocus.reset();
-            side.densityPreEmphasis.reset();
-            side.densityDeEmphasis.reset();
-            side.saturationLowGuardPre.reset();
-            side.saturationLowGuardPost.reset();
-            side.transformerLowDrive.reset();
-            side.transformerLowRestore.reset();
-            side.transformerWeight.reset();
-            side.transformerTop.reset();
-        }
+        resetSaturationState();
 
         for (auto& delay : dryMixDelays)
             delay.reset();
-
-        dcBlockPreviousInput = {};
-        dcBlockPreviousOutput = {};
     }
 }
 
