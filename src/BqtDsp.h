@@ -106,23 +106,6 @@ inline std::array<float, 6> makeMatchedShelf(double sampleRate, double centreHz,
              1.0f, static_cast<float>(a1), static_cast<float>(a2) };
 }
 
-inline float densitySaturateLegacy(float sample, float drive01)
-{
-    if (drive01 <= 0.0f)
-        return sample;
-
-    const auto push = drive01 * drive01;
-    const auto maxPush = push * drive01;
-    const auto asymmetry = drive01 * (0.012f + drive01 * 0.048f + push * 0.028f);
-    const auto oddWeight = drive01 * (0.040f + drive01 * 0.135f + push * 0.105f + maxPush * 0.165f);
-    const auto softKnee = 0.82f + drive01 * 0.38f + push * 0.36f + maxPush * 0.50f;
-    const auto driven = sample * softKnee + oddWeight * sample * sample * sample + asymmetry;
-    const auto shaped = (std::tanh(driven) - std::tanh(asymmetry)) * (1.0f + 0.09f * drive01 + 0.10f * maxPush);
-    const auto blend = drive01 * 0.38f + push * 0.13f + maxPush * 0.12f;
-
-    return sample * (1.0f - blend) + shaped * blend;
-}
-
 inline float densitySaturate(float sample, float drive01)
 {
     if (drive01 <= 0.0f)

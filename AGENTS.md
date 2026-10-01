@@ -62,11 +62,13 @@ every push and pull request):
 scripts/check.sh   # configure native arch, build VST3 + unit tests, run ctest, pluginval s10
 ```
 
-Env overrides: `BUILD_DIR`, `STRICTNESS`, `PLUGINVAL`. Unit tests live in
-`tests/dsp_tests.cpp` (gated by the `BQST_BUILD_TESTS` CMake option, registered
-with CTest) and cover the `BqtDsp.h` invariants: zero-drive bypass, continuity
-from zero drive, autogain monotonicity, and finite/bounded output. Run
-`scripts/check.sh` before handing off or releasing.
+Env overrides: `BUILD_DIR`, `STRICTNESS`, `PLUGINVAL`.
+
+Unit tests live in `tests/dsp_tests.cpp` (pure `BqtDsp.h` helpers, no JUCE) and
+`tests/chain_tests.cpp` (the real processor through `processBlock`), both gated by
+`BQST_BUILD_TESTS` and registered with CTest. `BqstGoldenRender` (not a CTest) renders
+fixed scenarios to raw float32 for bit-exact refactor checks: render before, refactor,
+render after, `cmp`. Run `scripts/check.sh` before handing off or releasing.
 
 ## Public macOS Release Signing
 
@@ -201,9 +203,10 @@ keep them:
 - Drive, pre-drive gain, mix and the drive-derived autogain are smoothed per
   sample inside `processSide` (do not go back to `SmoothedValue::skip`, which
   steps once per block and zippers on automation).
-- Latency is reported off the audio thread: `processBlock` only stores the new
-  value and calls `triggerAsyncUpdate()`; `setLatencySamples()` runs in
-  `handleAsyncUpdate()` on the message thread.
+- Latency is reported off the audio thread: the audio thread only stores the new
+  value in `currentLatencySamples` and raises `latencyNeedsReporting`; the
+  processor's 20 Hz timer calls `setLatencySamples()` on the message thread
+  (`prepareToPlay` reports directly).
 - `processBlock` clears unused output channels and returns early if handed fewer
   than two channels.
 
@@ -257,19 +260,23 @@ Shelf gain range is `+/-6 dB`. Shelf Q is `0.38`. Filters are JUCE IIR shelves. 
 
 ## Oversampling
 
-Oversampling wraps the full processing chain in `processBlock` when enabled:
+Only the saturation stage is oversampled. The EQ is linear and runs at the host
+rate (its decramped shelves track the analog prototype there):
 
 ```text
 host block
+-> input trim + EQ (host rate)
 -> processSamplesUp
 -> currentSampleRate = hostSampleRate * oversamplingFactor
--> processChain
+-> saturation stage
 -> processSamplesDown
 ```
 
-Available realtime/render choices are Off, 2x, 4x, 8x. Realtime and render oversampling are separate parameters. Latency is taken from the active oversampler and reported to the host off the audio thread via `AsyncUpdater` (see Real-Time Safety).
-
-Do not add separate oversampling per module unless there is a very strong reason. The current single-wrapper approach keeps latency/reporting simpler and covers both EQ cramping and saturation aliasing.
+Choices are Off, 2x, 4x, 8x (IIR half-band polyphase), with separate realtime and
+render parameters. Latency comes from the active oversampler and is reported via
+the latency flag and timer (see Real-Time Safety). A factor change re-rates the
+saturation smoothers and resets the oversampler, the saturation state and the dry
+delay lines.
 
 ## Saturation Algorithms
 
