@@ -28,6 +28,7 @@ public:
 
 private:
     void loadFactoryPreset(int index);
+    void resetMusicalParametersToDefaults();
     void setParameter(const juce::String& parameterId, float rawValue);
 
     juce::AudioProcessorValueTreeState& state;

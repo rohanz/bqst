@@ -6,6 +6,7 @@
 // "zero-drive bypass" assertion passed while the chain around it snapped roughly 1.9 dB of tilt
 // into place the instant drive left zero. Everything here exercises the chain, not the helpers.
 
+#include "../src/BqtPresetManager.h"
 #include "../src/PluginProcessor.h"
 
 #include <cmath>
@@ -295,6 +296,31 @@ int main()
             if (worstStep >= 0.05f)
                 std::printf("  (%s: worst sample step %.4f)\n", item.id, worstStep);
         }
+    }
+
+    // Loading the Default factory preset restores every musical parameter to its layout default
+    // and leaves workflow parameters (oversampling, bypass) untouched.
+    {
+        auto processor = makeProcessor();
+        BqtPresetManager presets(processor->state());
+        setParam(*processor, "aDrive", 11.0f);
+        setParam(*processor, "vintage", 1.0f);
+        setParam(*processor, "bMix", 30.0f);
+        setParam(*processor, "osRealtime", 3.0f);
+        presets.loadPreset(0);
+
+        auto allDefault = true;
+        for (auto* p : processor->getParameters())
+            if (auto* ranged = dynamic_cast<juce::RangedAudioParameter*>(p))
+            {
+                const auto id = ranged->getParameterID();
+                if (id == "osRealtime")
+                    check(std::abs(ranged->convertFrom0to1(ranged->getValue()) - 3.0f) < 1.0e-4f,
+                          "loading a preset leaves oversampling alone");
+                else if (id != "osRender" && id != "eqBypass" && id != "satBypass" && id != "bypass")
+                    allDefault = allDefault && std::abs(ranged->getValue() - ranged->getDefaultValue()) < 1.0e-6f;
+            }
+        check(allDefault, "Default preset restores every musical parameter to its layout default");
     }
 
     if (failures == 0)

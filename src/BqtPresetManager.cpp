@@ -76,21 +76,6 @@ constexpr FactoryPreset factoryPresets[] {
       } },
 };
 
-constexpr ParameterValue defaultValues[] {
-    { "eqMode", 0.0f }, { "satMode", 0.0f },
-    { "inputTrim", 0.0f }, { "autoGain", 1.0f },
-    { "eqLink", 1.0f }, { "satLink", 1.0f },
-    { "vintage", 0.0f },
-    { "aLowGain", 0.0f }, { "aLowFreq", 3.0f },
-    { "aHighGain", 0.0f }, { "aHighFreq", 4.0f },
-    { "aDrive", 0.0f }, { "aSatType", 0.0f },
-    { "aMix", 100.0f }, { "aOutputTrim", 0.0f },
-    { "bLowGain", 0.0f }, { "bLowFreq", 3.0f },
-    { "bHighGain", 0.0f }, { "bHighFreq", 4.0f },
-    { "bDrive", 0.0f }, { "bSatType", 0.0f },
-    { "bMix", 100.0f }, { "bOutputTrim", 0.0f },
-};
-
 void setValueNotifyingHost(juce::RangedAudioParameter& parameter, float rawValue)
 {
     // Presets and host state are untrusted input: a crafted/corrupt file can carry
@@ -213,10 +198,9 @@ bool BqtPresetManager::loadPreset(int index)
 
         // Reset to defaults first (like the factory path) so a user preset is self-contained:
         // any musical parameter the file omits returns to its default instead of keeping the
-        // previously loaded preset's value. defaultValues excludes workflow state (oversampling,
-        // bypass), so this does not disturb the user's session settings.
-        for (const auto& value : defaultValues)
-            setParameter(value.id, value.value);
+        // previously loaded preset's value. Workflow state (oversampling, bypass) is not reset,
+        // so this does not disturb the user's session settings.
+        resetMusicalParametersToDefaults();
 
         for (auto* child : xml->getChildIterator())
         {
@@ -269,12 +253,24 @@ bool BqtPresetManager::saveUserPreset(const juce::File& file) const
 
 void BqtPresetManager::loadFactoryPreset(int index)
 {
-    for (const auto& value : defaultValues)
-        setParameter(value.id, value.value);
+    resetMusicalParametersToDefaults();
 
     const auto factoryIndex = juce::jlimit(0, factoryPresetCount - 1, index);
     for (const auto& value : factoryPresets[factoryIndex].values)
         setParameter(value.id, value.value);
+}
+
+void BqtPresetManager::resetMusicalParametersToDefaults()
+{
+    // Derived from the parameter layout so preset defaults can never drift from it.
+    for (auto* parameter : state.processor.getParameters())
+        if (auto* ranged = dynamic_cast<juce::RangedAudioParameter*>(parameter))
+            if (shouldStoreInPreset(ranged->getParameterID()))
+            {
+                ranged->beginChangeGesture();
+                ranged->setValueNotifyingHost(ranged->getDefaultValue());
+                ranged->endChangeGesture();
+            }
 }
 
 void BqtPresetManager::setParameter(const juce::String& parameterId, float rawValue)

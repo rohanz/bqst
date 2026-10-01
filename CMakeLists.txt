@@ -143,6 +143,7 @@ if (BQST_BUILD_TESTS)
             src/PluginProcessor.cpp
             src/BqtParameterLayout.cpp
             src/BqtProcessorDsp.cpp
+            src/BqtPresetManager.cpp
     )
 
     target_compile_definitions(BqstChainTests
