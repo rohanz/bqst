@@ -30,24 +30,15 @@ private:
 
     struct SideControls
     {
-        juce::Label eqSectionLabel;
-        juce::Label satSectionLabel;
-        juce::Label lowGainLabel;
         juce::Slider lowGain;
-        juce::Label lowFreqLabel;
         juce::Slider lowFreq;
-        juce::Label highGainLabel;
         juce::Slider highGain;
-        juce::Label highFreqLabel;
         juce::Slider highFreq;
-        juce::Label driveLabel;
         juce::Slider drive;
-        juce::Label satTypeLabel;
+        // Never shown: it only holds the attachment for this side's sat type parameter, which
+        // the shared satTypeButton reads its toggle state from.
         juce::ComboBox satType;
-        juce::TextButton satTypeButton;
-        juce::Label mixLabel;
         juce::Slider mix;
-        juce::Label outputTrimLabel;
         juce::Slider outputTrim;
 
         std::unique_ptr<SliderAttachment> lowGainAttachment;
@@ -133,7 +124,6 @@ private:
     void mouseMove(const juce::MouseEvent& event) override;
     void mouseExit(const juce::MouseEvent& event) override;
     void mouseDoubleClick(const juce::MouseEvent& event) override;
-    void updateLinkedControlStates();
     void updateDragValueReadout(juce::Slider& slider);
     void hideDragValueReadout();
     void syncHoverTargetsFromMouse();
@@ -177,11 +167,11 @@ private:
     juce::Label inputTrimLabel;
     juce::Slider inputTrim;
     juce::ToggleButton autoGain;
-    juce::ToggleButton eqBypass;
-    juce::ToggleButton satBypass;
     juce::ToggleButton eqLink;
     juce::ToggleButton satLink;
     juce::ToggleButton vintage;
+    // One button for both sides' sat type (see toggleSatTypeBothSides).
+    juce::TextButton satTypeButton;
     juce::ToggleButton bypass;
     juce::ComboBox sizeSelect;
     std::array<SideControls, 2> sideControls;

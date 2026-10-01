@@ -415,8 +415,7 @@ void BqtAudioProcessorEditor::resized()
                              static_cast<juce::Component*>(&inputTrimLabel), static_cast<juce::Component*>(&inputTrim),
                              static_cast<juce::Component*>(&eqMode), static_cast<juce::Component*>(&satMode),
                              static_cast<juce::Component*>(&osRealtime), static_cast<juce::Component*>(&osRender),
-                             static_cast<juce::Component*>(&autoGain), static_cast<juce::Component*>(&eqBypass),
-                             static_cast<juce::Component*>(&satBypass), static_cast<juce::Component*>(&eqLink),
+                             static_cast<juce::Component*>(&autoGain), static_cast<juce::Component*>(&eqLink),
                              static_cast<juce::Component*>(&satLink),
                              static_cast<juce::Component*>(&bypass), static_cast<juce::Component*>(&sizeSelect),
                              static_cast<juce::Component*>(&readoutBubble), static_cast<juce::Component*>(&aboutPanel) })
@@ -492,8 +491,6 @@ void BqtAudioProcessorEditor::resized()
     autoGain.setBounds(topSlot(top.removeFromLeft(topButtonWidths[6])));
     top.removeFromLeft(topGap);
     bypass.setBounds(topSlot(top.removeFromLeft(topButtonWidths[7])));
-    eqBypass.setBounds(-2000, -2000, 1, 1);
-    satBypass.setBounds(-2000, -2000, 1, 1);
 
     bounds.removeFromTop(10);
     auto rackFloat = getRackFaceBounds(bounds.toFloat());
@@ -505,7 +502,6 @@ void BqtAudioProcessorEditor::resized()
     auto rackLocal = juce::Rectangle<int>(0, 0, rack.getWidth(), rack.getHeight());
     auto eqPanel = rackLocal.removeFromLeft(rackLocal.getWidth() / 2).reduced(24, 26);
     auto satPanel = rackLocal.reduced(24, 26);
-    const auto satPanelBounds = satPanel;
 
     auto& main = sideControls[0];
     auto& slave = sideControls[1];
@@ -518,37 +514,15 @@ void BqtAudioProcessorEditor::resized()
 
     auto layoutEqColumn = [](SideControls& controls, juce::Rectangle<int> col)
     {
-        controls.highGainLabel.setBounds(-2000, -2000, 1, 1);
         controls.highGain.setBounds(col.getCentreX() - 88, col.getY() + 0, 176, 176);
-        controls.highFreqLabel.setBounds(-2000, -2000, 1, 1);
         controls.highFreq.setBounds(col.getCentreX() - 53, col.getY() + 193, 106, 106);
 
         controls.lowGain.setBounds(col.getCentreX() - 88, col.getY() + 436, 176, 176);
-        controls.lowGainLabel.setBounds(-2000, -2000, 1, 1);
-        controls.lowFreqLabel.setBounds(-2000, -2000, 1, 1);
         controls.lowFreq.setBounds(col.getCentreX() - 53, col.getY() + 313, 106, 106);
     };
 
     layoutEqColumn(main, eqLeft);
     layoutEqColumn(slave, eqRight);
-    main.eqSectionLabel.setBounds(-2000, -2000, 1, 1);
-    slave.eqSectionLabel.setBounds(-2000, -2000, 1, 1);
-    main.eqSectionLabel.setJustificationType(juce::Justification::centred);
-    slave.eqSectionLabel.setJustificationType(juce::Justification::centred);
-
-    main.highGainLabel.setBounds(-2000, -2000, 1, 1);
-    main.lowGainLabel.setBounds(-2000, -2000, 1, 1);
-    main.eqSectionLabel.setFont(faceFont(27.0f));
-    slave.eqSectionLabel.setFont(faceFont(27.0f));
-    main.highGainLabel.setFont(faceFont(64.0f));
-    main.lowGainLabel.setFont(faceFont(64.0f));
-
-    main.highFreqLabel.setBounds(-2000, -2000, 1, 1);
-    main.lowFreqLabel.setBounds(-2000, -2000, 1, 1);
-    main.highFreqLabel.setText("freq", juce::dontSendNotification);
-    main.lowFreqLabel.setText("freq", juce::dontSendNotification);
-    main.highFreqLabel.setFont(faceFont(64.0f));
-    main.lowFreqLabel.setFont(faceFont(64.0f));
 
     satPanel.removeFromTop(46);
 
@@ -557,9 +531,6 @@ void BqtAudioProcessorEditor::resized()
     auto satRight = satPanel.withTrimmedTop(278).withTrimmedLeft(satColW + 24);
     const auto leftDriveX = satLeft.getCentreX();
     const auto rightDriveX = satRight.getCentreX();
-
-    main.satSectionLabel.setBounds(-2000, -2000, 1, 1);
-    slave.satSectionLabel.setBounds(-2000, -2000, 1, 1);
 
     const auto meterTop = satPanel.getY() - 32;
     constexpr int vuSize = 286;
@@ -574,29 +545,20 @@ void BqtAudioProcessorEditor::resized()
     meterB.setRenderScale(uiScale);
 
     vintage.setBounds(leftDriveX - 72, satPanel.getY() + 201, 144, 44);
-    main.satTypeLabel.setBounds(-2000, -2000, 1, 1);
-    main.satType.setBounds(-2000, -2000, 1, 1);
-    main.satTypeButton.setBounds(rightDriveX - 72, satPanel.getY() + 195, 144, 56);
-    slave.satTypeLabel.setBounds(-2000, -2000, 1, 1);
-    slave.satType.setBounds(-2000, -2000, 1, 1);
-    slave.satTypeButton.setBounds(-2000, -2000, 1, 1);
-    juce::ignoreUnused(satPanelBounds);
+    satTypeButton.setBounds(rightDriveX - 72, satPanel.getY() + 195, 144, 56);
 
     auto layoutSatColumn = [](SideControls& controls, juce::Rectangle<int> col)
     {
         controls.drive.setBounds(col.getCentreX() - 88, col.getY() - 18, 176, 176);
-        controls.driveLabel.setBounds(-2000, -2000, 1, 1);
         controls.mix.setBounds(col.getCentreX() - 96, col.getY() + 180, 106, 106);
-        controls.mixLabel.setBounds(-2000, -2000, 1, 1);
         controls.outputTrim.setBounds(col.getCentreX() - 10, col.getY() + 180, 106, 106);
-        controls.outputTrimLabel.setBounds(-2000, -2000, 1, 1);
     };
 
     layoutSatColumn(main, satLeft);
     layoutSatColumn(slave, satRight);
 
     vintage.toFront(false);
-    main.satTypeButton.toFront(false);
+    satTypeButton.toFront(false);
     requestRackBypassVisualState(rackComponent.isBypassed());
     readoutBubble.toFront(false);
     aboutPanel.toFront(false);

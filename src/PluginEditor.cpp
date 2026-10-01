@@ -39,8 +39,6 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
     addAndMakeVisible(presetMenuButton);
     addAndMakeVisible(aboutButton);
     addAndMakeVisible(autoGain);
-    addAndMakeVisible(eqBypass);
-    addAndMakeVisible(satBypass);
     addAndMakeVisible(eqLink);
     addAndMakeVisible(satLink);
     rackComponent.addAndMakeVisible(vintage);
@@ -62,8 +60,6 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
     presetSave.setButtonText("save");
     aboutButton.setButtonText("about");
     autoGain.setButtonText("autogain");
-    eqBypass.setButtonText("eq in");
-    satBypass.setButtonText("sat in");
     eqLink.setButtonText("eq link");
     satLink.setButtonText("sat link");
     vintage.setButtonText("vint.");
@@ -98,7 +94,7 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
     setTopBarHelp(sizeSelect, "Scales the plugin window to 75%, 100%, 125% or 150%.");
     setTopBarHelp(vintage, "Gently rounds the top end after saturation.");
 
-    for (auto* button : { &autoGain, &eqBypass, &satBypass, &eqLink, &satLink, &bypass })
+    for (auto* button : { &autoGain, &eqLink, &satLink, &bypass })
         button->getProperties().set("bqtPushButton", true);
     for (auto* button : { &presetPrevious, &presetMenuButton, &presetNext, &presetSave })
         button->getProperties().set("bqtPushButton", true);
@@ -150,24 +146,18 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
     for (size_t index = 0; index < sideControls.size(); ++index)
         outputTrimCompensationStart[index] = sideControls[index].outputTrim.getValue();
 
-    auto setInButtonTarget = [this](const char* parameterId, juce::ToggleButton& button)
-    {
-        button.onClick = [this, parameterId, &button]
-        {
-            if (auto* param = audioProcessor.state().getParameter(parameterId))
-            {
-                param->beginChangeGesture();
-                param->setValueNotifyingHost(button.getToggleState() ? 0.0f : 1.0f);
-                param->endChangeGesture();
-            }
-        };
-    };
-
-    setInButtonTarget("eqBypass", eqBypass);
-    setInButtonTarget("satBypass", satBypass);
-
     for (int side = 0; side < 2; ++side)
         configureSide(sideControls[static_cast<size_t>(side)], side);
+
+    // Sat type is not linked: this one button always sets both sides, whatever Sat Link or
+    // Control say.
+    satTypeButton.getProperties().set("bqtSatTypeSelector", true);
+    satTypeButton.setButtonText("sat type");
+    satTypeButton.addMouseListener(this, true);
+    satTypeButton.getProperties().set("bqtCreamHelp", "Combination of op-amps, transistors and diodes for a smooth, thick saturation.");
+    satTypeButton.getProperties().set("bqtGritHelp", "Transformer-style saturation with firmer edge and bite.");
+    satTypeButton.onClick = [this] { toggleSatTypeBothSides(satTypeButton); };
+    rackComponent.addAndMakeVisible(satTypeButton);
 
     // Mirror only for a real user gesture on the source control.
     //
@@ -228,7 +218,6 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
     });
 
     startTimerHz(60);
-    updateLinkedControlStates();
 }
 
 BqtAudioProcessorEditor::~BqtAudioProcessorEditor()
@@ -257,8 +246,9 @@ BqtAudioProcessorEditor::~BqtAudioProcessorEditor()
         controls.drive.removeMouseListener(this);
         controls.mix.removeMouseListener(this);
         controls.outputTrim.removeMouseListener(this);
-        controls.satTypeButton.removeMouseListener(this);
     }
+
+    satTypeButton.removeMouseListener(this);
 
     for (auto* component : { static_cast<juce::Component*>(&presetPrevious), static_cast<juce::Component*>(&presetMenuButton),
                              static_cast<juce::Component*>(&presetNext), static_cast<juce::Component*>(&presetSave),
@@ -304,47 +294,28 @@ void BqtAudioProcessorEditor::configureLabel(juce::Label& label, const juce::Str
 
 void BqtAudioProcessorEditor::configureSide(SideControls& controls, int sideIndex)
 {
-    const auto sideText = sideIndex == 0 ? "l/m" : "r/s";
-    configureLabel(controls.eqSectionLabel, sideText, juce::Justification::centredLeft);
-    configureLabel(controls.satSectionLabel, sideText, juce::Justification::centredLeft);
-    configureLabel(controls.highGainLabel, "hf");
     configureSlider(controls.highGain);
     controls.highGain.getProperties().set("bqtLargeCreamKnob", true);
     controls.highGain.textFromValueFunction = [](double value) { return juce::String(value, 1) + " dB"; };
-    configureLabel(controls.highFreqLabel, "freq");
     configureSlider(controls.highFreq);
     controls.highFreq.getProperties().set("bqtKnobCombo", true);
     controls.highFreq.setRange(0.0, static_cast<double>(highFreqLabels.size() - 1), 1.0);
     controls.highFreq.setChangeNotificationOnlyOnRelease(true);
     controls.highFreq.textFromValueFunction = [](double value) { return indexedLabel(highFreqLabels, value); };
-    configureLabel(controls.lowGainLabel, "lf");
     configureSlider(controls.lowGain);
     controls.lowGain.getProperties().set("bqtLargeCreamKnob", true);
     controls.lowGain.textFromValueFunction = [](double value) { return juce::String(value, 1) + " dB"; };
-    configureLabel(controls.lowFreqLabel, "freq");
     configureSlider(controls.lowFreq);
     controls.lowFreq.getProperties().set("bqtKnobCombo", true);
     controls.lowFreq.setRange(0.0, static_cast<double>(lowFreqLabels.size() - 1), 1.0);
     controls.lowFreq.setChangeNotificationOnlyOnRelease(true);
     controls.lowFreq.textFromValueFunction = [](double value) { return indexedLabel(lowFreqLabels, value); };
-    configureLabel(controls.driveLabel, "drive");
     configureSlider(controls.drive);
     controls.drive.getProperties().set("bqtLargeCreamKnob", true);
     controls.drive.textFromValueFunction = [](double value) { return juce::String(value, 1) + " dB"; };
-    configureLabel(controls.satTypeLabel, "sat. type");
-    configureCombo(controls.satType);
-    controls.satType.setVisible(false);
-    controls.satTypeButton.getProperties().set("bqtSatTypeSelector", true);
-    controls.satTypeButton.setButtonText("sat type");
-    controls.satTypeButton.addMouseListener(this, true);
-    addAndMakeVisible(controls.satTypeButton);
-    controls.satTypeButton.getProperties().set("bqtCreamHelp", "Combination of op-amps, transistors and diodes for a smooth, thick saturation.");
-    controls.satTypeButton.getProperties().set("bqtGritHelp", "Transformer-style saturation with firmer edge and bite.");
-    configureLabel(controls.mixLabel, "mix");
     configureSlider(controls.mix);
     controls.mix.getProperties().set("bqtSmallCreamKnob", true);
     controls.mix.textFromValueFunction = [](double value) { return juce::String(value, 1) + "%"; };
-    configureLabel(controls.outputTrimLabel, "output");
     configureSlider(controls.outputTrim);
     controls.outputTrim.getProperties().set("bqtSmallCreamKnob", true);
     controls.outputTrim.textFromValueFunction = [](double value) { return juce::String(value, 1) + " dB"; };
@@ -354,9 +325,6 @@ void BqtAudioProcessorEditor::configureSide(SideControls& controls, int sideInde
     controls.mix.setDoubleClickReturnValue(true, 100.0);
     controls.outputTrim.setDoubleClickReturnValue(true, 0.0);
     controls.satType.addItemList(juce::StringArray { "cream", "grit" }, 1);
-    // Sat type is not linked: the one visible button always sets both sides, whatever Sat Link
-    // or Control say (side B's button is parked off-screen).
-    controls.satTypeButton.onClick = [this, &button = controls.satTypeButton] { toggleSatTypeBothSides(button); };
 
     const auto prefix = sidePrefix(sideIndex);
     controls.lowGainAttachment = std::make_unique<SliderAttachment>(audioProcessor.state(), prefix + "LowGain", controls.lowGain);
@@ -368,24 +336,12 @@ void BqtAudioProcessorEditor::configureSide(SideControls& controls, int sideInde
     controls.mixAttachment = std::make_unique<SliderAttachment>(audioProcessor.state(), prefix + "Mix", controls.mix);
     controls.outputTrimAttachment = std::make_unique<SliderAttachment>(audioProcessor.state(), prefix + "OutputTrim", controls.outputTrim);
 
-    for (auto* component : { static_cast<juce::Component*>(&controls.eqSectionLabel),
-                             static_cast<juce::Component*>(&controls.satSectionLabel),
-                             static_cast<juce::Component*>(&controls.lowGainLabel),
-                             static_cast<juce::Component*>(&controls.lowGain),
-                             static_cast<juce::Component*>(&controls.lowFreqLabel),
+    for (auto* component : { static_cast<juce::Component*>(&controls.lowGain),
                              static_cast<juce::Component*>(&controls.lowFreq),
-                             static_cast<juce::Component*>(&controls.highGainLabel),
                              static_cast<juce::Component*>(&controls.highGain),
-                             static_cast<juce::Component*>(&controls.highFreqLabel),
                              static_cast<juce::Component*>(&controls.highFreq),
-                             static_cast<juce::Component*>(&controls.driveLabel),
                              static_cast<juce::Component*>(&controls.drive),
-                             static_cast<juce::Component*>(&controls.satTypeLabel),
-                             static_cast<juce::Component*>(&controls.satType),
-                             static_cast<juce::Component*>(&controls.satTypeButton),
-                             static_cast<juce::Component*>(&controls.mixLabel),
                              static_cast<juce::Component*>(&controls.mix),
-                             static_cast<juce::Component*>(&controls.outputTrimLabel),
                              static_cast<juce::Component*>(&controls.outputTrim) })
         rackComponent.addAndMakeVisible(*component);
 }

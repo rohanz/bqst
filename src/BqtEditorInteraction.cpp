@@ -11,18 +11,11 @@ using namespace bqst::ui;
 
 void BqtAudioProcessorEditor::timerCallback()
 {
-    const auto eqIsIn = audioProcessor.state().getRawParameterValue("eqBypass")->load() < 0.5f;
-    const auto satIsIn = audioProcessor.state().getRawParameterValue("satBypass")->load() < 0.5f;
     const auto bypassIsOn = audioProcessor.state().getRawParameterValue("bypass")->load() > 0.5f;
-    eqBypass.setToggleState(eqIsIn, juce::dontSendNotification);
-    satBypass.setToggleState(satIsIn, juce::dontSendNotification);
     bypass.setToggleState(bypassIsOn, juce::dontSendNotification);
     requestRackBypassVisualState(bypassIsOn);
 
-    for (auto& controls : sideControls)
-        controls.satTypeButton.setToggleState(controls.satType.getSelectedItemIndex() == 1, juce::dontSendNotification);
-
-    updateLinkedControlStates();
+    satTypeButton.setToggleState(sideControls[0].satType.getSelectedItemIndex() == 1, juce::dontSendNotification);
 
     if (activeReadoutSlider != nullptr)
     {
@@ -207,8 +200,7 @@ void BqtAudioProcessorEditor::toggleSatTypeBothSides(juce::Button& button)
     sideB->endChangeGesture();
     finishUndoableEdit();
 
-    for (auto& controls : sideControls)
-        controls.satTypeButton.setToggleState(next == 1, juce::dontSendNotification);
+    satTypeButton.setToggleState(next == 1, juce::dontSendNotification);
 
     if (hoveredHelpComponent == &button && helpVisible)
     {
@@ -420,16 +412,15 @@ void BqtAudioProcessorEditor::syncHoverTargetsFromMouse()
     if (component != nullptr && component != this && ! isParentOf(component))
         component = nullptr;
 
-    auto& mainControls = sideControls[0];
-    if (mainControls.satTypeButton.isParentOf(component) || component == &mainControls.satTypeButton)
+    if (satTypeButton.isParentOf(component) || component == &satTypeButton)
     {
-        const auto gritSelected = mainControls.satType.getSelectedItemIndex() == 1;
-        auto helpText = mainControls.satTypeButton.getProperties()[gritSelected ? "bqtGritHelp" : "bqtCreamHelp"].toString();
+        const auto gritSelected = sideControls[0].satType.getSelectedItemIndex() == 1;
+        auto helpText = satTypeButton.getProperties()[gritSelected ? "bqtGritHelp" : "bqtCreamHelp"].toString();
 
-        if (hoveredHelpComponent != &mainControls.satTypeButton || hoveredHelpText != helpText)
+        if (hoveredHelpComponent != &satTypeButton || hoveredHelpText != helpText)
         {
             hideHoverValueReadout();
-            hoveredHelpComponent = &mainControls.satTypeButton;
+            hoveredHelpComponent = &satTypeButton;
             hoveredHelpText = helpText;
             helpHoverStartMs = juce::Time::getMillisecondCounter();
             helpVisible = false;
@@ -692,35 +683,5 @@ void BqtAudioProcessorEditor::restorePluginEditState(const bqt::editor::Paramete
     inputTrimCompensationStart = inputTrim.getValue();
     for (size_t index = 0; index < sideControls.size(); ++index)
         outputTrimCompensationStart[index] = sideControls[index].outputTrim.getValue();
-    updateLinkedControlStates();
     repaint();
-}
-
-void BqtAudioProcessorEditor::updateLinkedControlStates()
-{
-    auto& right = sideControls[1];
-
-    auto keepVisible = [](juce::Component& component)
-    {
-        component.setEnabled(true);
-        component.setAlpha(1.0f);
-    };
-
-    keepVisible(right.lowGain);
-    keepVisible(right.lowFreq);
-    keepVisible(right.highGain);
-    keepVisible(right.highFreq);
-    keepVisible(right.lowGainLabel);
-    keepVisible(right.lowFreqLabel);
-    keepVisible(right.highGainLabel);
-    keepVisible(right.highFreqLabel);
-    keepVisible(right.drive);
-    keepVisible(right.satType);
-    keepVisible(right.satTypeButton);
-    keepVisible(right.mix);
-    keepVisible(right.outputTrim);
-    keepVisible(right.driveLabel);
-    keepVisible(right.satTypeLabel);
-    keepVisible(right.mixLabel);
-    keepVisible(right.outputTrimLabel);
 }

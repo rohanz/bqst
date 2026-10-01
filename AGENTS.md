@@ -464,9 +464,11 @@ Design goals:
 - minimal, analog-inspired, but not clunky
 - use digital conveniences where useful: M/S routing per module, autogain, link controls, separate realtime/render oversampling
 
-Top bar controls include presets, size, input trim, EQ mode/link, saturation mode/link, realtime/render oversampling, autogain, bypass.
+Top bar controls include presets, size, input trim, EQ mode/link, saturation mode/link, realtime/render oversampling, autogain, bypass. The `eqBypass`/`satBypass` parameters have no editor control; they stay for session compatibility and the DSP still honours them.
 
-The saturation panel now has one centered `drive` label between the two drive knobs. Keep it aligned with the visual language of the EQ center labels (`hf`, `freq`, `lf`).
+All faceplate text (`l/m`, `r/s`, `hf`, `freq`, `lf`, `drive`, `mix`, `output`, scale numbers) is painted in `paintRack`, not `juce::Label`s. The saturation panel has one centered `drive` label between the two drive knobs. Keep it aligned with the visual language of the EQ center labels (`hf`, `freq`, `lf`).
+
+There is one sat type button (`satTypeButton`, editor-level) and it writes both sides. Each side's `satType` ComboBox is never shown or parented; it only holds that side's `ComboBoxAttachment`, and the button's toggle state is read from side A's combo.
 
 Global bypass dimming is deliberately implemented as one editor-level `BypassOverlay` sibling above `rackComponent`, with bounds matched to the rack. Do not move this back into `RackComponent::paintOverChildren()` or into a rack child component: the VU meters repaint independently at 60 Hz, and child-level dimming can flash as a separate meter-sized rectangle during rapid bypass toggles.
 
