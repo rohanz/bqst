@@ -17,8 +17,9 @@ references/**/*.wav
 AGENTS.local.md
 
 # density model: downloaded media and renders (never commit)
-experiments/density_model/data/
-experiments/density_model/.venv/
-experiments/density_model/**/__pycache__/
-experiments/density_model/.pytest_cache/
+tools/cream_model/data/
+tools/cream_model/.venv/
+tools/cream_model/**/__pycache__/
+tools/__pycache__/
+tools/cream_model/.pytest_cache/
 experiments/density_proto/build/

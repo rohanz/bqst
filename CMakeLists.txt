@@ -69,6 +69,8 @@ target_sources(BQST
         src/BqtEditorWidgets.cpp
         src/BqtEditorWidgets.h
         src/BqtEditorStyle.h
+        src/BqtCreamModel.h
+        src/BqtCreamParams.h
         src/BqtPresetManager.cpp
         src/BqtPresetManager.h
         src/BqtEditorInteraction.cpp
@@ -133,6 +135,11 @@ if (BQST_BUILD_TESTS)
     target_link_libraries(BqstDspTests PRIVATE juce::juce_recommended_warning_flags)
 
     add_test(NAME BqstDspTests COMMAND BqstDspTests)
+
+    add_executable(BqstCreamTests tests/cream_model_tests.cpp)
+    set_target_properties(BqstCreamTests PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+    target_link_libraries(BqstCreamTests PRIVATE juce::juce_recommended_warning_flags)
+    add_test(NAME BqstCreamTests COMMAND BqstCreamTests ${CMAKE_CURRENT_SOURCE_DIR}/tests/data/cream_fixture.bin)
 
     # Chain tests: drive the real processor through processBlock. These must link JUCE, but not
     # the editor or its binary assets, so BQST_HEADLESS_TESTS compiles createEditor out.

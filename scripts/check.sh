@@ -22,7 +22,7 @@ info "Configuring ($ARCH) in $BUILD_DIR"
 cmake -S "$ROOT_DIR" -B "$BUILD_DIR" -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="$ARCH" >/dev/null
 
 info "Building all plugin formats + unit tests"
-TARGETS="BQST_VST3 BQST_Standalone BqstDspTests BqstChainTests"
+TARGETS="BQST_VST3 BQST_Standalone BqstDspTests BqstChainTests BqstCreamTests"
 if [ "$(uname)" = "Darwin" ]; then
     # An AU-only compile break used to survive every pre-release check.
     TARGETS="$TARGETS BQST_AU"
