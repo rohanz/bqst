@@ -21,3 +21,4 @@ experiments/density_model/data/
 experiments/density_model/.venv/
 experiments/density_model/**/__pycache__/
 experiments/density_model/.pytest_cache/
+experiments/density_proto/build/
