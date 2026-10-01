@@ -9,10 +9,11 @@ constexpr auto vuTimeConstantSeconds = vuRiseTo99Seconds / 4.605170186f;
 constexpr auto vuSineAverageToRms = 1.110720735f;
 constexpr auto parameterSmoothingSeconds = 0.02;
 constexpr auto baxShelfQ = 0.38f;
+// Grit's pre-drive gain (dB of gain per dB of Drive). Cream maps Drive through its own taper.
 constexpr auto saturationDriveScale = 0.40f;
-// The saturation stage's linear coloration fades in over the first third of the drive range, so
-// it reaches full strength at 6 dB of the 18 dB range. Above that the chain is bit-identical to
-// the previous voicing, which also keeps the autogain calibration valid where it matters.
+// Grit's linear coloration (and the shared Vintage shelf) fades in over the first third of the
+// drive range, reaching full strength at 6 dB of the 18 dB range. bqt::CreamModel uses the same
+// ramp internally for its net tilt and DC blocker.
 constexpr auto colorationRampScale = 3.0f;
 constexpr auto dcBlockerHz = 5.0f;
 // Control-rate subdivision for the expensive per-sample recomputations (shelf coefficient
@@ -199,15 +200,14 @@ void BqtAudioProcessor::updateSaturationToneFilters()
     satToneSampleRate = currentSampleRate;
     satToneVintage = vintageEnabled;
 
-    const auto vintageGainDb = vintageEnabled != 0 ? -3.2f : 0.0f;
-
     for (int side = 0; side < 2; ++side)
     {
         const auto sideIndex = static_cast<size_t>(side);
-        *filters[sideIndex].vintage.coefficients = ArrayCoeffs::makeHighShelf(currentSampleRate, 12000.0f, 0.42f, dbToGain(vintageGainDb));
-        *filters[sideIndex].densityBodyFocus.coefficients = ArrayCoeffs::makePeakFilter(currentSampleRate, 720.0f, 0.52f, dbToGain(0.85f));
-        *filters[sideIndex].densityPreEmphasis.coefficients = ArrayCoeffs::makeHighShelf(currentSampleRate, 6200.0f, 0.55f, dbToGain(-0.65f));
-        *filters[sideIndex].densityDeEmphasis.coefficients = ArrayCoeffs::makeHighShelf(currentSampleRate, 7000.0f, 0.50f, dbToGain(-0.55f));
+        // Fitted broad top shelf (tools/cream_model), shared by both saturation types.
+        *filters[sideIndex].vintage.coefficients = ArrayCoeffs::makeHighShelf(
+            currentSampleRate, static_cast<float>(bqt::cream::vintageHz), static_cast<float>(bqt::cream::vintageQ),
+            dbToGain(vintageEnabled != 0 ? static_cast<float>(bqt::cream::vintageDb) : 0.0f));
+        creamModels[sideIndex].prepare(currentSampleRate);
         *filters[sideIndex].saturationLowGuardPre.coefficients = ArrayCoeffs::makeLowShelf(currentSampleRate, 95.0f, 0.55f, dbToGain(-2.2f));
         *filters[sideIndex].saturationLowGuardPost.coefficients = ArrayCoeffs::makeLowShelf(currentSampleRate, 95.0f, 0.55f, dbToGain(2.2f));
         *filters[sideIndex].transformerLowDrive.coefficients = ArrayCoeffs::makeLowShelf(currentSampleRate, 165.0f, 0.62f, dbToGain(1.10f));
@@ -221,6 +221,9 @@ void BqtAudioProcessor::resetSaturationState()
 {
     for (auto& side : filters)
         side.forEachSaturationFilter([](Filter& filter) { filter.reset(); });
+
+    for (auto& model : creamModels)
+        model.reset();
 
     dcBlockPreviousInput = {};
     dcBlockPreviousOutput = {};
@@ -380,13 +383,12 @@ void BqtAudioProcessor::processSide(float* samples, int numSamples, int sideInde
         auto& sideFilters = filters[smoothIndex];
         const auto isDensity = satType == bqt::SaturationType::density;
 
-        // The coloration filters below are linear and were previously applied at full,
-        // drive-independent strength inside this branch. Because the branch itself is gated on
-        // drive being non-zero, nudging Drive from 0.0 to 0.1 dB snapped roughly 1.9 dB of tilt
-        // into place with no ramp (+0.85 dB at 720 Hz, -1.2 dB at the top, for Cream). Blending
-        // each filter toward its input by a drive-derived amount makes the whole stage converge
-        // to unity as drive -> 0, so zero drive really is transparent. The filters still process
-        // every sample, so their state stays warm and the blend can rise without a transient.
+        // Grit's coloration filters (and the shared Vintage shelf) are blended toward their input
+        // by a drive-derived amount so the stage converges to unity as drive -> 0: the branch is
+        // gated on drive being non-zero, and applying them at full strength would snap a tilt into
+        // place the instant Drive leaves 0.0. The filters still process every sample, so their
+        // state stays warm and the blend can rise without a transient. Cream ramps its own tone
+        // shaping and DC blocker inside bqt::CreamModel.
         const auto dcBlockCoefficient = std::exp(-2.0f * juce::MathConstants<float>::pi
                                                  * dcBlockerHz / static_cast<float>(currentSampleRate));
         auto& previousInput = dcBlockPreviousInput[smoothIndex];
@@ -406,7 +408,11 @@ void BqtAudioProcessor::processSide(float* samples, int numSamples, int sideInde
             // refreshing it at the control rate is inaudible; when drive is not smoothing it is
             // exactly constant anyway.
             if (sample % controlRateInterval == 0)
+            {
                 compensation = autoGainEnabled ? bqt::saturationAutoGain(drive, satType) : 1.0f;
+                if (isDensity)
+                    creamModels[smoothIndex].setKnob(static_cast<double>(drive) * 18.0);
+            }
 
             const auto color = juce::jmin(1.0f, drive * colorationRampScale);
             const auto colored = [color](Filter& filter, float input)
@@ -414,43 +420,32 @@ void BqtAudioProcessor::processSide(float* samples, int numSamples, int sideInde
                 return input + (filter.processSample(input) - input) * color;
             };
 
-            auto value = colored(sideFilters.saturationLowGuardPre, samples[sample]);
+            auto value = samples[sample];
             if (isDensity)
             {
-                value = colored(sideFilters.densityBodyFocus, value);
-                value = colored(sideFilters.densityPreEmphasis, value);
+                value = static_cast<float>(creamModels[smoothIndex].process(value));
+                value = colored(sideFilters.vintage, value);
             }
             else
             {
+                value = colored(sideFilters.saturationLowGuardPre, value);
                 value = colored(sideFilters.transformerLowDrive, value);
                 value = colored(sideFilters.transformerWeight, value);
-            }
-
-            value *= driveGainValue;
-            value = isDensity ? bqt::densitySaturate(value, drive) : bqt::transformerSaturate(value, drive);
-
-            if (isDensity)
-            {
-                value = colored(sideFilters.densityDeEmphasis, value);
-            }
-            else
-            {
+                value *= driveGainValue;
+                value = bqt::transformerSaturate(value, drive);
                 value = colored(sideFilters.transformerLowRestore, value);
                 value = colored(sideFilters.transformerTop, value);
+                value = colored(sideFilters.saturationLowGuardPost, value);
+                value = colored(sideFilters.vintage, value);
+
+                // Grit's curve is asymmetric and only subtracts a constant tanh(bias), so it leaves
+                // a signal-dependent DC offset. Blended by the colour factor so drive -> 0 stays
+                // exactly transparent; there is negligible DC to remove at low drive anyway.
+                const auto blocked = value - previousInput + dcBlockCoefficient * previousOutput;
+                previousInput = value;
+                previousOutput = blocked;
+                value += (blocked - value) * color;
             }
-
-            value = colored(sideFilters.saturationLowGuardPost, value);
-            value = colored(sideFilters.vintage, value);
-
-            // Both curves are asymmetric and only subtract a constant tanh(bias), so they leave a
-            // signal-dependent DC offset (measured -0.059, about -24.6 dBFS, at full Cream drive)
-            // which the +2.2 dB post low-shelf then lifts further. Nothing downstream removed it.
-            // Blended by the same colour factor so drive -> 0 stays exactly transparent; there is
-            // negligible DC to remove at low drive anyway.
-            const auto blocked = value - previousInput + dcBlockCoefficient * previousOutput;
-            previousInput = value;
-            previousOutput = blocked;
-            value += (blocked - value) * color;
 
             const auto wet = value * compensation;
             samples[sample] = dry[sample] + (wet - dry[sample]) * mix;

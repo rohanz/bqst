@@ -71,9 +71,6 @@ private:
         Filter lowShelf;
         Filter highShelf;
         Filter vintage;
-        Filter densityBodyFocus;
-        Filter densityPreEmphasis;
-        Filter densityDeEmphasis;
         Filter saturationLowGuardPre;
         Filter saturationLowGuardPost;
         Filter transformerLowDrive;
@@ -87,9 +84,6 @@ private:
         void forEachSaturationFilter(Fn&& fn)
         {
             fn(vintage);
-            fn(densityBodyFocus);
-            fn(densityPreEmphasis);
-            fn(densityDeEmphasis);
             fn(saturationLowGuardPre);
             fn(saturationLowGuardPost);
             fn(transformerLowDrive);
@@ -161,6 +155,8 @@ private:
 
     juce::AudioProcessorValueTreeState parameters;
     std::array<SideFilters, 2> filters;
+    // Cream's model (tone shaping, colour ramp and DC blocker are internal), one per side.
+    std::array<bqt::CreamModel, 2> creamModels;
     std::array<std::unique_ptr<juce::dsp::Oversampling<float>>, 3> oversamplers;
     std::array<juce::AudioBuffer<float>, 2> dryBuffers;
     juce::AudioBuffer<float> bypassDryBuffer;

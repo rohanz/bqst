@@ -27,13 +27,11 @@ void check(bool condition, const char* what)
     }
 }
 
-float saturate(bqt::SaturationType type, float sample, float drive01)
+// Grit is a pure curve; Cream is the stateful bqt::CreamModel, covered by cream_model_tests.cpp.
+float gritSaturate(float sample, float drive01)
 {
-    return type == bqt::SaturationType::density ? bqt::densitySaturate(sample, drive01)
-                                                : bqt::transformerSaturate(sample, drive01);
+    return bqt::transformerSaturate(sample, drive01);
 }
-
-constexpr bqt::SaturationType bothTypes[] { bqt::SaturationType::density, bqt::SaturationType::transformer };
 
 // Magnitude of a biquad {b0,b1,b2,a0,a1,a2} at a given frequency.
 double biquadMagnitude(const std::array<float, 6>& c, double frequency, double sampleRate)
@@ -51,53 +49,64 @@ constexpr double testGainsDb[] { -6.0, -3.0, -1.0, 1.0, 3.0, 6.0 };
 
 int main()
 {
-    // Autogain: exactly unity at zero drive, finite, in (0, 1], and monotonically non-increasing.
-    for (auto type : bothTypes)
+    // Grit autogain: exactly unity at zero drive, finite, in (0, 1], monotonically non-increasing.
     {
-        check(bqt::saturationAutoGain(0.0f, type) == 1.0f, "autogain is unity at zero drive");
+        const auto grit = bqt::SaturationType::transformer;
+        check(bqt::saturationAutoGain(0.0f, grit) == 1.0f, "Grit autogain is unity at zero drive");
 
         float previous = 1.0f;
         for (int i = 1; i <= 200; ++i)
         {
-            const auto drive01 = static_cast<float>(i) / 200.0f;
-            const auto gain = bqt::saturationAutoGain(drive01, type);
-            check(std::isfinite(gain), "autogain is finite");
-            check(gain > 0.0f && gain <= 1.0f, "autogain stays in (0, 1]");
-            check(gain <= previous + 1.0e-6f, "autogain is monotonically non-increasing");
+            const auto gain = bqt::saturationAutoGain(static_cast<float>(i) / 200.0f, grit);
+            check(std::isfinite(gain), "Grit autogain is finite");
+            check(gain > 0.0f && gain <= 1.0f, "Grit autogain stays in (0, 1]");
+            check(gain <= previous + 1.0e-6f, "Grit autogain is monotonically non-increasing");
+            previous = gain;
+        }
+    }
+
+    // Cream autogain (generated table): unity at zero, finite, bounded and smooth. It may exceed 1
+    // at low drive, where the model adds loudness before it compresses.
+    {
+        const auto cream = bqt::SaturationType::density;
+        check(bqt::saturationAutoGain(0.0f, cream) == 1.0f, "Cream autogain is unity at zero drive");
+
+        auto previous = 1.0f;
+        for (int i = 1; i <= 200; ++i)
+        {
+            const auto gain = bqt::saturationAutoGain(static_cast<float>(i) / 200.0f, cream);
+            check(std::isfinite(gain) && gain > 0.25f && gain < 4.0f, "Cream autogain is finite and bounded");
+            check(std::abs(20.0f * std::log10(gain / previous)) < 0.25f, "Cream autogain is smooth");
             previous = gain;
         }
     }
 
     // Saturation is an exact bypass at zero drive (so 0 dB drive is truly transparent).
-    for (auto type : bothTypes)
-        for (float sample = -2.0f; sample <= 2.0f; sample += 0.05f)
-            check(std::abs(saturate(type, sample, 0.0f) - sample) == 0.0f, "saturation is exact bypass at zero drive");
+    for (float sample = -2.0f; sample <= 2.0f; sample += 0.05f)
+        check(std::abs(gritSaturate(sample, 0.0f) - sample) == 0.0f, "saturation is exact bypass at zero drive");
 
     // Saturation output stays finite and bounded for finite input across the whole drive range.
-    for (auto type : bothTypes)
-        for (float drive01 = 0.0f; drive01 <= 1.0f; drive01 += 0.02f)
-            for (float sample = -4.0f; sample <= 4.0f; sample += 0.02f)
-            {
-                const auto out = saturate(type, sample, drive01);
-                check(std::isfinite(out), "saturation output is finite");
-                check(std::abs(out) < 100.0f, "saturation output is bounded");
-            }
+    for (float drive01 = 0.0f; drive01 <= 1.0f; drive01 += 0.02f)
+        for (float sample = -4.0f; sample <= 4.0f; sample += 0.02f)
+        {
+            const auto out = gritSaturate(sample, drive01);
+            check(std::isfinite(out), "saturation output is finite");
+            check(std::abs(out) < 100.0f, "saturation output is bounded");
+        }
 
     // Curves ramp continuously from zero drive: a tiny drive must stay close to the input
     // (no abrupt minimum saturation switching on, per AGENTS.md).
-    for (auto type : bothTypes)
     {
         const auto sample = 0.5f;
-        check(std::abs(saturate(type, sample, 0.001f) - sample) < 0.01f,
+        check(std::abs(gritSaturate(sample, 0.001f) - sample) < 0.01f,
               "saturation ramps continuously from zero drive");
     }
 
     // NaN/Inf input must not crash and must not silently turn into a normal-looking number at
     // zero drive (it is a passthrough there).
-    for (auto type : bothTypes)
     {
         const auto nan = std::numeric_limits<float>::quiet_NaN();
-        check(std::isnan(saturate(type, nan, 0.0f)), "zero-drive passthrough preserves NaN input");
+        check(std::isnan(gritSaturate(nan, 0.0f)), "zero-drive passthrough preserves NaN input");
     }
 
     // The decramped shelf must track the analog prototype at every host rate. This is the

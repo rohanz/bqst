@@ -3,6 +3,8 @@
 #include <array>
 #include <cmath>
 
+#include "BqtCreamModel.h"
+
 namespace bqt
 {
 enum class ChannelMode
@@ -106,23 +108,6 @@ inline std::array<float, 6> makeMatchedShelf(double sampleRate, double centreHz,
              1.0f, static_cast<float>(a1), static_cast<float>(a2) };
 }
 
-inline float densitySaturate(float sample, float drive01)
-{
-    if (drive01 <= 0.0f)
-        return sample;
-
-    const auto push = drive01 * drive01;
-    const auto maxPush = push * drive01;
-    const auto asymmetry = drive01 * (0.016f + drive01 * 0.045f + push * 0.040f);
-    const auto oddWeight = drive01 * (0.032f + drive01 * 0.095f + push * 0.115f + maxPush * 0.135f);
-    const auto softKnee = 0.80f + drive01 * 0.42f + push * 0.36f + maxPush * 0.60f;
-    const auto driven = sample * softKnee + oddWeight * sample * sample * sample + asymmetry;
-    const auto shaped = (std::tanh(driven) - std::tanh(asymmetry)) * (1.0f + 0.07f * drive01 + 0.13f * maxPush);
-    const auto blend = drive01 * 0.39f + push * 0.16f + maxPush * 0.15f;
-
-    return sample * (1.0f - blend) + shaped * blend;
-}
-
 inline float transformerSaturate(float sample, float drive01)
 {
     if (drive01 <= 0.0f)
@@ -145,10 +130,13 @@ inline float saturationAutoGain(float drive01, SaturationType type)
     if (drive01 <= 0.0f)
         return 1.0f;
 
-    const auto amount = type == SaturationType::density ? 2.04f : 2.71f;
-    const auto exponent = type == SaturationType::density ? 1.67f : 1.48f;
-    const auto shapedDrive = std::pow(drive01, exponent);
-    return 1.0f / (1.0f + shapedDrive * amount);
+    // Cream: static table calibrated across materials by tools/cream_model. It may exceed 1 at
+    // low drive, where the model adds loudness before it starts to compress.
+    if (type == SaturationType::density)
+        return CreamModel::autoGainForKnob(drive01 * 18.0f);
+
+    const auto shapedDrive = std::pow(drive01, 1.48f);
+    return 1.0f / (1.0f + shapedDrive * 2.71f);
 }
 
 inline constexpr float sqrtHalf = 0.70710678118654752440f;

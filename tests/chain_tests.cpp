@@ -323,6 +323,112 @@ int main()
         check(allDefault, "Default preset restores every musical parameter to its layout default");
     }
 
+    // Review focus 1: switching the oversampling factor with Cream engaged stays click-free.
+    {
+        auto processor = makeProcessor();
+        setParam(*processor, "aDrive", 9.0f);
+        setParam(*processor, "bDrive", 9.0f);
+        auto out = render(*processor, 220.0, 0.5f, 0.3);
+        setParam(*processor, "osRealtime", 3.0f);
+        const auto after = render(*processor, 220.0, 0.5f, 0.3);
+        out.insert(out.end(), after.begin(), after.end());
+        auto worstStep = 0.0f;
+        auto finite = true;
+        for (size_t i = 1; i < out.size(); ++i)
+        {
+            finite = finite && std::isfinite(out[i]);
+            worstStep = std::fmax(worstStep, std::abs(out[i] - out[i - 1]));
+        }
+        check(finite && worstStep < 0.1f, "oversampling switch with Cream is click-free");
+    }
+
+    // Review focus 2: loud then silence decays to silence.
+    {
+        auto processor = makeProcessor();
+        setParam(*processor, "aDrive", 18.0f);
+        setParam(*processor, "bDrive", 18.0f);
+        render(*processor, 60.0, 0.9f, 0.5);
+        const auto tail = render(*processor, 60.0, 0.0f, 1.0);
+        auto last = 0.0f;
+        for (size_t i = tail.size() - 4800; i < tail.size(); ++i)
+            last = std::fmax(last, std::abs(tail[i]));
+        check(std::isfinite(last) && last < 1.0e-6f, "Cream state decays to silence");
+    }
+
+    // Review focus 3: very hot input stays bounded.
+    {
+        auto processor = makeProcessor();
+        setParam(*processor, "inputTrim", 12.0f);
+        setParam(*processor, "aDrive", 18.0f);
+        setParam(*processor, "bDrive", 18.0f);
+        const auto out = render(*processor, 50.0, 1.0f, 0.5);
+        auto peak = 0.0f;
+        auto finite = true;
+        for (auto v : out)
+        {
+            finite = finite && std::isfinite(v);
+            peak = std::fmax(peak, std::abs(v));
+        }
+        check(finite && peak < 4.0f, "hot input through Cream stays bounded");
+    }
+
+    // Review focus 4: M/S with mono input creates no side content.
+    {
+        auto processor = makeProcessor();
+        setParam(*processor, "satMode", 1.0f);
+        setParam(*processor, "aDrive", 9.0f);
+        setParam(*processor, "bDrive", 9.0f);
+        juce::AudioBuffer<float> buffer(2, blockSize);
+        juce::MidiBuffer midi;
+        auto worst = 0.0f;
+        for (int b = 0; b < 200; ++b)
+        {
+            for (int i = 0; i < blockSize; ++i)
+            {
+                const auto v = 0.5f * std::sin(static_cast<float>(b * blockSize + i) * 0.03f);
+                buffer.setSample(0, i, v);
+                buffer.setSample(1, i, v);
+            }
+            processor->processBlock(buffer, midi);
+            for (int i = 0; i < blockSize; ++i)
+                worst = std::fmax(worst, std::abs(buffer.getSample(0, i) - buffer.getSample(1, i)));
+        }
+        check(worst < 1.0e-5f, "Cream in M/S keeps mono input mono");
+    }
+
+    // Review focus 5: fast drive automation across zero is click-free.
+    {
+        auto processor = makeProcessor();
+        juce::AudioBuffer<float> buffer(2, blockSize);
+        juce::MidiBuffer midi;
+        auto phase = 0.0;
+        auto previous = 0.0f, worstStep = 0.0f;
+        const auto blocks = static_cast<int>(sampleRate) / blockSize;
+        for (int b = 0; b < blocks; ++b)
+        {
+            const auto t = static_cast<float>(b) / static_cast<float>(blocks);
+            const auto knob = 18.0f * (t < 0.5f ? 2.0f * t : 2.0f * (1.0f - t));
+            setParam(*processor, "aDrive", knob);
+            setParam(*processor, "bDrive", knob);
+            for (int i = 0; i < blockSize; ++i)
+            {
+                const auto v = 0.5f * static_cast<float>(std::sin(phase));
+                buffer.setSample(0, i, v);
+                buffer.setSample(1, i, v);
+                phase += 2.0 * juce::MathConstants<double>::pi * 220.0 / sampleRate;
+            }
+            processor->processBlock(buffer, midi);
+            for (int i = 0; i < blockSize; ++i)
+            {
+                const auto v = buffer.getSample(0, i);
+                if (b > 2)
+                    worstStep = std::fmax(worstStep, std::abs(v - previous));
+                previous = v;
+            }
+        }
+        check(worstStep < 0.05f, "drive automation across zero is click-free");
+    }
+
     if (failures == 0)
     {
         std::printf("All chain tests passed.\n");
