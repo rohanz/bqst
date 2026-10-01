@@ -15,3 +15,9 @@ references/**/*.wav
 
 # Local-only agent notes: machine-specific paths + signing cert hash (never commit)
 AGENTS.local.md
+
+# density model: downloaded media and renders (never commit)
+experiments/density_model/data/
+experiments/density_model/.venv/
+experiments/density_model/**/__pycache__/
+experiments/density_model/.pytest_cache/
