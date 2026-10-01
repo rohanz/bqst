@@ -1,4 +1,5 @@
 #include "PluginProcessor.h"
+#include "BqtParameterIds.h"
 
 namespace
 {
@@ -28,11 +29,6 @@ constexpr auto structuralFadeSeconds = 0.004;
 // an already-sized Filter coefficients object updates it in place with no heap allocation
 // (unlike Coefficients::makeXxx, which news a ref-counted object every call).
 using ArrayCoeffs = juce::dsp::IIR::ArrayCoefficients<float>;
-
-juce::String sidePrefix(int sideIndex)
-{
-    return sideIndex == 0 ? "a" : "b";
-}
 
 float dbToGain(float db)
 {
@@ -66,7 +62,7 @@ void BqtAudioProcessor::cacheParameterPointers()
 
     for (int side = 0; side < 2; ++side)
     {
-        const auto prefix = sidePrefix(side);
+        const auto prefix = bqt::sidePrefix(side);
         const auto index = static_cast<size_t>(side);
         paramPtrs.lowGain[index]    = get(prefix + "LowGain");
         paramPtrs.highGain[index]   = get(prefix + "HighGain");

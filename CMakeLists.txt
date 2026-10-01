@@ -77,6 +77,7 @@ target_sources(BQST
         src/PluginEditor.cpp
         src/PluginEditor.h
         src/BqtDsp.h
+        src/BqtParameterIds.h
 )
 
 target_compile_definitions(BQST

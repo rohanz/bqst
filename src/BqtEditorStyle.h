@@ -3,6 +3,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include "BinaryData.h"
+#include "BqtParameterIds.h"
 
 #include <cmath>
 
@@ -31,10 +32,7 @@ inline juce::String indexedLabel(const juce::StringArray& labels, double value)
     return labels[juce::jlimit(0, labels.size() - 1, static_cast<int>(std::round(value)))];
 }
 
-inline juce::String sidePrefix(int sideIndex)
-{
-    return sideIndex == 0 ? "a" : "b";
-}
+using bqt::sidePrefix;
 
 inline juce::FontOptions faceFont(float height, bool bold = true)
 {

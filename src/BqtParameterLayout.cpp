@@ -1,12 +1,5 @@
 #include "PluginProcessor.h"
-
-namespace
-{
-juce::String sidePrefix(int sideIndex)
-{
-    return sideIndex == 0 ? "a" : "b";
-}
-} // namespace
+#include "BqtParameterIds.h"
 
 juce::AudioProcessorValueTreeState::ParameterLayout BqtAudioProcessor::createParameterLayout()
 {
@@ -28,7 +21,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout BqtAudioProcessor::createPar
 
     for (int side = 0; side < 2; ++side)
     {
-        const auto prefix = sidePrefix(side);
+        const auto prefix = bqt::sidePrefix(side);
         const juce::String label = side == 0 ? "L/M" : "R/S";
 
         params.push_back(std::make_unique<juce::AudioParameterFloat>(prefix + "LowGain", label + " LF", juce::NormalisableRange<float>(-6.0f, 6.0f, 0.1f), 0.0f));
