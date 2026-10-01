@@ -12,7 +12,7 @@ if (NOT CMAKE_OSX_DEPLOYMENT_TARGET)
     set(CMAKE_OSX_DEPLOYMENT_TARGET "10.13" CACHE STRING "Minimum macOS deployment target")
 endif()
 
-project(BQST VERSION 1.0.3 LANGUAGES C CXX)
+project(BQST VERSION 1.1.0 LANGUAGES C CXX)
 
 # Single source of truth for the version and bundle identifier. Everything downstream -- the
 # plugin bundles, the generated packaging templates, and the shell/PowerShell packaging scripts

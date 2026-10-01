@@ -22,4 +22,3 @@ tools/cream_model/.venv/
 tools/cream_model/**/__pycache__/
 tools/__pycache__/
 tools/cream_model/.pytest_cache/
-experiments/density_proto/build/
