@@ -104,7 +104,10 @@ private:
     void paintRack(juce::Graphics& g);
     void requestRackBypassVisualState(bool shouldBeBypassed);
     void timerCallback() override;
-    bool shouldMirrorLinkedControls(const char* linkParameterId) const;
+    bool isGroupLinked(bqt::editor::LinkGroup group) const;
+    bool shouldMirrorToOtherSide(bqt::editor::LinkGroup group) const;
+    void updateLinkedAttachments();
+    void unlinkGroupFromUi(bqt::editor::LinkGroup group);
     void beginLinkedMirrorGestureFor(juce::Slider& slider);
     void beginMirroredParameterGesture(const juce::String& parameterId);
     void endLinkedMirrorGestures();
@@ -197,6 +200,9 @@ private:
     juce::VBlankAttachment meterVBlank;
     double lastMeterTickSeconds = 0.0;
     bool isMirroringLinkedControl = false;
+    // Per link group (eq, sat): whether side B's controls are currently attached to side A's
+    // parameters. See updateLinkedAttachments.
+    std::array<bool, 2> sideBAttachedToA { false, false };
     // Controls inside a genuine user gesture; only these may drive linked mirroring.
     bqt::editor::UserGestureTracker userGestures;
     juce::Component::SafePointer<juce::Slider> activeReadoutSlider;

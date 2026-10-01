@@ -502,15 +502,20 @@ combo boxes. There is no JUCE `TooltipWindow`; do not call `setTooltip` on contr
 
 ## Linking And Undo
 
-EQ and saturation link buttons mirror L/R or M/S-side controls.
+Linking happens in the processor, not the editor. While `eqLink` is on, side B (R/S) runs on side A's `LowGain`/`LowFreq`/`HighGain`/`HighFreq`; while `satLink` is on, on side A's `Drive`/`Mix`/`OutputTrim` (`eqSourceSide`/`satSourceSide` in `BqtProcessorDsp.cpp`). Side B's own parameters are ignored but kept. `SatType` is not linked: its one button always writes both sides.
+
+Why: hosts like Ableton record undo per parameter, so the old editor-side mirroring (a linked move wrote both sides) cost two Command-Z steps. A linked move now writes exactly one parameter.
 
 Behavior:
 
-- If linked, moving either side moves the other side.
-- Holding Control temporarily inverts the link behavior.
+- Gains, drive, mix and trim go through the existing smoothers, so a link toggle just retargets them. Shelf frequencies are latched in `StructuralConfig` as the *effective* (linked) indices, so a link toggle that changes side B's frequency goes through the structural fade.
+- Editor: while a group is linked, side B's knobs are attached to side A's parameter IDs (`updateLinkedAttachments`, polled from the timer so host/state link changes are picked up; also called on a link click). Re-pointing waits until no knob in the group is mid-drag. Nothing is mirrored slider-to-slider while linked.
+- Unlinking with the button copies A's group values into B (`unlinkGroupFromUi`, one gesture per parameter, one plugin undo step with the link change) so nothing jumps. Unlinking via host automation or state restore does not copy: side B reveals its stored values.
+- Control no longer temporarily unlinks a linked group. With the group unlinked, Control-drag still moves both sides (editor-side mirroring, `ctrlMirrorsBothSides`).
+- Sessions saved linked with differing sides now play R/S at the L/M value.
 - Continuous knobs and stepped frequency selectors should undo as one gesture, not tiny increments.
 
-Undo support is implemented with editor-side snapshots and mirrored parameter gestures. This is intentional: APVTS is constructed with a null `UndoManager` and there is no `juce::UndoManager` member, so the editor-side snapshot stack is the source of truth. Be careful when changing linked control behavior; test Command-Z in Ableton, not only Standalone.
+Undo support is implemented with editor-side snapshots (and, for Control-drags while unlinked, mirrored parameter gestures). This is intentional: APVTS is constructed with a null `UndoManager` and there is no `juce::UndoManager` member, so the editor-side snapshot stack is the source of truth. Be careful when changing linked control behavior; test Command-Z in Ableton, not only Standalone.
 
 ## Presets
 

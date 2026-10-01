@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <map>
 #include <utility>
 #include <vector>
@@ -88,12 +89,53 @@ private:
     std::map<const void*, int> depths;
 };
 
-// A linked control is mirrored only for a user gesture on the source itself. Value changes that
-// arrive through the parameter attachment (host automation, preset loads, setStateInformation,
-// undo) must not be mirrored or written back to the host, even while the mouse rests on the knob.
-inline bool shouldMirrorLinkedEdit(bool linkActive, bool sourceInUserGesture, bool alreadyMirroring)
+// A control is mirrored onto the other side only for a user gesture on the source itself. Value
+// changes that arrive through the parameter attachment (host automation, preset loads,
+// setStateInformation, undo) must not be mirrored or written back to the host, even while the
+// mouse rests on the knob.
+inline bool shouldMirrorLinkedEdit(bool mirrorActive, bool sourceInUserGesture, bool alreadyMirroring)
 {
-    return linkActive && sourceInUserGesture && ! alreadyMirroring;
+    return mirrorActive && sourceInUserGesture && ! alreadyMirroring;
+}
+
+// The two link groups. Sat type is not in either: its one button always sets both sides.
+enum class LinkGroup { eq, sat };
+
+inline const char* linkParameterId(LinkGroup group)
+{
+    return group == LinkGroup::eq ? "eqLink" : "satLink";
+}
+
+// Per-side parameter suffixes each link covers.
+inline const juce::StringArray& linkGroupSuffixes(LinkGroup group)
+{
+    static const juce::StringArray eq { "LowGain", "LowFreq", "HighGain", "HighFreq" };
+    static const juce::StringArray sat { "Drive", "Mix", "OutputTrim" };
+    return group == LinkGroup::eq ? eq : sat;
+}
+
+// Linking happens in the processor (side B follows side A), so a linked edit writes only side A
+// and the editor mirrors nothing. Ctrl-drag moves both sides only while the group is unlinked.
+inline bool ctrlMirrorsBothSides(bool groupLinked, bool controlDown)
+{
+    return controlDown && ! groupLinked;
+}
+
+// The parameter a side's control is attached to: while linked, side B displays and edits side A's.
+inline juce::String attachedParameterId(int sideIndex, const juce::String& suffix, bool groupLinked)
+{
+    return sidePrefix(groupLinked ? 0 : sideIndex) + suffix;
+}
+
+// Writes for unlinking a group from the UI: side B takes side A's current (normalised) values, so
+// nothing jumps when B starts playing its own parameters again. A and B share ranges.
+inline ParameterSnapshot unlinkCopyWrites(LinkGroup group, const std::function<float(const juce::String&)>& normalisedValueOf)
+{
+    ParameterSnapshot writes;
+    for (const auto& suffix : linkGroupSuffixes(group))
+        writes.emplace_back(sidePrefix(1) + suffix, normalisedValueOf(sidePrefix(0) + suffix));
+
+    return writes;
 }
 
 // The sat type button toggles side A and writes the result to both sides.

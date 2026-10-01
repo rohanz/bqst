@@ -16,11 +16,11 @@ Input Trim -> EQ -> Saturation -> Mix -> Output Trim
 
 **EQ L/R or EQ M/S** selects how the EQ module is routed.
 
-**EQ Link** links the two EQ sides. When linked, moving either side moves the other side. Holding Control temporarily inverts the link: with Link on, Control edits one side only; with Link off, Control moves both sides together.
+**EQ Link** links the two EQ sides (both gains and both frequencies). When linked, the R/S side follows the L/M side: both sets of knobs show and edit the L/M values, and any automation recorded on the R/S EQ controls is ignored. Turn EQ Link off to edit one side on its own; turning it off from the button copies the L/M settings to R/S first, so nothing jumps. With Link off, hold Control while dragging to move both sides together.
 
 **Sat L/R or Sat M/S** selects how the saturation module is routed.
 
-**Sat Link** links the two saturation sides. When linked, moving either side moves the other side. Holding Control temporarily inverts the link: with Link on, Control edits one side only; with Link off, Control moves both sides together.
+**Sat Link** links the two saturation sides (Drive, Mix and Output). When linked, the R/S side follows the L/M side: both sets of knobs show and edit the L/M values, and any automation recorded on the R/S saturation controls is ignored. Turn Sat Link off to edit one side on its own; turning it off from the button copies the L/M settings to R/S first, so nothing jumps. With Link off, hold Control while dragging to move both sides together. Sat Type always applies to both sides, linked or not.
 
 **Realtime Oversampling** sets oversampling during normal playback.
 

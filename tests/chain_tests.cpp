@@ -448,13 +448,189 @@ void runEditorLogicTests()
         check(gestures.end(&knob) && ! gestures.isActive(&knob), "the outermost drag end closes the gesture");
         check(gestures.end(&knob), "an unmatched drag end is harmless");
 
-        check(shouldMirrorLinkedEdit(true, true, false), "a user gesture on a linked control mirrors");
+        check(shouldMirrorLinkedEdit(true, true, false), "a user gesture with mirroring active mirrors");
         check(! shouldMirrorLinkedEdit(true, false, false),
-              "automation or state restore reaching a linked control (even under the mouse) does not mirror");
-        check(! shouldMirrorLinkedEdit(false, true, false), "an unlinked control does not mirror");
+              "automation or state restore reaching a control (even under the mouse) does not mirror");
+        check(! shouldMirrorLinkedEdit(false, true, false), "a gesture without mirroring active does not mirror");
         check(! shouldMirrorLinkedEdit(true, true, true), "the mirrored write does not mirror back");
 
         check(nextSatTypeIndex(0) == 1 && nextSatTypeIndex(1) == 0, "sat type toggles between cream and grit");
+    }
+
+    // Linking lives in the processor; the editor only re-points side B's controls and mirrors
+    // Ctrl-drags while unlinked.
+    {
+        check(ctrlMirrorsBothSides(false, true), "Ctrl while unlinked moves both sides");
+        check(! ctrlMirrorsBothSides(false, false), "a plain drag while unlinked moves one side");
+        check(! ctrlMirrorsBothSides(true, true), "Ctrl while linked no longer temporarily unlinks");
+        check(! ctrlMirrorsBothSides(true, false), "a linked drag writes only side A (the processor links)");
+
+        check(attachedParameterId(0, "Drive", true) == "aDrive" && attachedParameterId(0, "Drive", false) == "aDrive",
+              "side A's controls always edit side A");
+        check(attachedParameterId(1, "LowFreq", true) == "aLowFreq", "linked side B shows and edits side A");
+        check(attachedParameterId(1, "LowFreq", false) == "bLowFreq", "unlinked side B edits its own parameter");
+
+        check(linkGroupSuffixes(LinkGroup::eq) == juce::StringArray { "LowGain", "LowFreq", "HighGain", "HighFreq" },
+              "eq link covers gains and shelf frequencies");
+        check(linkGroupSuffixes(LinkGroup::sat) == juce::StringArray { "Drive", "Mix", "OutputTrim" },
+              "sat link covers drive, mix and trim but not sat type");
+        check(juce::String(linkParameterId(LinkGroup::eq)) == "eqLink" && juce::String(linkParameterId(LinkGroup::sat)) == "satLink",
+              "link groups map to their parameters");
+
+        // Unlinking from the UI copies A into B so R/S keeps sounding the same.
+        auto processor = std::make_unique<BqtAudioProcessor>();
+        setParam(*processor, "aDrive", 9.0f);
+        setParam(*processor, "bDrive", 0.0f);
+        setParam(*processor, "aMix", 40.0f);
+        const auto writes = unlinkCopyWrites(LinkGroup::sat, [&processor](const juce::String& id)
+                                             { return processor->state().getParameter(id)->getValue(); });
+        auto copied = writes.size() == 3;
+        for (const auto& [id, value] : writes)
+        {
+            copied = copied && id.startsWith("b");
+            processor->state().getParameter(id)->setValueNotifyingHost(value);
+        }
+        check(copied && std::abs(plainValue(*processor, "bDrive") - 9.0f) < 1.0e-4f
+                  && std::abs(plainValue(*processor, "bMix") - 40.0f) < 1.0e-4f,
+              "unlinking copies side A's group values into side B");
+    }
+}
+} // namespace
+
+// ============================================================================================
+// Linking happens in the processor: while a group is linked, side B (R or S) runs on side A's
+// values for that group and its own parameters are ignored, so a linked knob move writes one
+// parameter (one host undo step).
+namespace
+{
+// Renders a 220 Hz 0.5 sine into both channels for `seconds`, applying `change` once `switchAt`
+// seconds have elapsed (never, if switchAt < 0). Returns { left, right }.
+std::pair<std::vector<float>, std::vector<float>> renderStereoWithSwitch(
+    BqtAudioProcessor& processor, double seconds, double switchAt,
+    const std::function<void(BqtAudioProcessor&)>& change)
+{
+    juce::AudioBuffer<float> buffer(2, blockSize);
+    juce::MidiBuffer midi;
+    auto phase = 0.0;
+    const auto increment = 2.0 * juce::MathConstants<double>::pi * 220.0 / sampleRate;
+    const auto total = static_cast<int>(sampleRate * seconds);
+    const auto switchSample = switchAt < 0.0 ? total : static_cast<int>(sampleRate * switchAt);
+    auto switched = false;
+    std::vector<float> left, right;
+
+    for (int done = 0; done < total; done += blockSize)
+    {
+        if (! switched && done >= switchSample)
+        {
+            change(processor);
+            switched = true;
+        }
+
+        for (int i = 0; i < blockSize; ++i)
+        {
+            const auto v = 0.5f * static_cast<float>(std::sin(phase));
+            buffer.setSample(0, i, v);
+            buffer.setSample(1, i, v);
+            phase += increment;
+        }
+        processor.processBlock(buffer, midi);
+        for (int i = 0; i < blockSize; ++i)
+        {
+            left.push_back(buffer.getSample(0, i));
+            right.push_back(buffer.getSample(1, i));
+        }
+    }
+
+    return { left, right };
+}
+
+float worstChannelDifference(const std::pair<std::vector<float>, std::vector<float>>& out, size_t from)
+{
+    auto worst = 0.0f;
+    for (auto i = from; i < out.first.size(); ++i)
+        worst = std::fmax(worst, std::abs(out.first[i] - out.second[i]));
+    return worst;
+}
+
+float worstStereoStep(const std::pair<std::vector<float>, std::vector<float>>& out)
+{
+    auto worst = 0.0f;
+    for (const auto* channel : { &out.first, &out.second })
+        for (size_t i = 1; i < channel->size(); ++i)
+            worst = std::isfinite((*channel)[i]) ? std::fmax(worst, std::abs((*channel)[i] - (*channel)[i - 1])) : 1.0e9f;
+    return worst;
+}
+
+void runLinkTests()
+{
+    const auto noChange = [](BqtAudioProcessor&) {};
+    const auto settled = static_cast<size_t>(0.1 * sampleRate);
+
+    const auto setupSat = [](BqtAudioProcessor& p, bool linked)
+    {
+        setParam(p, "eqLink", 0.0f);
+        setParam(p, "satLink", linked ? 1.0f : 0.0f);
+        setParam(p, "aDrive", 9.0f);
+        setParam(p, "bDrive", 0.0f);
+    };
+
+    const auto setupEq = [](BqtAudioProcessor& p, bool linked)
+    {
+        setParam(p, "satLink", 0.0f);
+        setParam(p, "eqLink", linked ? 1.0f : 0.0f);
+        setParam(p, "aHighGain", 4.0f);
+        setParam(p, "bHighGain", 0.0f);
+        // A's shelf low enough (1.6 kHz) that its +4 dB reaches the 220 Hz test tone.
+        setParam(p, "aHighFreq", 0.0f);
+        setParam(p, "bHighFreq", 7.0f);
+        setParam(p, "aLowFreq", 3.0f);
+        setParam(p, "bLowFreq", 0.0f);
+    };
+
+    // (a) Sat link: R runs on A's drive/mix/trim; unlinked, R keeps its own.
+    for (const bool linked : { true, false })
+    {
+        auto processor = makeProcessor();
+        setupSat(*processor, linked);
+        const auto diff = worstChannelDifference(renderStereoWithSwitch(*processor, 0.3, -1.0, noChange), settled);
+        check(linked ? diff < 1.0e-6f : diff > 0.01f,
+              linked ? "sat link: R follows A's drive (L == R)" : "sat unlinked: R uses its own drive (L != R)");
+        std::printf("sat link %s: worst L/R difference %.6f\n", linked ? "on" : "off", diff);
+    }
+
+    // (b) EQ link: R runs on A's gains and shelf frequencies; unlinked, R keeps its own.
+    for (const bool linked : { true, false })
+    {
+        auto processor = makeProcessor();
+        setupEq(*processor, linked);
+        const auto diff = worstChannelDifference(renderStereoWithSwitch(*processor, 0.3, -1.0, noChange), settled);
+        check(linked ? diff < 1.0e-6f : diff > 0.01f,
+              linked ? "eq link: R follows A's gains and frequencies (L == R)" : "eq unlinked: R uses its own EQ (L != R)");
+        std::printf("eq link %s: worst L/R difference %.6f\n", linked ? "on" : "off", diff);
+    }
+
+    // (c) Toggling sat link with differing sides retargets the smoothers: no click.
+    for (const bool from : { false, true })
+    {
+        auto processor = makeProcessor();
+        setupSat(*processor, from);
+        const auto out = renderStereoWithSwitch(*processor, 0.5, 0.2,
+            [from](BqtAudioProcessor& p) { setParam(p, "satLink", from ? 0.0f : 1.0f); });
+        const auto step = worstStereoStep(out);
+        check(step < 0.05f, "toggling sat link with differing sides is click-free");
+        std::printf("sat link %s: worst step %.4f\n", from ? "on->off" : "off->on", step);
+    }
+
+    // (d) Toggling eq link with differing shelf frequencies goes through the structural fade.
+    for (const bool from : { false, true })
+    {
+        auto processor = makeProcessor();
+        setupEq(*processor, from);
+        const auto out = renderStereoWithSwitch(*processor, 0.5, 0.2,
+            [from](BqtAudioProcessor& p) { setParam(p, "eqLink", from ? 0.0f : 1.0f); });
+        const auto step = worstStereoStep(out);
+        check(step < 0.05f, "toggling eq link with differing frequencies is click-free");
+        std::printf("eq link %s: worst step %.4f\n", from ? "on->off" : "off->on", step);
     }
 }
 } // namespace
@@ -927,6 +1103,8 @@ int main()
                         item.from, item.to, item.drive, step);
         }
     }
+
+    runLinkTests();
 
     if (failures == 0)
     {

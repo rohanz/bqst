@@ -87,6 +87,18 @@ void BqtAudioProcessor::cacheParameterPointers()
     paramPtrs.bypass     = get("bypass");
     paramPtrs.osRealtime = get("osRealtime");
     paramPtrs.osRender   = get("osRender");
+    paramPtrs.eqLink     = get("eqLink");
+    paramPtrs.satLink    = get("satLink");
+}
+
+size_t BqtAudioProcessor::eqSourceSide(size_t side) const
+{
+    return side == 1 && loadFlag(paramPtrs.eqLink) ? 0 : side;
+}
+
+size_t BqtAudioProcessor::satSourceSide(size_t side) const
+{
+    return side == 1 && loadFlag(paramPtrs.satLink) ? 0 : side;
 }
 
 void BqtAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
@@ -174,8 +186,10 @@ void BqtAudioProcessor::updateFilters()
     for (int side = 0; side < 2; ++side)
     {
         const auto sideIndex = static_cast<size_t>(side);
-        const auto lowGainDb = loadValue(paramPtrs.lowGain[sideIndex]);
-        const auto highGainDb = loadValue(paramPtrs.highGain[sideIndex]);
+        // Linked gains just retarget the smoothers, so a link toggle ramps like any knob move.
+        const auto source = eqSourceSide(sideIndex);
+        const auto lowGainDb = loadValue(paramPtrs.lowGain[source]);
+        const auto highGainDb = loadValue(paramPtrs.highGain[source]);
         const auto lowFreq = clampShelfFrequency(currentSampleRate, bqt::lowShelfFrequenciesHz[static_cast<size_t>(activeConfig.lowFreq[sideIndex])]);
         const auto highFreq = clampShelfFrequency(currentSampleRate, bqt::highShelfFrequenciesHz[static_cast<size_t>(activeConfig.highFreq[sideIndex])]);
 
@@ -244,11 +258,12 @@ BqtAudioProcessor::StructuralConfig BqtAudioProcessor::readStructuralConfig() co
 
     for (size_t side = 0; side < 2; ++side)
     {
+        const auto eqSource = eqSourceSide(side);
         config.satType[side] = loadChoice(paramPtrs.satType[side]);
         config.lowFreq[side] = juce::jlimit(0, static_cast<int>(bqt::lowShelfFrequenciesHz.size()) - 1,
-                                            loadChoice(paramPtrs.lowFreq[side]));
+                                            loadChoice(paramPtrs.lowFreq[eqSource]));
         config.highFreq[side] = juce::jlimit(0, static_cast<int>(bqt::highShelfFrequenciesHz.size()) - 1,
-                                             loadChoice(paramPtrs.highFreq[side]));
+                                             loadChoice(paramPtrs.highFreq[eqSource]));
     }
 
     return config;
@@ -378,13 +393,15 @@ void BqtAudioProcessor::processSide(float* samples, int numSamples, int sideInde
 {
     const auto smoothIndex = static_cast<size_t>(sideIndex);
     const auto dryBufferIndex = smoothIndex;
-    const auto driveDb = loadValue(paramPtrs.drive[smoothIndex]);
+    // Linked drive/mix/trim go through the same smoothers, so a link toggle ramps.
+    const auto source = satSourceSide(smoothIndex);
+    const auto driveDb = loadValue(paramPtrs.drive[source]);
     const auto satType = static_cast<bqt::SaturationType>(activeConfig.satType[smoothIndex]);
     driveAmount[smoothIndex].setTargetValue(driveDb / 18.0f);
     autoGainBlend[smoothIndex].setTargetValue(loadFlag(paramPtrs.autoGain) ? 1.0f : 0.0f);
     driveGain[smoothIndex].setTargetValue(dbToGain(driveDb * saturationDriveScale));
-    saturationMix[smoothIndex].setTargetValue(loadValue(paramPtrs.mix[smoothIndex]) / 100.0f);
-    outputTrimGain[smoothIndex].setTargetValue(dbToGain(loadValue(paramPtrs.outputTrim[smoothIndex])));
+    saturationMix[smoothIndex].setTargetValue(loadValue(paramPtrs.mix[source]) / 100.0f);
+    outputTrimGain[smoothIndex].setTargetValue(dbToGain(loadValue(paramPtrs.outputTrim[source])));
 
     // Engage the saturation path when drive and mix are non-zero now or by the end of the
     // block, so the wet signal is processed across the whole transition rather than snapping

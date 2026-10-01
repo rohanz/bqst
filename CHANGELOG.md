@@ -2,13 +2,19 @@
 
 ## 1.1.0
 
-Sound changes:
+Sound and behaviour changes:
 
 - New Cream algorithm. Cream has been rebuilt: thicker low end, more harmonic density through the
   mids and top, gentler peak rounding, and a Drive knob that moves continuously and evenly from
   transparent to heavily saturated. Existing sessions and presets that use Cream will sound
   different. The Cream factory presets have been retuned to keep their saturation amount.
 - New Vintage curve for both Cream and Grit: a broader, gentler top-end shelf.
+- Linking now happens inside the plugin. With EQ Link or Sat Link on, the R/S side follows the
+  L/M side and any R/S automation for that group is ignored. A linked knob move is now a single
+  undo step in hosts (it used to write both sides, which cost two). Turning a link off from its
+  button copies L/M into R/S first; Control no longer temporarily unlinks, but still moves both
+  sides while unlinked.
+- Sessions saved with a link on but differing sides now play R/S at the L/M value.
 
 Internal:
 

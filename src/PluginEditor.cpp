@@ -84,9 +84,9 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
     setTopBarHelp(aboutButton, "Shows plugin version, credits, and install details.");
     setTopBarHelp(inputTrim, "Adjusts level before the EQ and saturation. Control-drag compensates output trim.");
     setTopBarHelp(eqMode, "Chooses whether the EQ controls process left/right or mid/side.");
-    setTopBarHelp(eqLink, "Links the two EQ sides.");
+    setTopBarHelp(eqLink, "Links the two EQ sides: R/S follows L/M. Turn off to edit one side.");
     setTopBarHelp(satMode, "Chooses whether the saturation controls process left/right or mid/side.");
-    setTopBarHelp(satLink, "Links the two saturation sides.");
+    setTopBarHelp(satLink, "Links the two saturation sides: R/S follows L/M. Turn off to edit one side.");
     setTopBarHelp(osRealtime, "Sets oversampling used during normal playback.");
     setTopBarHelp(osRender, "Sets oversampling used for offline export or render.");
     setTopBarHelp(autoGain, "Compensates saturation drive level so changes are easier to compare.");
@@ -138,6 +138,20 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
     autoGainAttachment = std::make_unique<ButtonAttachment>(audioProcessor.state(), "autoGain", autoGain);
     eqLinkAttachment = std::make_unique<ButtonAttachment>(audioProcessor.state(), "eqLink", eqLink);
     satLinkAttachment = std::make_unique<ButtonAttachment>(audioProcessor.state(), "satLink", satLink);
+    // The link attachments write the parameter before onClick runs, so a click that turned a
+    // link off finds the button already off here.
+    eqLink.onClick = [this]
+    {
+        if (! eqLink.getToggleState())
+            unlinkGroupFromUi(bqt::editor::LinkGroup::eq);
+        updateLinkedAttachments();
+    };
+    satLink.onClick = [this]
+    {
+        if (! satLink.getToggleState())
+            unlinkGroupFromUi(bqt::editor::LinkGroup::sat);
+        updateLinkedAttachments();
+    };
     vintageAttachment = std::make_unique<ButtonAttachment>(audioProcessor.state(), "vintage", vintage);
     bypassAttachment = std::make_unique<ButtonAttachment>(audioProcessor.state(), "bypass", bypass);
     // bypassAttachment already writes the parameter (as one gesture) before onClick runs.
@@ -149,6 +163,9 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
     for (int side = 0; side < 2; ++side)
         configureSide(sideControls[static_cast<size_t>(side)], side);
 
+    // configureSide attached side B to its own parameters; point linked groups at side A's.
+    updateLinkedAttachments();
+
     // Sat type is not linked: this one button always sets both sides, whatever Sat Link or
     // Control say.
     satTypeButton.getProperties().set("bqtSatTypeSelector", true);
@@ -159,21 +176,23 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
     satTypeButton.onClick = [this] { toggleSatTypeBothSides(satTypeButton); };
     rackComponent.addAndMakeVisible(satTypeButton);
 
-    // Mirror only for a real user gesture on the source control.
+    // Ctrl-drag on an unlinked group moves both sides (see shouldMirrorToOtherSide). Linked groups
+    // are never mirrored here: the processor links them and side B's knobs edit side A's
+    // parameters (updateLinkedAttachments), so a linked move writes a single parameter.
     //
-    // onValueChange also fires when a SliderAttachment writes the slider in response to a
-    // parameter change, which is how host automation, preset loads and setStateInformation all
-    // arrive. Mirroring those corrupted state: an asymmetric pair with link on is reachable
-    // (ctrl-drag inverts the link, see shouldMirrorLinkedControls), and restoring one made side A
-    // mirror onto B, then B mirror back onto A, collapsing both onto whichever was restored last
-    // and pushing the wrong values back to the host via setValueNotifyingHost.
+    // Mirror only for a real user gesture on the source control. onValueChange also fires when a
+    // SliderAttachment writes the slider in response to a parameter change, which is how host
+    // automation, preset loads and setStateInformation all arrive. Mirroring those corrupted
+    // state: restoring an asymmetric pair made side A mirror onto B, then B mirror back onto A,
+    // collapsing both onto whichever was restored last and pushing the wrong values back to the
+    // host via setValueNotifyingHost.
     //
     // The gesture is tracked explicitly from the slider's drag notifications (mouse drags, wheel
     // steps, double-click resets and accessibility sets all send them), not inferred from the
     // mouse: a hover test also passed for automation arriving while the pointer rested on a knob.
-    auto mirrorSlider = [this](const char* linkParameterId, juce::Slider& source, juce::Slider& dest)
+    auto mirrorSlider = [this](bqt::editor::LinkGroup group, juce::Slider& source, juce::Slider& dest)
     {
-        if (! bqt::editor::shouldMirrorLinkedEdit(shouldMirrorLinkedControls(linkParameterId),
+        if (! bqt::editor::shouldMirrorLinkedEdit(shouldMirrorToOtherSide(group),
                                                   userGestures.isActive(&source),
                                                   isMirroringLinkedControl))
             return;
@@ -182,21 +201,22 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
         dest.setValue(source.getValue(), juce::sendNotificationSync);
     };
 
-    auto linkSides = [this, mirrorSlider](const char* linkParameterId, juce::Slider SideControls::* control)
+    auto linkSides = [this, mirrorSlider](bqt::editor::LinkGroup group, juce::Slider SideControls::* control)
     {
         auto& left = sideControls[0].*control;
         auto& right = sideControls[1].*control;
-        left.onValueChange = [mirrorSlider, linkParameterId, &left, &right] { mirrorSlider(linkParameterId, left, right); };
-        right.onValueChange = [mirrorSlider, linkParameterId, &left, &right] { mirrorSlider(linkParameterId, right, left); };
+        left.onValueChange = [mirrorSlider, group, &left, &right] { mirrorSlider(group, left, right); };
+        right.onValueChange = [mirrorSlider, group, &left, &right] { mirrorSlider(group, right, left); };
     };
 
-    linkSides("eqLink", &SideControls::lowGain);
-    linkSides("eqLink", &SideControls::lowFreq);
-    linkSides("eqLink", &SideControls::highGain);
-    linkSides("eqLink", &SideControls::highFreq);
-    linkSides("satLink", &SideControls::drive);
-    linkSides("satLink", &SideControls::mix);
-    linkSides("satLink", &SideControls::outputTrim);
+    using bqt::editor::LinkGroup;
+    linkSides(LinkGroup::eq, &SideControls::lowGain);
+    linkSides(LinkGroup::eq, &SideControls::lowFreq);
+    linkSides(LinkGroup::eq, &SideControls::highGain);
+    linkSides(LinkGroup::eq, &SideControls::highFreq);
+    linkSides(LinkGroup::sat, &SideControls::drive);
+    linkSides(LinkGroup::sat, &SideControls::mix);
+    linkSides(LinkGroup::sat, &SideControls::outputTrim);
 
     // Meter animation runs on the display refresh, not the message timer, and advances by real
     // elapsed time so a late frame still covers the right distance.

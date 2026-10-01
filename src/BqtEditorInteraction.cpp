@@ -16,6 +16,9 @@ void BqtAudioProcessorEditor::timerCallback()
     requestRackBypassVisualState(bypassIsOn);
 
     satTypeButton.setToggleState(sideControls[0].satType.getSelectedItemIndex() == 1, juce::dontSendNotification);
+    // Picks up link changes from host automation, preset loads and state restore; a click on a
+    // link button also calls this directly.
+    updateLinkedAttachments();
 
     if (activeReadoutSlider != nullptr)
     {
@@ -96,11 +99,98 @@ void BqtAudioProcessorEditor::sliderValueChanged(juce::Slider* slider)
     updateDragValueReadout(*slider);
 }
 
-bool BqtAudioProcessorEditor::shouldMirrorLinkedControls(const char* linkParameterId) const
+bool BqtAudioProcessorEditor::isGroupLinked(bqt::editor::LinkGroup group) const
 {
-    const auto linked = audioProcessor.state().getRawParameterValue(linkParameterId)->load() > 0.5f;
-    const auto controlDown = juce::ModifierKeys::currentModifiers.isCtrlDown();
-    return linked != controlDown;
+    return audioProcessor.state().getRawParameterValue(bqt::editor::linkParameterId(group))->load() > 0.5f;
+}
+
+// Only Ctrl-drags on an unlinked group are mirrored. A linked group needs no mirroring: the
+// processor links it, and side B's controls are attached to side A's parameters.
+bool BqtAudioProcessorEditor::shouldMirrorToOtherSide(bqt::editor::LinkGroup group) const
+{
+    return bqt::editor::ctrlMirrorsBothSides(isGroupLinked(group), juce::ModifierKeys::currentModifiers.isCtrlDown());
+}
+
+// While a group is linked, side B's knobs display and edit side A's parameters (two sliders can
+// share one parameter), so a linked move writes exactly one parameter -- one undo step in hosts
+// that record undo per parameter. Unlinked, they go back to side B's own parameters.
+void BqtAudioProcessorEditor::updateLinkedAttachments()
+{
+    using bqt::editor::LinkGroup;
+
+    struct LinkedControl
+    {
+        const char* suffix;
+        juce::Slider SideControls::* slider;
+        std::unique_ptr<SliderAttachment> SideControls::* attachment;
+    };
+
+    static const std::array<LinkedControl, 4> eqControls { {
+        { "LowGain",  &SideControls::lowGain,  &SideControls::lowGainAttachment },
+        { "LowFreq",  &SideControls::lowFreq,  &SideControls::lowFreqAttachment },
+        { "HighGain", &SideControls::highGain, &SideControls::highGainAttachment },
+        { "HighFreq", &SideControls::highFreq, &SideControls::highFreqAttachment },
+    } };
+    static const std::array<LinkedControl, 3> satControls { {
+        { "Drive",      &SideControls::drive,      &SideControls::driveAttachment },
+        { "Mix",        &SideControls::mix,        &SideControls::mixAttachment },
+        { "OutputTrim", &SideControls::outputTrim, &SideControls::outputTrimAttachment },
+    } };
+
+    const auto update = [this](LinkGroup group, const auto& controls)
+    {
+        const auto groupIndex = static_cast<size_t>(group);
+        const auto linked = isGroupLinked(group);
+        if (sideBAttachedToA[groupIndex] == linked)
+            return;
+
+        // Swapping an attachment mid-drag would leave its gesture open on the old parameter, so a
+        // host link change during a drag lands once the drag ends (this runs on every timer tick).
+        for (const auto& control : controls)
+            for (auto& side : sideControls)
+                if (userGestures.isActive(&(side.*control.slider)))
+                    return;
+
+        auto& sideB = sideControls[1];
+        for (const auto& control : controls)
+        {
+            (sideB.*control.attachment).reset();
+            (sideB.*control.attachment) = std::make_unique<SliderAttachment>(
+                audioProcessor.state(), bqt::editor::attachedParameterId(1, control.suffix, linked), sideB.*control.slider);
+        }
+
+        sideBAttachedToA[groupIndex] = linked;
+    };
+
+    update(LinkGroup::eq, eqControls);
+    update(LinkGroup::sat, satControls);
+}
+
+// The user clicked a link button off. Side B has been ignored while linked, so its stored values
+// may be stale; copy side A's in (one gesture per parameter, one plugin undo step together with
+// the link change) so R/S keeps sounding the same. Unlinking via host automation or state restore
+// does not come through here: there side B simply reveals its stored values.
+void BqtAudioProcessorEditor::unlinkGroupFromUi(bqt::editor::LinkGroup group)
+{
+    // A mouse click already opened the capture in mouseDown (before the link parameter changed),
+    // so beginUndoableEdit is a no-op then; a keyboard press on the button gets its own capture.
+    beginUndoableEdit();
+    const auto writes = bqt::editor::unlinkCopyWrites(group, [this](const juce::String& id)
+    {
+        auto* parameter = audioProcessor.state().getParameter(id);
+        return parameter != nullptr ? parameter->getValue() : 0.0f;
+    });
+
+    for (const auto& [id, value] : writes)
+    {
+        if (auto* parameter = audioProcessor.state().getParameter(id))
+        {
+            parameter->beginChangeGesture();
+            parameter->setValueNotifyingHost(value);
+            parameter->endChangeGesture();
+        }
+    }
+    finishUndoableEdit();
 }
 
 void BqtAudioProcessorEditor::beginMirroredParameterGesture(const juce::String& parameterId)
@@ -117,8 +207,8 @@ void BqtAudioProcessorEditor::beginMirroredParameterGesture(const juce::String& 
 
 void BqtAudioProcessorEditor::beginLinkedMirrorGestureFor(juce::Slider& slider)
 {
-    const auto eqLinked = shouldMirrorLinkedControls("eqLink");
-    const auto satLinked = shouldMirrorLinkedControls("satLink");
+    const auto eqLinked = shouldMirrorToOtherSide(bqt::editor::LinkGroup::eq);
+    const auto satLinked = shouldMirrorToOtherSide(bqt::editor::LinkGroup::sat);
 
     for (int sideIndex = 0; sideIndex < 2; ++sideIndex)
     {
@@ -151,7 +241,9 @@ void BqtAudioProcessorEditor::endLinkedMirrorGestures()
 
 void BqtAudioProcessorEditor::mirrorLinkedSteppedFrequencyVisual(juce::Slider& slider)
 {
-    if (! shouldMirrorLinkedControls("eqLink"))
+    // The frequency knobs only write their parameter on release, so the other side's knob would
+    // otherwise lag the drag: show it moving whether the processor links it or Ctrl mirrors it.
+    if (! isGroupLinked(bqt::editor::LinkGroup::eq) && ! shouldMirrorToOtherSide(bqt::editor::LinkGroup::eq))
         return;
 
     auto& left = sideControls[0];
@@ -211,7 +303,7 @@ void BqtAudioProcessorEditor::toggleSatTypeBothSides(juce::Button& button)
 
 void BqtAudioProcessorEditor::commitMirroredSteppedFrequency(juce::Slider& slider)
 {
-    if (! shouldMirrorLinkedControls("eqLink"))
+    if (! shouldMirrorToOtherSide(bqt::editor::LinkGroup::eq))
         return;
 
     for (int sideIndex = 0; sideIndex < 2; ++sideIndex)

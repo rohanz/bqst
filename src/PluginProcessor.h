@@ -113,6 +113,8 @@ private:
         bool satBypassed = false;
         bool vintage = false;
         std::array<int, 2> satType { 0, 0 };
+        // Effective shelf frequency indices, with EQ Link already applied (side B = side A's), so
+        // a link toggle that changes B's frequency is adopted through the fade like any switch.
         std::array<int, 2> lowFreq { 0, 0 };
         std::array<int, 2> highFreq { 0, 0 };
         // Active oversampler (-1 = off). A factor change swaps in an oversampler with zero state
@@ -217,7 +219,15 @@ private:
         std::atomic<float>* bypass = nullptr;
         std::atomic<float>* osRealtime = nullptr;
         std::atomic<float>* osRender = nullptr;
+        std::atomic<float>* eqLink = nullptr;
+        std::atomic<float>* satLink = nullptr;
     } paramPtrs;
+
+    // Linking happens here rather than in the editor: while a group is linked, side B reads side
+    // A's parameters for it and its own are ignored. So a linked knob move writes one parameter
+    // (one host undo step), and B's stored values come back when the group is unlinked.
+    size_t eqSourceSide(size_t side) const;
+    size_t satSourceSide(size_t side) const;
 
     // The saturation tone filters depend only on the sample rate and the vintage flag,
     // so they are rebuilt only when one of those actually changes (never per block).
