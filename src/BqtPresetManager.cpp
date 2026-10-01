@@ -24,7 +24,7 @@ constexpr FactoryPreset factoryPresets[] {
     { "Default", "General", {} },
     { "Clean Bax Lift", "Master",
       {
-          { "aDrive", 3.0f }, { "bDrive", 3.0f },
+          { "aDrive", 1.0f }, { "bDrive", 1.0f },
           { "aHighGain", 1.2f }, { "bHighGain", 1.2f },
           { "aHighFreq", 5.0f }, { "bHighFreq", 5.0f },
           { "aLowGain", 1.4f },  { "bLowGain", 1.4f },
@@ -32,7 +32,7 @@ constexpr FactoryPreset factoryPresets[] {
       } },
     { "Cream Glue", "Saturation",
       {
-          { "aDrive", 10.3f }, { "bDrive", 10.3f },
+          { "aDrive", 6.8f }, { "bDrive", 6.8f },
           { "aMix", 74.4f },  { "bMix", 74.4f },
           { "aSatType", 0.0f }, { "bSatType", 0.0f },
           { "vintage", 1.0f },
@@ -48,7 +48,7 @@ constexpr FactoryPreset factoryPresets[] {
       } },
     { "Cream Sheen", "Saturation",
       {
-          { "aDrive", 7.4f }, { "bDrive", 7.4f },
+          { "aDrive", 3.7f }, { "bDrive", 3.7f },
           { "aHighFreq", 6.0f }, { "bHighFreq", 6.0f },
           { "aHighGain", 1.1f }, { "bHighGain", 1.1f },
           { "aLowGain", 0.6f }, { "bLowGain", 0.6f },
@@ -70,7 +70,7 @@ constexpr FactoryPreset factoryPresets[] {
           { "aHighFreq", 6.0f }, { "bHighFreq", 6.0f },
           { "aLowFreq", 1.0f }, { "bLowFreq", 1.0f },
           { "aLowGain", 0.8f }, { "bLowGain", 0.8f },
-          { "aDrive", 3.2f },    { "bDrive", 3.2f },
+          { "aDrive", 1.0f },    { "bDrive", 1.0f },
           { "aMix", 45.0f },     { "bMix", 45.0f },
           { "aSatType", 0.0f },  { "bSatType", 0.0f },
       } },
