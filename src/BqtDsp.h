@@ -130,8 +130,9 @@ inline float saturationAutoGain(float drive01, SaturationType type)
     if (drive01 <= 0.0f)
         return 1.0f;
 
-    // Cream: static table calibrated across materials by tools/cream_model. It may exceed 1 at
-    // low drive, where the model adds loudness before it starts to compress.
+    // Cream: static table calibrated across materials by tools/cream_model. It is makeup gain,
+    // >= unity everywhere (0 dB rising to about +3.7 dB at full drive), because the model gets
+    // quieter as it compresses.
     if (type == SaturationType::density)
         return CreamModel::autoGainForKnob(drive01 * 18.0f);
 

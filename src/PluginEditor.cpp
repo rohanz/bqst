@@ -94,7 +94,7 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
     setTopBarHelp(osRender, "Sets oversampling used for offline export or render.");
     setTopBarHelp(autoGain, "Compensates saturation drive level so changes are easier to compare.");
     setTopBarHelp(bypass, "Bypasses the whole plugin.");
-    setTopBarHelp(sizeSelect, "Switches between normal and large plugin size.");
+    setTopBarHelp(sizeSelect, "Scales the plugin window to 75%, 100%, 125% or 150%.");
     setTopBarHelp(vintage, "Gently rounds the top end after saturation.");
 
     for (auto* button : { &autoGain, &eqBypass, &satBypass, &eqLink, &satLink, &bypass })

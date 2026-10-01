@@ -13,6 +13,8 @@ sample_rate = 48000.0
 duration_seconds = 3.0
 num_samples = int(sample_rate * duration_seconds)
 drive_scale = 0.40
+coloration_ramp_scale = 3.0  # colorationRampScale: full colour at 6 dB of the 18 dB range
+dc_blocker_hz = 5.0
 
 
 @dataclass
@@ -103,7 +105,11 @@ def transformer_saturate(sample, drive01):
 
 
 def process_saturation(samples, drive01):
-    """Grit's saturation tone path, mirroring the plugin's processSide for SaturationType::transformer."""
+    """Grit's wet path, mirroring the plugin's processSide Grit branch (Vintage off, before autogain).
+
+    The linear filters and the 5 Hz DC blocker are blended toward their input by the colour ramp
+    min(1, coloration_ramp_scale * drive01), as in the plugin.
+    """
     pre_low = make_low_shelf(95.0, 0.55, db_to_gain(-2.2))
     post_low = make_low_shelf(95.0, 0.55, db_to_gain(2.2))
     low_drive = make_low_shelf(165.0, 0.62, db_to_gain(1.10))
@@ -112,15 +118,28 @@ def process_saturation(samples, drive01):
     top = make_high_shelf(7800.0, 0.50, db_to_gain(-0.75))
 
     gain = db_to_gain(drive01 * 18.0 * drive_scale)
+    color = min(1.0, drive01 * coloration_ramp_scale)
+    dc_coefficient = math.exp(-2.0 * math.pi * dc_blocker_hz / sample_rate)
+    previous_input = 0.0
+    previous_output = 0.0
+
+    def colored(filt, x):
+        return x + (filt.process(x) - x) * color
+
     out = []
     for sample in samples:
-        value = pre_low.process(sample)
-        value = low_drive.process(value)
-        value = weight.process(value)
+        value = colored(pre_low, sample)
+        value = colored(low_drive, value)
+        value = colored(weight, value)
         value = transformer_saturate(value * gain, drive01)
-        value = low_restore.process(value)
-        value = top.process(value)
-        value = post_low.process(value)
+        value = colored(low_restore, value)
+        value = colored(top, value)
+        value = colored(post_low, value)
+
+        blocked = value - previous_input + dc_coefficient * previous_output
+        previous_input = value
+        previous_output = blocked
+        value += (blocked - value) * color
         out.append(value)
     return out
 

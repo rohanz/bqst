@@ -640,8 +640,9 @@ void BqtAudioProcessor::updateLatency()
         currentLatencySamples.store(latency);
         // Only raise a flag here. setLatencySamples() notifies the host and can take locks, so it
         // cannot run on the audio thread -- but neither can triggerAsyncUpdate(), which posts to
-        // the message queue behind a CriticalSection and may reallocate. The editor's timer polls
-        // this flag, and prepareToPlay reports directly since it runs on the message thread.
+        // the message queue behind a CriticalSection and may reallocate. The processor's own timer
+        // (timerCallback) polls this flag, and prepareToPlay reports directly since it runs on
+        // the message thread.
         latencyNeedsReporting.store(true);
     }
 }

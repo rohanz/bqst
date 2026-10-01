@@ -316,7 +316,7 @@ v   = (clip(z + bias) - clip(bias)) / (drive * inputLevel)
 v  += lf2Gain * drive^lf2Slope * LP1(z, lf2Hz)^2 / (drive * inputLevel)
       (low-passed even-harmonic path: low-end thickening)
 v   = deemphasis(v)                    high shelf emphHz, Q emphQ, post gain (see below)
-out = DCblock(v, dcBlockerHz = 5 Hz)   Cream's own DC blocker
+out = v + (DCblock(v) - v) * color     Cream's own DC blocker (dcBlockerHz = 5 Hz), colour-blended
 ```
 
 - **Drive** is the knob mapped through the generated taper table `knobDrive[]` (0.25 dB
@@ -422,8 +422,9 @@ and smoothed per sample, applied to the wet signal before the mix.
 knob steps, linearly interpolated; exactly 0 dB at knob 0). It is calibrated offline for a
 median loudness change of 0 LU across a multi-material set (sine, 808, bassline, drum bus,
 dense master, plus the model's calibration clips), and the generator prints the per-material
-spread. Because the model's low end and density can make it quieter than the dry signal at
-low drive, the table can exceed unity there; that is expected. Regenerate it only through
+spread. The table is makeup gain, at or above unity everywhere (0 dB at knob 0, rising to
+about +3.7 dB at 18 dB), because the model gets quieter as it compresses; that is expected.
+Regenerate it only through
 `cd tools/cream_model && uv run python -m density.bqst_export`; never hand-edit the values.
 
 **Grit** keeps its formula:

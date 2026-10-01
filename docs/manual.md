@@ -16,11 +16,11 @@ Input Trim -> EQ -> Saturation -> Mix -> Output Trim
 
 **EQ L/R or EQ M/S** selects how the EQ module is routed.
 
-**EQ Link** links the two EQ sides. When linked, moving either side moves the other side. Hold Control to temporarily edit one side only.
+**EQ Link** links the two EQ sides. When linked, moving either side moves the other side. Holding Control temporarily inverts the link: with Link on, Control edits one side only; with Link off, Control moves both sides together.
 
 **Sat L/R or Sat M/S** selects how the saturation module is routed.
 
-**Sat Link** links the two saturation sides. When linked, moving either side moves the other side. Hold Control to temporarily edit one side only.
+**Sat Link** links the two saturation sides. When linked, moving either side moves the other side. Holding Control temporarily inverts the link: with Link on, Control edits one side only; with Link off, Control moves both sides together.
 
 **Realtime Oversampling** sets oversampling during normal playback.
 
@@ -71,7 +71,7 @@ amount of saturation, so subtle settings get plenty of travel.
 
 **Grit** is a firmer transformer-style saturation character with more bite.
 
-**Vintage** softens the top end after saturation with a broad, gentle shelf.
+**Vintage** softens the top end after saturation with a broad, gentle shelf. It acts on the saturated signal only, so it has no effect when Drive or Mix is at 0, and it fades in over the first 6 dB of Drive.
 
 **Drive** controls how hard the saturation stage is pushed.
 
@@ -97,7 +97,7 @@ Drag a knob to adjust it.
 
 Hold Shift while dragging for finer control.
 
-Double-click a knob to reset it to its default.
+Double-click the Input, HF, LF, Drive, Mix or Output knob to reset it to its default (0 dB, or 100% for Mix). The frequency knobs have no double-click reset.
 
 Hover over a knob to see its current value.
 
