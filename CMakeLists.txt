@@ -165,4 +165,13 @@ if (BQST_BUILD_TESTS)
     )
 
     add_test(NAME BqstChainTests COMMAND BqstChainTests)
+
+    # Bit-exact refactor check (not a CTest): render before and after a refactor, then cmp.
+    juce_add_console_app(BqstGoldenRender PRODUCT_NAME "BqstGoldenRender")
+    target_sources(BqstGoldenRender PRIVATE tests/golden_render.cpp src/PluginProcessor.cpp
+                                            src/BqtParameterLayout.cpp src/BqtProcessorDsp.cpp)
+    target_compile_definitions(BqstGoldenRender PRIVATE BQST_HEADLESS_TESTS=1 JUCE_WEB_BROWSER=0
+                               JUCE_USE_CURL=0 JUCE_STANDALONE_APPLICATION=1 JucePlugin_Name="BQST")
+    target_link_libraries(BqstGoldenRender PRIVATE juce::juce_audio_processors juce::juce_audio_utils
+                          juce::juce_dsp PUBLIC juce::juce_recommended_config_flags)
 endif()
