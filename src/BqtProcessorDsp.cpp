@@ -1,6 +1,8 @@
 #include "PluginProcessor.h"
 #include "BqtParameterIds.h"
 
+#include <limits>
+
 namespace
 {
 constexpr auto numOversamplingFactors = 3;
@@ -124,6 +126,7 @@ void BqtAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
         driveGain[index].reset(sampleRate, parameterSmoothingSeconds);
         saturationMix[index].reset(sampleRate, parameterSmoothingSeconds);
         outputTrimGain[index].reset(sampleRate, parameterSmoothingSeconds);
+        autoGainBlend[index].reset(sampleRate, parameterSmoothingSeconds);
 
         eqLowGainDb[index].setCurrentAndTargetValue(0.0f);
         eqHighGainDb[index].setCurrentAndTargetValue(0.0f);
@@ -131,6 +134,7 @@ void BqtAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
         driveGain[index].setCurrentAndTargetValue(1.0f);
         saturationMix[index].setCurrentAndTargetValue(1.0f);
         outputTrimGain[index].setCurrentAndTargetValue(1.0f);
+        autoGainBlend[index].setCurrentAndTargetValue(loadFlag(paramPtrs.autoGain) ? 1.0f : 0.0f);
     }
 
     for (int factorIndex = 0; factorIndex < numOversamplingFactors; ++factorIndex)
@@ -156,8 +160,7 @@ void BqtAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
 
     // Set the saturation-side smoothers to the oversampled rate they will actually be consumed
     // at. State is already reset above, so no second reset is needed here.
-    lastActiveOversamplingIndex = getActiveOversamplingIndex();
-    applyOversamplingFactorChange(lastActiveOversamplingIndex, sampleRate, false);
+    applyOversamplingFactorChange(activeConfig.oversamplingIndex, sampleRate, false);
 
     // prepareToPlay runs on the message thread, so set the host latency directly here.
     currentLatencySamples.store(computeLatencySamples());
@@ -237,6 +240,7 @@ BqtAudioProcessor::StructuralConfig BqtAudioProcessor::readStructuralConfig() co
     config.eqBypassed = loadFlag(paramPtrs.eqBypass);
     config.satBypassed = loadFlag(paramPtrs.satBypass);
     config.vintage = loadFlag(paramPtrs.vintage);
+    config.oversamplingIndex = getActiveOversamplingIndex();
 
     for (size_t side = 0; side < 2; ++side)
     {
@@ -250,9 +254,19 @@ BqtAudioProcessor::StructuralConfig BqtAudioProcessor::readStructuralConfig() co
     return config;
 }
 
-void BqtAudioProcessor::adoptPendingStructuralConfig(const StructuralConfig& pending)
+void BqtAudioProcessor::adoptPendingStructuralConfig(const StructuralConfig& pending, double hostSampleRate)
 {
+    const auto oversamplingChanged = pending.oversamplingIndex != activeConfig.oversamplingIndex;
     activeConfig = pending;
+
+    // Covers both a user change to the oversampling control and the realtime -> render
+    // transition, which switches from osRealtime to osRender without a prepareToPlay in hosts
+    // that do not re-prepare for offline bounces.
+    if (oversamplingChanged)
+    {
+        applyOversamplingFactorChange(activeConfig.oversamplingIndex, hostSampleRate, true);
+        updateLatency();
+    }
 
     // Adopt at the bottom of the fade, and clear the filter state that the old configuration
     // accumulated. Without this the new routing/coefficients would ring out the old state as a
@@ -286,7 +300,7 @@ void BqtAudioProcessor::advanceStructuralTransition(double hostSampleRate)
         case StructuralTransition::fadingOut:
             if (structuralGain <= 0.0f)
             {
-                adoptPendingStructuralConfig(pending);
+                adoptPendingStructuralConfig(pending, hostSampleRate);
                 structuralTransition = StructuralTransition::fadingIn;
             }
             break;
@@ -297,6 +311,17 @@ void BqtAudioProcessor::advanceStructuralTransition(double hostSampleRate)
                                                                : StructuralTransition::idle;
             break;
     }
+}
+
+// While fading out, the number of samples until the gain reaches zero; otherwise INT_MAX.
+// processSubBlock stops there so the new config is adopted at the bottom of the fade rather than
+// at the next host block, which left the output silent for the rest of a large block.
+int BqtAudioProcessor::samplesUntilFadeBottom() const
+{
+    if (structuralTransition != StructuralTransition::fadingOut)
+        return std::numeric_limits<int>::max();
+
+    return juce::jmax(1, static_cast<int>(std::ceil(structuralGain / structuralStep)));
 }
 
 void BqtAudioProcessor::applyStructuralTransitionGain(float* left, float* right, int numSamples)
@@ -355,9 +380,8 @@ void BqtAudioProcessor::processSide(float* samples, int numSamples, int sideInde
     const auto dryBufferIndex = smoothIndex;
     const auto driveDb = loadValue(paramPtrs.drive[smoothIndex]);
     const auto satType = static_cast<bqt::SaturationType>(activeConfig.satType[smoothIndex]);
-    const auto autoGainEnabled = loadFlag(paramPtrs.autoGain);
-
     driveAmount[smoothIndex].setTargetValue(driveDb / 18.0f);
+    autoGainBlend[smoothIndex].setTargetValue(loadFlag(paramPtrs.autoGain) ? 1.0f : 0.0f);
     driveGain[smoothIndex].setTargetValue(dbToGain(driveDb * saturationDriveScale));
     saturationMix[smoothIndex].setTargetValue(loadValue(paramPtrs.mix[smoothIndex]) / 100.0f);
     outputTrimGain[smoothIndex].setTargetValue(dbToGain(loadValue(paramPtrs.outputTrim[smoothIndex])));
@@ -393,7 +417,7 @@ void BqtAudioProcessor::processSide(float* samples, int numSamples, int sideInde
                                                  * dcBlockerHz / static_cast<float>(currentSampleRate));
         auto& previousInput = dcBlockPreviousInput[smoothIndex];
         auto& previousOutput = dcBlockPreviousOutput[smoothIndex];
-        auto compensation = 1.0f;
+        auto autoGain = 1.0f;
 
         for (int sample = 0; sample < numSamples; ++sample)
         {
@@ -402,6 +426,7 @@ void BqtAudioProcessor::processSide(float* samples, int numSamples, int sideInde
             const auto drive = driveAmount[smoothIndex].getNextValue();
             const auto driveGainValue = driveGain[smoothIndex].getNextValue();
             const auto mix = saturationMix[smoothIndex].getNextValue();
+            const auto autoGainAmount = autoGainBlend[smoothIndex].getNextValue();
 
             // saturationAutoGain calls std::pow, which at 8x oversampling ran ~768k times a
             // second in stereo whenever drive was non-zero. It is a smooth function of drive, so
@@ -409,7 +434,7 @@ void BqtAudioProcessor::processSide(float* samples, int numSamples, int sideInde
             // exactly constant anyway.
             if (sample % controlRateInterval == 0)
             {
-                compensation = autoGainEnabled ? bqt::saturationAutoGain(drive, satType) : 1.0f;
+                autoGain = bqt::saturationAutoGain(drive, satType);
                 if (isDensity)
                     creamModels[smoothIndex].setKnob(static_cast<double>(drive) * 18.0);
             }
@@ -447,6 +472,9 @@ void BqtAudioProcessor::processSide(float* samples, int numSamples, int sideInde
                 value += (blocked - value) * color;
             }
 
+            // Blend toward the autogain rather than smoothing the gain itself: the toggle ramps,
+            // while drive automation still tracks the autogain without an extra lag.
+            const auto compensation = 1.0f + (autoGain - 1.0f) * autoGainAmount;
             const auto wet = value * compensation;
             samples[sample] = dry[sample] + (wet - dry[sample]) * mix;
         }
@@ -457,6 +485,7 @@ void BqtAudioProcessor::processSide(float* samples, int numSamples, int sideInde
         driveAmount[smoothIndex].skip(numSamples);
         driveGain[smoothIndex].skip(numSamples);
         saturationMix[smoothIndex].skip(numSamples);
+        autoGainBlend[smoothIndex].skip(numSamples);
     }
 
     for (int sample = 0; sample < numSamples; ++sample)
@@ -604,6 +633,7 @@ void BqtAudioProcessor::applyOversamplingFactorChange(int oversamplingIndex, dou
         rerate(driveGain[index]);
         rerate(saturationMix[index]);
         rerate(outputTrimGain[index]);
+        rerate(autoGainBlend[index]);
     }
 
     if (resetState)
@@ -623,7 +653,8 @@ void BqtAudioProcessor::applyOversamplingFactorChange(int oversamplingIndex, dou
 
 int BqtAudioProcessor::computeLatencySamples() const
 {
-    const auto oversamplingIndex = getActiveOversamplingIndex();
+    // The running oversampler, which only changes at the bottom of a structural fade.
+    const auto oversamplingIndex = activeConfig.oversamplingIndex;
 
     if (oversamplingIndex >= 0 && oversamplers[static_cast<size_t>(oversamplingIndex)] != nullptr)
         return static_cast<int>(std::round(oversamplers[static_cast<size_t>(oversamplingIndex)]->getLatencyInSamples()));
@@ -676,11 +707,11 @@ void BqtAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
     auto* right = buffer.getWritePointer(1);
     const auto totalSamples = buffer.getNumSamples();
 
-    for (int offset = 0; offset < totalSamples; offset += preparedBlockSize)
-        processSubBlock(left + offset, right + offset, juce::jmin(preparedBlockSize, totalSamples - offset));
+    for (int offset = 0; offset < totalSamples;)
+        offset += processSubBlock(left + offset, right + offset, juce::jmin(preparedBlockSize, totalSamples - offset));
 }
 
-void BqtAudioProcessor::processSubBlock(float* left, float* right, int numSamples)
+int BqtAudioProcessor::processSubBlock(float* left, float* right, int numSamples)
 {
     const auto hostSampleRate = getSampleRate();
     currentSampleRate = hostSampleRate;
@@ -689,6 +720,17 @@ void BqtAudioProcessor::processSubBlock(float* left, float* right, int numSample
     const auto bypassEnabled = loadFlag(paramPtrs.bypass);
     globalBypassMix.setTargetValue(bypassEnabled ? 1.0f : 0.0f);
     const auto needsBypassCrossfade = bypassEnabled || globalBypassMix.isSmoothing() || globalBypassMix.getCurrentValue() > 0.0f;
+    const auto fullyBypassed = bypassEnabled && ! globalBypassMix.isSmoothing() && globalBypassMix.getCurrentValue() >= 1.0f;
+
+    if (! fullyBypassed)
+    {
+        // A discrete switch changing mid-signal steps coefficients or reroutes channels with live
+        // filter state, which clicks. Adopt any change at the bottom of a short fade instead, and
+        // stop this chunk there so the adoption happens at the next sample rather than after the
+        // rest of the host block has been faded to silence.
+        advanceStructuralTransition(hostSampleRate);
+        numSamples = juce::jmin(numSamples, samplesUntilFadeBottom());
+    }
 
     // Feed the latency-compensating dry delay lines on every block, not just while a crossfade
     // is running. If they are only fed during a crossfade they hold reset() zeros the first time
@@ -703,28 +745,14 @@ void BqtAudioProcessor::processSubBlock(float* left, float* right, int numSample
     applyLatencyDelay(dryLeft, numSamples, 0);
     applyLatencyDelay(dryRight, numSamples, 1);
 
-    if (needsBypassCrossfade && bypassEnabled && !globalBypassMix.isSmoothing()
-        && globalBypassMix.getCurrentValue() >= 1.0f)
+    if (fullyBypassed)
     {
         juce::FloatVectorOperations::copy(left, dryLeft, numSamples);
         juce::FloatVectorOperations::copy(right, dryRight, numSamples);
-        return;
+        return numSamples;
     }
 
-    // A discrete switch changing mid-signal steps coefficients or reroutes channels with live
-    // filter state, which clicks. Adopt any change at the bottom of a short fade instead.
-    advanceStructuralTransition(hostSampleRate);
-
-    const auto oversamplingIndex = getActiveOversamplingIndex();
-
-    // Covers both a user change to the oversampling control and the realtime -> render
-    // transition, which switches from osRealtime to osRender without a prepareToPlay in hosts
-    // that do not re-prepare for offline bounces.
-    if (oversamplingIndex != lastActiveOversamplingIndex)
-    {
-        applyOversamplingFactorChange(oversamplingIndex, hostSampleRate, true);
-        lastActiveOversamplingIndex = oversamplingIndex;
-    }
+    const auto oversamplingIndex = activeConfig.oversamplingIndex;
 
     // The EQ is linear, so it runs at the host rate outside the oversampled region: cheaper, and
     // its curve no longer depends on the oversampling factor. Only the saturation, which is what
@@ -761,4 +789,6 @@ void BqtAudioProcessor::processSubBlock(float* left, float* right, int numSample
             right[sample] = right[sample] + (dryRight[sample] - right[sample]) * bypassMix;
         }
     }
+
+    return numSamples;
 }

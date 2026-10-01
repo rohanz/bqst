@@ -278,9 +278,12 @@ host block
 
 Choices are Off, 2x, 4x, 8x (IIR half-band polyphase), with separate realtime and
 render parameters. Latency comes from the active oversampler and is reported via
-the latency flag and timer (see Real-Time Safety). A factor change re-rates the
-saturation smoothers and resets the oversampler, the saturation state and the dry
-delay lines.
+the latency flag and timer (see Real-Time Safety). A factor change (including the
+realtime -> render switch) is a structural change: it lands at the bottom of the 4 ms
+structural fade, where the saturation smoothers are re-rated and the oversampler, the
+saturation state and the dry delay lines are reset. Structural changes are adopted on
+the sample the fade reaches zero (`processSubBlock` stops there), so the silent gap
+never depends on the host block size.
 
 ## Saturation Algorithms
 

@@ -9,8 +9,10 @@
 #include "../src/BqtPresetManager.h"
 #include "../src/PluginProcessor.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <functional>
 #include <vector>
 
 namespace
@@ -635,7 +637,9 @@ int main()
             finite = finite && std::isfinite(out[i]);
             worstStep = std::fmax(worstStep, std::abs(out[i] - out[i - 1]));
         }
-        check(finite && worstStep < 0.1f, "oversampling switch with Cream is click-free");
+        check(finite && worstStep < 0.03f, "oversampling switch with Cream is click-free");
+        if (worstStep >= 0.03f)
+            std::printf("  (oversampling switch with Cream: worst sample step %.4f)\n", worstStep);
     }
 
     // Review focus 2: loud then silence decays to silence.
@@ -723,6 +727,131 @@ int main()
             }
         }
         check(worstStep < 0.05f, "drive automation across zero is click-free");
+    }
+
+    // Structural fades, autogain toggle and oversampling switch at arbitrary host block sizes.
+    // Renders a 220 Hz 0.5 sine in `hostBlock`-sized blocks, applying `change` to the processor
+    // once `switchAt` seconds have elapsed.
+    {
+        const auto renderWithSwitch = [](int hostBlock, double seconds, double switchAt,
+                                         const std::function<void(BqtAudioProcessor&)>& setup,
+                                         const std::function<void(BqtAudioProcessor&)>& change)
+        {
+            BqtAudioProcessor processor;
+            processor.setPlayConfigDetails(2, 2, sampleRate, hostBlock);
+            processor.prepareToPlay(sampleRate, hostBlock);
+            setup(processor);
+
+            juce::AudioBuffer<float> buffer(2, hostBlock);
+            juce::MidiBuffer midi;
+            auto phase = 0.0;
+            const auto increment = 2.0 * juce::MathConstants<double>::pi * 220.0 / sampleRate;
+            const auto total = static_cast<int>(sampleRate * seconds);
+            const auto switchSample = static_cast<int>(sampleRate * switchAt);
+            auto switched = false;
+            std::vector<float> out;
+
+            for (int done = 0; done < total; done += hostBlock)
+            {
+                if (! switched && done >= switchSample)
+                {
+                    change(processor);
+                    switched = true;
+                }
+
+                for (int i = 0; i < hostBlock; ++i)
+                {
+                    const auto v = 0.5f * static_cast<float>(std::sin(phase));
+                    buffer.setSample(0, i, v);
+                    buffer.setSample(1, i, v);
+                    phase += increment;
+                }
+                processor.processBlock(buffer, midi);
+                for (int i = 0; i < hostBlock; ++i)
+                    out.push_back(buffer.getSample(0, i));
+            }
+            return out;
+        };
+
+        const auto worstStepOf = [](const std::vector<float>& out)
+        {
+            auto worst = 0.0f;
+            for (size_t i = 1; i < out.size(); ++i)
+                worst = std::isfinite(out[i]) ? std::fmax(worst, std::abs(out[i] - out[i - 1])) : 1.0e9f;
+            return worst;
+        };
+
+        const auto longestSilenceOf = [](const std::vector<float>& out)
+        {
+            size_t longest = 0, run = 0;
+            for (auto v : out)
+            {
+                run = std::abs(v) < 1.0e-6f ? run + 1 : 0;
+                longest = std::max(longest, run);
+            }
+            return longest;
+        };
+
+        // A discrete switch fades out, adopts and fades back in. The fade reached zero mid-block
+        // but the new config was only adopted at the next block, so the output sat at exact
+        // silence for the rest of the host block (1857 samples at 2048).
+        for (const char* id : { "vintage", "aSatType" })
+            for (int hostBlock : { 256, 1024, 2048 })
+            {
+                const auto out = renderWithSwitch(hostBlock, 0.5, 0.2,
+                    [](BqtAudioProcessor& p) { setParam(p, "aDrive", 9.0f); setParam(p, "bDrive", 9.0f); },
+                    [id](BqtAudioProcessor& p) { setParam(p, id, 1.0f); });
+                const auto silence = longestSilenceOf(out);
+                const auto step = worstStepOf(out);
+                check(static_cast<double>(silence) < 0.006 * sampleRate,
+                      "discrete switch silence is bounded by the fade at any host block size");
+                check(step < 0.05f, "discrete switch at a large host block has no step discontinuity");
+                std::printf("switch %s @%d: longest silence %zu samples, worst step %.4f\n",
+                            id, hostBlock, silence, step);
+            }
+
+        // Toggling autogain at full drive used to jump the wet level instantly (worst step 0.53
+        // on Grit, 0.095 on Cream). Grit at 18 dB with autogain off is driven hard enough that its
+        // own waveform steps ~0.14 per sample, so the toggle is bounded by the steady-state step on
+        // either side of it as well as by the absolute 0.05.
+        for (float type : { 0.0f, 1.0f })
+            for (float from : { 0.0f, 1.0f })
+            {
+                const auto out = renderWithSwitch(256, 0.5, 0.2,
+                    [type, from](BqtAudioProcessor& p)
+                    {
+                        setParam(p, "aSatType", type); setParam(p, "bSatType", type);
+                        setParam(p, "aDrive", 18.0f); setParam(p, "bDrive", 18.0f);
+                        setParam(p, "autoGain", from);
+                    },
+                    [from](BqtAudioProcessor& p) { setParam(p, "autoGain", 1.0f - from); });
+                const auto at = [&out](double seconds) { return out.begin() + static_cast<long>(seconds * sampleRate); };
+                const auto steady = std::fmax(worstStepOf({ at(0.1), at(0.2) }), worstStepOf({ at(0.3), out.end() }));
+                const auto step = worstStepOf(out);
+                const auto limit = std::fmax(0.05f, 1.1f * steady);
+                check(step < limit, "autogain toggle is smoothed");
+                std::printf("autogain %s %s: worst step %.4f (steady-state %.4f)\n", type < 0.5f ? "Cream" : "Grit",
+                            from < 0.5f ? "off->on" : "on->off", step, steady);
+            }
+
+        // Oversampling factor changes fade through the structural transition; the new oversampler
+        // starts from zero state with a different latency, which clicked even at zero drive.
+        struct OsCase { float drive; float from; float to; };
+        for (const auto& item : { OsCase { 9.0f, 0.0f, 3.0f }, OsCase { 0.0f, 0.0f, 1.0f },
+                                  OsCase { 0.0f, 1.0f, 3.0f }, OsCase { 0.0f, 3.0f, 0.0f } })
+        {
+            const auto out = renderWithSwitch(256, 0.6, 0.3,
+                [item](BqtAudioProcessor& p)
+                {
+                    setParam(p, "aDrive", item.drive); setParam(p, "bDrive", item.drive);
+                    setParam(p, "osRealtime", item.from);
+                },
+                [item](BqtAudioProcessor& p) { setParam(p, "osRealtime", item.to); });
+            const auto step = worstStepOf(out);
+            check(step < 0.03f, "oversampling switch is click-free");
+            std::printf("oversampling %.0f->%.0f at drive %.0f: worst step %.4f\n",
+                        item.from, item.to, item.drive, step);
+        }
     }
 
     if (failures == 0)

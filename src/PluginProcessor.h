@@ -115,13 +115,17 @@ private:
         std::array<int, 2> satType { 0, 0 };
         std::array<int, 2> lowFreq { 0, 0 };
         std::array<int, 2> highFreq { 0, 0 };
+        // Active oversampler (-1 = off). A factor change swaps in an oversampler with zero state
+        // and a different latency, so it is adopted at the bottom of the fade like the rest.
+        int oversamplingIndex = -1;
 
         bool operator==(const StructuralConfig& other) const
         {
             return eqMode == other.eqMode && satMode == other.satMode
                 && eqBypassed == other.eqBypassed && satBypassed == other.satBypassed
                 && vintage == other.vintage && satType == other.satType
-                && lowFreq == other.lowFreq && highFreq == other.highFreq;
+                && lowFreq == other.lowFreq && highFreq == other.highFreq
+                && oversamplingIndex == other.oversamplingIndex;
         }
         bool operator!=(const StructuralConfig& other) const { return ! (*this == other); }
     };
@@ -129,15 +133,18 @@ private:
     enum class StructuralTransition { idle, fadingOut, fadingIn };
 
     StructuralConfig readStructuralConfig() const;
-    void adoptPendingStructuralConfig(const StructuralConfig& pending);
+    void adoptPendingStructuralConfig(const StructuralConfig& pending, double hostSampleRate);
     void advanceStructuralTransition(double hostSampleRate);
     void applyStructuralTransitionGain(float* left, float* right, int numSamples);
+    int samplesUntilFadeBottom() const;
 
     void updateFilters();
     void updateSaturationToneFilters();
     void resetSaturationState();
     void cacheParameterPointers();
-    void processSubBlock(float* left, float* right, int numSamples);
+    // Returns how many samples it consumed: never more than numSamples, fewer when a structural
+    // fade bottoms out first.
+    int processSubBlock(float* left, float* right, int numSamples);
     void processEqStage(float* left, float* right, int numSamples);
     void processSaturationStage(float* left, float* right, int numSamples);
     void processEq(float* samples, int numSamples, int sideIndex);
@@ -169,6 +176,8 @@ private:
     std::array<juce::SmoothedValue<float, juce::ValueSmoothingTypes::Multiplicative>, 2> driveGain;
     std::array<juce::SmoothedValue<float>, 2> saturationMix;
     std::array<juce::SmoothedValue<float, juce::ValueSmoothingTypes::Multiplicative>, 2> outputTrimGain;
+    // 0..1 blend from unity toward the drive-derived autogain, so toggling autoGain ramps.
+    std::array<juce::SmoothedValue<float>, 2> autoGainBlend;
     std::array<std::atomic<float>, 2> meterLevels {};
     std::array<float, 2> meterRms {};
     // One-pole DC blocker state for the wet saturation path, per side.
@@ -179,9 +188,6 @@ private:
     // splits anything larger into chunks of this size, which makes those sizes provable ceilings
     // and removes the need to ever grow a buffer on the audio thread.
     int preparedBlockSize = 1;
-    // Sentinel distinct from every valid index (-1 means "oversampling off"), so the first block
-    // after prepareToPlay does not look like a factor change.
-    int lastActiveOversamplingIndex = -2;
     StructuralConfig activeConfig;
     StructuralTransition structuralTransition = StructuralTransition::idle;
     float structuralGain = 1.0f;
