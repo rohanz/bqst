@@ -144,25 +144,26 @@ void BqtAudioProcessorEditor::beginMirroredParameterGesture(const juce::String& 
 
 void BqtAudioProcessorEditor::beginLinkedMirrorGestureFor(juce::Slider& slider)
 {
-    auto& left = sideControls[0];
-    auto& right = sideControls[1];
+    const auto eqLinked = shouldMirrorLinkedControls("eqLink");
+    const auto satLinked = shouldMirrorLinkedControls("satLink");
 
-    if (shouldMirrorLinkedControls("eqLink"))
+    for (int sideIndex = 0; sideIndex < 2; ++sideIndex)
     {
-        if (&slider == &left.lowGain)       beginMirroredParameterGesture("bLowGain");
-        else if (&slider == &right.lowGain) beginMirroredParameterGesture("aLowGain");
-        else if (&slider == &left.highGain) beginMirroredParameterGesture("bHighGain");
-        else if (&slider == &right.highGain) beginMirroredParameterGesture("aHighGain");
-    }
+        auto& controls = sideControls[static_cast<size_t>(sideIndex)];
+        const auto otherPrefix = sidePrefix(1 - sideIndex);
 
-    if (shouldMirrorLinkedControls("satLink"))
-    {
-        if (&slider == &left.drive)            beginMirroredParameterGesture("bDrive");
-        else if (&slider == &right.drive)      beginMirroredParameterGesture("aDrive");
-        else if (&slider == &left.mix)         beginMirroredParameterGesture("bMix");
-        else if (&slider == &right.mix)        beginMirroredParameterGesture("aMix");
-        else if (&slider == &left.outputTrim)  beginMirroredParameterGesture("bOutputTrim");
-        else if (&slider == &right.outputTrim) beginMirroredParameterGesture("aOutputTrim");
+        if (eqLinked)
+        {
+            if (&slider == &controls.lowGain)       beginMirroredParameterGesture(otherPrefix + "LowGain");
+            else if (&slider == &controls.highGain) beginMirroredParameterGesture(otherPrefix + "HighGain");
+        }
+
+        if (satLinked)
+        {
+            if (&slider == &controls.drive)           beginMirroredParameterGesture(otherPrefix + "Drive");
+            else if (&slider == &controls.mix)        beginMirroredParameterGesture(otherPrefix + "Mix");
+            else if (&slider == &controls.outputTrim) beginMirroredParameterGesture(otherPrefix + "OutputTrim");
+        }
     }
 }
 
@@ -209,17 +210,17 @@ void BqtAudioProcessorEditor::commitMirroredSteppedFrequency(juce::Slider& slide
     if (! shouldMirrorLinkedControls("eqLink"))
         return;
 
-    auto& left = sideControls[0];
-    auto& right = sideControls[1];
+    for (int sideIndex = 0; sideIndex < 2; ++sideIndex)
+    {
+        const auto& controls = sideControls[static_cast<size_t>(sideIndex)];
+        const auto& other = sideControls[static_cast<size_t>(1 - sideIndex)];
+        const auto otherPrefix = sidePrefix(1 - sideIndex);
 
-    if (&slider == &left.lowFreq)
-        commitParameterGesture("bLowFreq", static_cast<float>(right.lowFreq.getValue()));
-    else if (&slider == &right.lowFreq)
-        commitParameterGesture("aLowFreq", static_cast<float>(left.lowFreq.getValue()));
-    else if (&slider == &left.highFreq)
-        commitParameterGesture("bHighFreq", static_cast<float>(right.highFreq.getValue()));
-    else if (&slider == &right.highFreq)
-        commitParameterGesture("aHighFreq", static_cast<float>(left.highFreq.getValue()));
+        if (&slider == &controls.lowFreq)
+            commitParameterGesture(otherPrefix + "LowFreq", static_cast<float>(other.lowFreq.getValue()));
+        else if (&slider == &controls.highFreq)
+            commitParameterGesture(otherPrefix + "HighFreq", static_cast<float>(other.highFreq.getValue()));
+    }
 }
 
 void BqtAudioProcessorEditor::sliderDragStarted(juce::Slider* slider)

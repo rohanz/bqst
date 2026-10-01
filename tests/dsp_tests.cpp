@@ -4,7 +4,7 @@
 // exact bypass at zero drive and ramps continuously from there, autogain is unity at zero drive
 // and decreases monotonically, and nothing produces NaN/Inf or unbounded output for sane input.
 //
-// Deliberately dependency-free (BqtDsp.h only uses <cmath>/<array>) so the test target builds
+// Deliberately dependency-free (BqtDsp.h only uses the standard library) so the test target builds
 // and runs in milliseconds without linking JUCE.
 
 #include "../src/BqtDsp.h"
@@ -12,6 +12,7 @@
 #include <cmath>
 #include <complex>
 #include <cstdio>
+#include <iterator>
 #include <limits>
 
 namespace
@@ -42,7 +43,7 @@ double biquadMagnitude(const std::array<float, 6>& c, double frequency, double s
     return std::abs(num / den);
 }
 
-constexpr double shelfQ = 0.38; // must track baxShelfQ in BqtProcessorDsp.cpp
+constexpr double shelfQ = bqt::baxShelfQ;
 constexpr double testRates[] { 44100.0, 48000.0, 88200.0, 96000.0 };
 constexpr double testGainsDb[] { -6.0, -3.0, -1.0, 1.0, 3.0, 6.0 };
 } // namespace
@@ -154,6 +155,22 @@ int main()
         check(worstError < 0.30, "decramped shelf tracks the analog prototype within 0.3 dB");
         std::printf("shelf: worst deviation from analog target %.3f dB, worst 0 dB error %.2e dB\n",
                     worstError, worstUnity);
+    }
+
+    // The LowFreq/HighFreq choice names are generated from the shelf tables. They are what hosts
+    // display (and what automation lanes show), so they must stay exactly these strings.
+    {
+        const char* const expectedLow[] { "74", "84", "98", "116", "131", "166", "230", "361" };
+        const char* const expectedHigh[] { "1.6k", "1.8k", "2.1k", "2.5k", "3.4k", "4.8k", "7.1k", "18k" };
+        static_assert(std::size(expectedLow) == bqt::lowShelfFrequenciesHz.size(), "one label per LF position");
+        static_assert(std::size(expectedHigh) == bqt::highShelfFrequenciesHz.size(), "one label per HF position");
+
+        for (size_t i = 0; i < bqt::lowShelfFrequenciesHz.size(); ++i)
+            check(bqt::shelfFrequencyLabel(bqt::lowShelfFrequenciesHz[i]) == expectedLow[i],
+                  "LF frequency label matches the host-visible choice name");
+        for (size_t i = 0; i < bqt::highShelfFrequenciesHz.size(); ++i)
+            check(bqt::shelfFrequencyLabel(bqt::highShelfFrequenciesHz[i]) == expectedHigh[i],
+                  "HF frequency label matches the host-visible choice name");
     }
 
     // M/S encode then decode is the identity (to float rounding) and mono input has no side.

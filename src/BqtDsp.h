@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cmath>
+#include <string>
 
 #include "BqtCreamModel.h"
 
@@ -34,6 +35,24 @@ inline constexpr std::array<float, 8> lowShelfFrequenciesHz {
 inline constexpr std::array<float, 8> highShelfFrequenciesHz {
     1600.0f, 1800.0f, 2100.0f, 2500.0f, 3400.0f, 4800.0f, 7100.0f, 18000.0f
 };
+
+// Q of both Baxandall shelves.
+inline constexpr float baxShelfQ = 0.38f;
+
+// Host-visible choice label for a shelf position: whole Hz below 1 kHz ("116"), otherwise kHz to
+// one decimal with a trailing zero dropped ("1.6k", "18k"). These strings are the parameters'
+// choice names, so changing the format changes what hosts display.
+inline std::string shelfFrequencyLabel(float hz)
+{
+    if (hz < 1000.0f)
+        return std::to_string(static_cast<int>(std::lround(hz)));
+
+    const auto tenthsOfKhz = static_cast<int>(std::lround(hz / 100.0f));
+    auto label = std::to_string(tenthsOfKhz / 10);
+    if (tenthsOfKhz % 10 != 0)
+        label += "." + std::to_string(tenthsOfKhz % 10);
+    return label + "k";
+}
 
 // Magnitude of the analog RBJ shelf prototype, normalised so |H| is 1 in the passband and
 // `gain` in the shelf band. This is the curve the digital design below is fitted against.

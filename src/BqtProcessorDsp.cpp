@@ -8,7 +8,7 @@ constexpr auto vuRiseTo99Seconds = 0.3f;
 constexpr auto vuTimeConstantSeconds = vuRiseTo99Seconds / 4.605170186f;
 constexpr auto vuSineAverageToRms = 1.110720735f;
 constexpr auto parameterSmoothingSeconds = 0.02;
-constexpr auto baxShelfQ = 0.38f;
+using bqt::baxShelfQ;
 // Grit's pre-drive gain (dB of gain per dB of Drive). Cream maps Drive through its own taper.
 constexpr auto saturationDriveScale = 0.40f;
 // Grit's linear coloration (and the shared Vintage shelf) fades in over the first third of the

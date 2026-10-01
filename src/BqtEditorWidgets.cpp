@@ -8,6 +8,19 @@
 
 using namespace bqst::ui;
 
+namespace
+{
+// VU scale position (0 = left stop, 1 = right stop) of a VU reading: -20..0 VU takes the first 82%
+// of the arc, 0..+3 VU the red remainder.
+float vuDbToScaleFraction(float db)
+{
+    const auto clamped = juce::jlimit(-20.0f, 3.0f, db);
+    if (clamped <= 0.0f)
+        return ((clamped + 20.0f) / 20.0f) * 0.82f;
+    return 0.82f + (clamped / 3.0f) * 0.18f;
+}
+} // namespace
+
 void BqtReadoutBubble::setText(juce::String newText)
 {
     if (text == newText)
@@ -582,14 +595,6 @@ void BqtVuMeter::rebuildStaticLayer()
                                   centre.y - std::sin(radians) * radius);
     };
 
-    auto dbToFrac = [](float db)
-    {
-        const auto clamped = juce::jlimit(-20.0f, 3.0f, db);
-        if (clamped <= 0.0f)
-            return ((clamped + 20.0f) / 20.0f) * 0.82f;
-        return 0.82f + (clamped / 3.0f) * 0.18f;
-    };
-
     const auto centre = juce::Point<float>(inner.getCentreX(), inner.getY() + inner.getHeight() * 0.87f);
     const auto radius = inner.getWidth() * 0.62f;
     const auto start = 137.0f;
@@ -608,7 +613,7 @@ void BqtVuMeter::rebuildStaticLayer()
     }
     g.strokePath(arc, juce::PathStrokeType(2.2f));
 
-    const auto redStart = dbToFrac(0.0f);
+    const auto redStart = vuDbToScaleFraction(0.0f);
     juce::Path redArc;
     for (int i = 0; i <= 18; ++i)
     {
@@ -624,7 +629,7 @@ void BqtVuMeter::rebuildStaticLayer()
     g.setFont(juce::Font(faceFont(11.3f, false)));
     for (size_t i = 0; i < majorDbs.size(); ++i)
     {
-        const auto frac = dbToFrac(majorDbs[i]);
+        const auto frac = vuDbToScaleFraction(majorDbs[i]);
         const auto angle = start + (end - start) * frac;
         const auto red = majorDbs[i] >= 0.0f;
         g.setColour(red ? meterRed.withAlpha(0.98f)
@@ -643,7 +648,7 @@ void BqtVuMeter::rebuildStaticLayer()
         if (db < -10 && db % 5 != 0)
             continue;
 
-        const auto angle = start + (end - start) * dbToFrac(static_cast<float>(db));
+        const auto angle = start + (end - start) * vuDbToScaleFraction(static_cast<float>(db));
         const auto red = db >= 0;
         g.setColour(red ? meterRed.withAlpha(0.72f)
                         : meterBlack.withAlpha(0.58f));
@@ -660,10 +665,7 @@ bool BqtVuMeter::updateLevel(double secondsElapsed)
 {
     const auto raw = audioProcessor.getMeterLevel(side);
     const auto db = juce::Decibels::gainToDecibels(raw, -60.0f);
-    const auto vu = db + 18.0f;
-    const auto clampedVu = juce::jlimit(-20.0f, 3.0f, vu);
-    targetLevel = clampedVu <= 0.0f ? ((clampedVu + 20.0f) / 20.0f) * 0.82f
-                                    : 0.82f + (clampedVu / 3.0f) * 0.18f;
+    targetLevel = vuDbToScaleFraction(db + 18.0f);
     // Time-based smoothing. This was a fixed 0.18 per tick, which meant the needle's speed was a
     // function of how punctually the timer fired rather than of elapsed time: a late or dropped
     // frame still advanced only 18% of the remaining distance, so jitter turned into visibly

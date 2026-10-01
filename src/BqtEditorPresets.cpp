@@ -149,6 +149,8 @@ void BqtAudioProcessorEditor::saveUserPreset()
                                                {
                                                    selectedPresetIndex = i;
                                                    selectedPresetKey = presetManager.getPresetKey(i);
+                                                   // Persist like loadPreset, so a reopened editor still names it.
+                                                   audioProcessor.state().state.setProperty("selectedPresetKey", selectedPresetKey, nullptr);
                                                    updatePresetButtonText();
                                                    break;
                                                }

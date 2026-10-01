@@ -143,17 +143,8 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
     satLinkAttachment = std::make_unique<ButtonAttachment>(audioProcessor.state(), "satLink", satLink);
     vintageAttachment = std::make_unique<ButtonAttachment>(audioProcessor.state(), "vintage", vintage);
     bypassAttachment = std::make_unique<ButtonAttachment>(audioProcessor.state(), "bypass", bypass);
-    bypass.onClick = [this]
-    {
-        if (auto* param = audioProcessor.state().getParameter("bypass"))
-        {
-            param->beginChangeGesture();
-            param->setValueNotifyingHost(bypass.getToggleState() ? 1.0f : 0.0f);
-            param->endChangeGesture();
-        }
-
-        requestRackBypassVisualState(bypass.getToggleState());
-    };
+    // bypassAttachment already writes the parameter (as one gesture) before onClick runs.
+    bypass.onClick = [this] { requestRackBypassVisualState(bypass.getToggleState()); };
     inputTrimCompensationStart = inputTrim.getValue();
     for (size_t index = 0; index < sideControls.size(); ++index)
         outputTrimCompensationStart[index] = sideControls[index].outputTrim.getValue();
@@ -398,7 +389,7 @@ void BqtAudioProcessorEditor::configureSide(SideControls& controls, int sideInde
     configureLabel(controls.highFreqLabel, "freq");
     configureSlider(controls.highFreq);
     controls.highFreq.getProperties().set("bqtKnobCombo", true);
-    controls.highFreq.setRange(0.0, 7.0, 1.0);
+    controls.highFreq.setRange(0.0, static_cast<double>(highFreqLabels.size() - 1), 1.0);
     controls.highFreq.setChangeNotificationOnlyOnRelease(true);
     controls.highFreq.textFromValueFunction = [](double value) { return indexedLabel(highFreqLabels, value); };
     configureLabel(controls.lowGainLabel, "lf");
@@ -408,7 +399,7 @@ void BqtAudioProcessorEditor::configureSide(SideControls& controls, int sideInde
     configureLabel(controls.lowFreqLabel, "freq");
     configureSlider(controls.lowFreq);
     controls.lowFreq.getProperties().set("bqtKnobCombo", true);
-    controls.lowFreq.setRange(0.0, 7.0, 1.0);
+    controls.lowFreq.setRange(0.0, static_cast<double>(lowFreqLabels.size() - 1), 1.0);
     controls.lowFreq.setChangeNotificationOnlyOnRelease(true);
     controls.lowFreq.textFromValueFunction = [](double value) { return indexedLabel(lowFreqLabels, value); };
     configureLabel(controls.driveLabel, "drive");

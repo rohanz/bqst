@@ -25,9 +25,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout BqtAudioProcessor::createPar
         const juce::String label = side == 0 ? "L/M" : "R/S";
 
         params.push_back(std::make_unique<juce::AudioParameterFloat>(prefix + "LowGain", label + " LF", juce::NormalisableRange<float>(-6.0f, 6.0f, 0.1f), 0.0f));
-        params.push_back(std::make_unique<juce::AudioParameterChoice>(prefix + "LowFreq", label + " LF Freq", juce::StringArray { "74", "84", "98", "116", "131", "166", "230", "361" }, 3));
+        params.push_back(std::make_unique<juce::AudioParameterChoice>(prefix + "LowFreq", label + " LF Freq", bqt::lowShelfFrequencyLabels(), 3));
         params.push_back(std::make_unique<juce::AudioParameterFloat>(prefix + "HighGain", label + " HF", juce::NormalisableRange<float>(-6.0f, 6.0f, 0.1f), 0.0f));
-        params.push_back(std::make_unique<juce::AudioParameterChoice>(prefix + "HighFreq", label + " HF Freq", juce::StringArray { "1.6k", "1.8k", "2.1k", "2.5k", "3.4k", "4.8k", "7.1k", "18k" }, 4));
+        params.push_back(std::make_unique<juce::AudioParameterChoice>(prefix + "HighFreq", label + " HF Freq", bqt::highShelfFrequencyLabels(), 4));
         params.push_back(std::make_unique<juce::AudioParameterFloat>(prefix + "Drive", label + " Drive", juce::NormalisableRange<float>(0.0f, 18.0f, 0.1f), 0.0f));
         params.push_back(std::make_unique<juce::AudioParameterChoice>(prefix + "SatType", label + " Type", juce::StringArray { "Cream", "Grit" }, 0));
         params.push_back(std::make_unique<juce::AudioParameterFloat>(prefix + "Mix", label + " Mix", juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 100.0f));
