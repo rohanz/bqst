@@ -13,6 +13,7 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
     : AudioProcessorEditor(&p), audioProcessor(p), presetManager(p.state()), rackComponent(*this), meterA(p, 0), meterB(p, 1)
 {
     setLookAndFeel(&hardwareLookAndFeel);
+    undoableParameterIds = bqt::editor::undoableParameterIds(audioProcessor);
     setWantsKeyboardFocus(true);
     addKeyListener(this);
     setSize(baseEditorWidth, baseEditorHeight);
@@ -177,111 +178,35 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
     // mirror onto B, then B mirror back onto A, collapsing both onto whichever was restored last
     // and pushing the wrong values back to the host via setValueNotifyingHost.
     //
-    // restorePluginEditState already fences the undo/redo path this way; these are the two entry
-    // points that were missed.
-    auto mirrorSlider = [this](juce::Slider& source, juce::Slider& dest)
+    // The gesture is tracked explicitly from the slider's drag notifications (mouse drags, wheel
+    // steps, double-click resets and accessibility sets all send them), not inferred from the
+    // mouse: a hover test also passed for automation arriving while the pointer rested on a knob.
+    auto mirrorSlider = [this](const char* linkParameterId, juce::Slider& source, juce::Slider& dest)
     {
-        if (isMirroringLinkedControl || ! (source.isMouseButtonDown() || source.isMouseOverOrDragging()))
+        if (! bqt::editor::shouldMirrorLinkedEdit(shouldMirrorLinkedControls(linkParameterId),
+                                                  userGestures.isActive(&source),
+                                                  isMirroringLinkedControl))
             return;
 
         const juce::ScopedValueSetter<bool> scopedMirror(isMirroringLinkedControl, true);
         dest.setValue(source.getValue(), juce::sendNotificationSync);
     };
 
-    // The satType combos are hidden and driven by satTypeButton, so they are never moused; an
-    // explicit flag set for the duration of that click stands in for the gesture test.
-    auto mirrorChoice = [this](juce::ComboBox& source, juce::ComboBox& dest)
+    auto linkSides = [this, mirrorSlider](const char* linkParameterId, juce::Slider SideControls::* control)
     {
-        if (isMirroringLinkedControl || ! isUserSatTypeClick)
-            return;
-
-        const juce::ScopedValueSetter<bool> scopedMirror(isMirroringLinkedControl, true);
-        dest.setSelectedItemIndex(source.getSelectedItemIndex(), juce::sendNotificationSync);
+        auto& left = sideControls[0].*control;
+        auto& right = sideControls[1].*control;
+        left.onValueChange = [mirrorSlider, linkParameterId, &left, &right] { mirrorSlider(linkParameterId, left, right); };
+        right.onValueChange = [mirrorSlider, linkParameterId, &left, &right] { mirrorSlider(linkParameterId, right, left); };
     };
 
-    auto& left = sideControls[0];
-    auto& right = sideControls[1];
-    left.lowGain.onValueChange = [this, &left, &right, mirrorSlider]
-    {
-        if (shouldMirrorLinkedControls("eqLink"))
-            mirrorSlider(left.lowGain, right.lowGain);
-    };
-    right.lowGain.onValueChange = [this, &left, &right, mirrorSlider]
-    {
-        if (shouldMirrorLinkedControls("eqLink"))
-            mirrorSlider(right.lowGain, left.lowGain);
-    };
-    left.lowFreq.onValueChange = [this, &left, &right, mirrorSlider]
-    {
-        if (shouldMirrorLinkedControls("eqLink"))
-            mirrorSlider(left.lowFreq, right.lowFreq);
-    };
-    right.lowFreq.onValueChange = [this, &left, &right, mirrorSlider]
-    {
-        if (shouldMirrorLinkedControls("eqLink"))
-            mirrorSlider(right.lowFreq, left.lowFreq);
-    };
-    left.highGain.onValueChange = [this, &left, &right, mirrorSlider]
-    {
-        if (shouldMirrorLinkedControls("eqLink"))
-            mirrorSlider(left.highGain, right.highGain);
-    };
-    right.highGain.onValueChange = [this, &left, &right, mirrorSlider]
-    {
-        if (shouldMirrorLinkedControls("eqLink"))
-            mirrorSlider(right.highGain, left.highGain);
-    };
-    left.highFreq.onValueChange = [this, &left, &right, mirrorSlider]
-    {
-        if (shouldMirrorLinkedControls("eqLink"))
-            mirrorSlider(left.highFreq, right.highFreq);
-    };
-    right.highFreq.onValueChange = [this, &left, &right, mirrorSlider]
-    {
-        if (shouldMirrorLinkedControls("eqLink"))
-            mirrorSlider(right.highFreq, left.highFreq);
-    };
-
-    left.drive.onValueChange = [this, &left, &right, mirrorSlider]
-    {
-        if (shouldMirrorLinkedControls("satLink"))
-            mirrorSlider(left.drive, right.drive);
-    };
-    right.drive.onValueChange = [this, &left, &right, mirrorSlider]
-    {
-        if (shouldMirrorLinkedControls("satLink"))
-            mirrorSlider(right.drive, left.drive);
-    };
-    left.mix.onValueChange = [this, &left, &right, mirrorSlider]
-    {
-        if (shouldMirrorLinkedControls("satLink"))
-            mirrorSlider(left.mix, right.mix);
-    };
-    right.mix.onValueChange = [this, &left, &right, mirrorSlider]
-    {
-        if (shouldMirrorLinkedControls("satLink"))
-            mirrorSlider(right.mix, left.mix);
-    };
-    left.outputTrim.onValueChange = [this, &left, &right, mirrorSlider]
-    {
-        if (shouldMirrorLinkedControls("satLink"))
-            mirrorSlider(left.outputTrim, right.outputTrim);
-    };
-    right.outputTrim.onValueChange = [this, &left, &right, mirrorSlider]
-    {
-        if (shouldMirrorLinkedControls("satLink"))
-            mirrorSlider(right.outputTrim, left.outputTrim);
-    };
-    left.satType.onChange = [this, &left, &right, mirrorChoice]
-    {
-        if (shouldMirrorLinkedControls("satLink"))
-            mirrorChoice(left.satType, right.satType);
-    };
-    right.satType.onChange = [this, &left, &right, mirrorChoice]
-    {
-        if (shouldMirrorLinkedControls("satLink"))
-            mirrorChoice(right.satType, left.satType);
-    };
+    linkSides("eqLink", &SideControls::lowGain);
+    linkSides("eqLink", &SideControls::lowFreq);
+    linkSides("eqLink", &SideControls::highGain);
+    linkSides("eqLink", &SideControls::highFreq);
+    linkSides("satLink", &SideControls::drive);
+    linkSides("satLink", &SideControls::mix);
+    linkSides("satLink", &SideControls::outputTrim);
 
     // Meter animation runs on the display refresh, not the message timer, and advances by real
     // elapsed time so a late frame still covers the right distance.
@@ -429,20 +354,9 @@ void BqtAudioProcessorEditor::configureSide(SideControls& controls, int sideInde
     controls.mix.setDoubleClickReturnValue(true, 100.0);
     controls.outputTrim.setDoubleClickReturnValue(true, 0.0);
     controls.satType.addItemList(juce::StringArray { "cream", "grit" }, 1);
-    controls.satTypeButton.onClick = [this, &combo = controls.satType, &button = controls.satTypeButton]
-    {
-        const auto next = combo.getSelectedItemIndex() == 0 ? 1 : 0;
-        // Marks this combo change as user-driven so the link mirror will act on it.
-        const juce::ScopedValueSetter<bool> scopedUserClick(isUserSatTypeClick, true);
-        combo.setSelectedItemIndex(next, juce::sendNotificationSync);
-        button.setToggleState(next == 1, juce::dontSendNotification);
-
-        if (hoveredHelpComponent == &button && helpVisible)
-        {
-            hoveredHelpText = button.getProperties()[next == 1 ? "bqtGritHelp" : "bqtCreamHelp"].toString();
-            showReadout(button, hoveredHelpText);
-        }
-    };
+    // Sat type is not linked: the one visible button always sets both sides, whatever Sat Link
+    // or Control say (side B's button is parked off-screen).
+    controls.satTypeButton.onClick = [this, &button = controls.satTypeButton] { toggleSatTypeBothSides(button); };
 
     const auto prefix = sidePrefix(sideIndex);
     controls.lowGainAttachment = std::make_unique<SliderAttachment>(audioProcessor.state(), prefix + "LowGain", controls.lowGain);

@@ -2,32 +2,11 @@
 
 #include "BqtEditorStyle.h"
 
-#include <array>
 #include <cmath>
 
 namespace
 {
 using namespace bqst::ui;
-
-constexpr std::array<const char*, 28> undoableParameterIds {
-    "eqMode", "satMode", "osRealtime", "osRender", "inputTrim", "autoGain",
-    "eqBypass", "satBypass", "eqLink", "satLink", "bypass", "vintage",
-    "aLowGain", "aLowFreq", "aHighGain", "aHighFreq", "aDrive", "aSatType", "aMix", "aOutputTrim",
-    "bLowGain", "bLowFreq", "bHighGain", "bHighFreq", "bDrive", "bSatType", "bMix", "bOutputTrim"
-};
-
-bool snapshotsMatch(const std::vector<std::pair<juce::String, float>>& a,
-                    const std::vector<std::pair<juce::String, float>>& b)
-{
-    if (a.size() != b.size())
-        return false;
-
-    for (size_t i = 0; i < a.size(); ++i)
-        if (a[i].first != b[i].first || std::abs(a[i].second - b[i].second) > 0.00001f)
-            return false;
-
-    return true;
-}
 } // namespace
 
 void BqtAudioProcessorEditor::timerCallback()
@@ -104,7 +83,8 @@ void BqtAudioProcessorEditor::sliderValueChanged(juce::Slider* slider)
         const auto currentInputTrim = inputTrim.getValue();
         const auto deltaDb = currentInputTrim - inputTrimCompensationStart;
 
-        if (inputTrim.isMouseButtonDown()
+        if (userGestures.isActive(&inputTrim)
+            && inputTrim.isMouseButtonDown()
             && juce::ModifierKeys::currentModifiers.isCtrlDown()
             && std::abs(deltaDb) > 0.0)
         {
@@ -205,6 +185,38 @@ void BqtAudioProcessorEditor::commitParameterGesture(const juce::String& paramet
     }
 }
 
+void BqtAudioProcessorEditor::toggleSatTypeBothSides(juce::Button& button)
+{
+    auto* sideA = audioProcessor.state().getParameter("aSatType");
+    auto* sideB = audioProcessor.state().getParameter("bSatType");
+    if (sideA == nullptr || sideB == nullptr)
+        return;
+
+    // Toggle from side A even if a loaded session left the sides different; both get the result.
+    const auto next = bqt::editor::nextSatTypeIndex(juce::roundToInt(sideA->convertFrom0to1(sideA->getValue())));
+    const auto normalisedNext = sideA->convertTo0to1(static_cast<float>(next));
+
+    // One undo step for both writes. A mouse click already opened the capture in mouseDown, so
+    // beginUndoableEdit is a no-op then; a keyboard press on the button gets its own capture.
+    beginUndoableEdit();
+    sideA->beginChangeGesture();
+    sideB->beginChangeGesture();
+    sideA->setValueNotifyingHost(normalisedNext);
+    sideB->setValueNotifyingHost(normalisedNext);
+    sideA->endChangeGesture();
+    sideB->endChangeGesture();
+    finishUndoableEdit();
+
+    for (auto& controls : sideControls)
+        controls.satTypeButton.setToggleState(next == 1, juce::dontSendNotification);
+
+    if (hoveredHelpComponent == &button && helpVisible)
+    {
+        hoveredHelpText = button.getProperties()[next == 1 ? "bqtGritHelp" : "bqtCreamHelp"].toString();
+        showReadout(button, hoveredHelpText);
+    }
+}
+
 void BqtAudioProcessorEditor::commitMirroredSteppedFrequency(juce::Slider& slider)
 {
     if (! shouldMirrorLinkedControls("eqLink"))
@@ -228,6 +240,7 @@ void BqtAudioProcessorEditor::sliderDragStarted(juce::Slider* slider)
     if (slider == nullptr)
         return;
 
+    userGestures.begin(slider);
     beginUndoableEdit();
     beginLinkedMirrorGestureFor(*slider);
     hideHoverValueReadout();
@@ -244,8 +257,15 @@ void BqtAudioProcessorEditor::sliderDragStarted(juce::Slider* slider)
 
 void BqtAudioProcessorEditor::sliderDragEnded(juce::Slider* slider)
 {
-    if (slider != nullptr)
-        commitMirroredSteppedFrequency(*slider);
+    if (slider == nullptr)
+        return;
+
+    // A double-click reset or wheel step sends its own drag start/end nested inside the mouse
+    // drag; only the outermost end closes the gesture.
+    if (! userGestures.end(slider))
+        return;
+
+    commitMirroredSteppedFrequency(*slider);
 
     endLinkedMirrorGestures();
     finishUndoableEdit();
@@ -589,7 +609,7 @@ void BqtAudioProcessorEditor::finishUndoableEdit()
     undoCaptureActive = false;
     const auto nextState = capturePluginEditState();
 
-    if (! snapshotsMatch(pendingUndoState, nextState))
+    if (! bqt::editor::snapshotsMatch(pendingUndoState, nextState))
     {
         undoStack.push_back(pendingUndoState);
         redoStack.clear();
@@ -638,26 +658,28 @@ bool BqtAudioProcessorEditor::redoLastPluginEdit()
     return true;
 }
 
-std::vector<std::pair<juce::String, float>> BqtAudioProcessorEditor::capturePluginEditState() const
+bqt::editor::ParameterSnapshot BqtAudioProcessorEditor::capturePluginEditState() const
 {
-    std::vector<std::pair<juce::String, float>> snapshot;
-    snapshot.reserve(undoableParameterIds.size());
+    bqt::editor::ParameterSnapshot snapshot;
+    snapshot.reserve(static_cast<size_t>(undoableParameterIds.size()));
 
-    for (const auto* id : undoableParameterIds)
+    for (const auto& id : undoableParameterIds)
         if (auto* parameter = audioProcessor.state().getParameter(id))
             snapshot.emplace_back(id, parameter->getValue());
 
     return snapshot;
 }
 
-void BqtAudioProcessorEditor::restorePluginEditState(const std::vector<std::pair<juce::String, float>>& snapshot)
+void BqtAudioProcessorEditor::restorePluginEditState(const bqt::editor::ParameterSnapshot& snapshot)
 {
     const juce::ScopedValueSetter<bool> scopedRestore(restoringPluginEditState, true);
     const juce::ScopedValueSetter<bool> scopedMirror(isMirroringLinkedControl, true);
 
     endLinkedMirrorGestures();
 
-    for (const auto& [id, value] : snapshot)
+    // Only what the step changed: rewriting every parameter sent the host a gesture (and an
+    // automation write) for each untouched control.
+    for (const auto& [id, value] : bqt::editor::changedSnapshotEntries(snapshot, capturePluginEditState()))
     {
         if (auto* parameter = audioProcessor.state().getParameter(id))
         {
@@ -671,7 +693,6 @@ void BqtAudioProcessorEditor::restorePluginEditState(const std::vector<std::pair
     for (size_t index = 0; index < sideControls.size(); ++index)
         outputTrimCompensationStart[index] = sideControls[index].outputTrim.getValue();
     updateLinkedControlStates();
-    requestRackBypassVisualState(audioProcessor.state().getRawParameterValue("bypass")->load() > 0.5f);
     repaint();
 }
 

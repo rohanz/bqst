@@ -2,6 +2,7 @@
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
+#include "BqtEditorLogic.h"
 #include "BqtEditorWidgets.h"
 #include "BqtPresetManager.h"
 #include "PluginProcessor.h"
@@ -119,6 +120,7 @@ private:
     void mirrorLinkedSteppedFrequencyVisual(juce::Slider& slider);
     void commitMirroredSteppedFrequency(juce::Slider& slider);
     void commitParameterGesture(const juce::String& parameterId, float plainValue);
+    void toggleSatTypeBothSides(juce::Button& button);
     bool keyPressed(const juce::KeyPress& key) override;
     bool keyPressed(const juce::KeyPress& key, juce::Component* originatingComponent) override;
     void mouseDown(const juce::MouseEvent& event) override;
@@ -147,8 +149,8 @@ private:
     void cancelUndoableEdit();
     bool undoLastPluginEdit();
     bool redoLastPluginEdit();
-    void restorePluginEditState(const std::vector<std::pair<juce::String, float>>& snapshot);
-    std::vector<std::pair<juce::String, float>> capturePluginEditState() const;
+    void restorePluginEditState(const bqt::editor::ParameterSnapshot& snapshot);
+    bqt::editor::ParameterSnapshot capturePluginEditState() const;
     void refreshPresetMenu();
     void showPresetMenu();
     bool loadPreset(int index);
@@ -205,7 +207,8 @@ private:
     juce::VBlankAttachment meterVBlank;
     double lastMeterTickSeconds = 0.0;
     bool isMirroringLinkedControl = false;
-    bool isUserSatTypeClick = false;
+    // Controls inside a genuine user gesture; only these may drive linked mirroring.
+    bqt::editor::UserGestureTracker userGestures;
     juce::Component::SafePointer<juce::Slider> activeReadoutSlider;
     // SafePointers, and only ever set to components inside this editor: the hover source is the
     // process-global mouse, so these used to be able to latch controls belonging to another BQST
@@ -224,9 +227,10 @@ private:
     int selectedPresetIndex = 0;
     juce::String selectedPresetKey;
     juce::Array<juce::RangedAudioParameter*> activeMirroredGestureParameters;
-    std::vector<std::pair<juce::String, float>> pendingUndoState;
-    std::vector<std::vector<std::pair<juce::String, float>>> undoStack;
-    std::vector<std::vector<std::pair<juce::String, float>>> redoStack;
+    juce::StringArray undoableParameterIds;
+    bqt::editor::ParameterSnapshot pendingUndoState;
+    std::vector<bqt::editor::ParameterSnapshot> undoStack;
+    std::vector<bqt::editor::ParameterSnapshot> redoStack;
     bool restoringPluginEditState = false;
     bool undoCaptureActive = false;
     std::unique_ptr<juce::FileChooser> presetFileChooser;

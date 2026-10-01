@@ -80,6 +80,7 @@ target_sources(BQST
         src/PluginEditor.h
         src/BqtDsp.h
         src/BqtParameterIds.h
+        src/BqtEditorLogic.h
 )
 
 target_compile_definitions(BQST

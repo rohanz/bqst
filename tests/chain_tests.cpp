@@ -6,6 +6,7 @@
 // "zero-drive bypass" assertion passed while the chain around it snapped roughly 1.9 dB of tilt
 // into place the instant drive left zero. Everything here exercises the chain, not the helpers.
 
+#include "../src/BqtEditorLogic.h"
 #include "../src/BqtPresetManager.h"
 #include "../src/PluginProcessor.h"
 
@@ -99,7 +100,7 @@ double mean(const std::vector<float>& samples, size_t from)
 // Kept in their own block, called once from main, so they stay apart from the DSP tests.
 // ============================================================================================
 
-const juce::StringArray workflowParameterIds { "osRealtime", "osRender", "eqBypass", "satBypass", "bypass" };
+const auto& workflowParameterIds = bqt::workflowParameterIds();
 
 juce::Array<juce::RangedAudioParameter*> rangedParameters(BqtAudioProcessor& processor)
 {
@@ -384,6 +385,78 @@ void runUserPresetTests()
 
     directory.deleteRecursively();
 }
+
+// ============================================================================================
+// Editor decision logic (BqtEditorLogic.h): undo parameter list and diff, link-gesture rules.
+// ============================================================================================
+
+bqt::editor::ParameterSnapshot captureSnapshot(BqtAudioProcessor& processor, const juce::StringArray& ids)
+{
+    bqt::editor::ParameterSnapshot snapshot;
+    for (const auto& id : ids)
+        snapshot.emplace_back(id, processor.state().getParameter(id)->getValue());
+    return snapshot;
+}
+
+void runEditorLogicTests()
+{
+    using namespace bqt::editor;
+
+    {
+        auto processor = std::make_unique<BqtAudioProcessor>();
+        const auto ids = undoableParameterIds(*processor);
+
+        auto noWorkflow = true;
+        for (const auto& id : workflowParameterIds)
+            noWorkflow = noWorkflow && ! ids.contains(id);
+        check(noWorkflow, "undo never records workflow parameters");
+
+        check(ids.size() + workflowParameterIds.size() == rangedParameters(*processor).size(),
+              "undo records every non-workflow parameter");
+        check(ids.contains("aSatType") && ids.contains("bSatType") && ids.contains("eqLink") && ids.contains("inputTrim"),
+              "undo records musical and link parameters");
+
+        // An undo step taken before a drive move and a bypass/oversampling change restores only
+        // the drive: workflow state is not in the snapshot, and nothing else differs.
+        const auto before = captureSnapshot(*processor, ids);
+        setParam(*processor, "aDrive", 9.0f);
+        setParam(*processor, "bypass", 1.0f);
+        setParam(*processor, "osRealtime", 3.0f);
+        const auto changed = changedSnapshotEntries(before, captureSnapshot(*processor, ids));
+        check(changed.size() == 1 && changed[0].first == "aDrive", "undo restore writes only the changed parameter");
+        check(changedSnapshotEntries(before, before).empty(), "undo restore of an unchanged state writes nothing");
+    }
+
+    {
+        const ParameterSnapshot a { { "x", 0.5f }, { "y", 0.25f }, { "z", 1.0f } };
+        const ParameterSnapshot b { { "x", 0.5f + snapshotTolerance * 0.5f }, { "y", 0.75f } };
+        const auto changed = changedSnapshotEntries(a, b);
+        check(changed.size() == 2 && changed[0].first == "y" && changed[1].first == "z",
+              "snapshot diff ignores sub-tolerance noise and includes entries missing from the current state");
+        check(snapshotsMatch(a, a) && ! snapshotsMatch(a, b), "snapshotsMatch compares ids and values");
+    }
+
+    {
+        UserGestureTracker gestures;
+        int knob = 0;
+        int other = 0;
+        check(! gestures.isActive(&knob), "no gesture before a drag starts");
+        gestures.begin(&knob);
+        gestures.begin(&knob); // double-click reset nested inside the mouse-down drag
+        check(! gestures.end(&knob) && gestures.isActive(&knob), "a nested drag end keeps the outer gesture open");
+        check(! gestures.isActive(&other), "a gesture belongs to its own control");
+        check(gestures.end(&knob) && ! gestures.isActive(&knob), "the outermost drag end closes the gesture");
+        check(gestures.end(&knob), "an unmatched drag end is harmless");
+
+        check(shouldMirrorLinkedEdit(true, true, false), "a user gesture on a linked control mirrors");
+        check(! shouldMirrorLinkedEdit(true, false, false),
+              "automation or state restore reaching a linked control (even under the mouse) does not mirror");
+        check(! shouldMirrorLinkedEdit(false, true, false), "an unlinked control does not mirror");
+        check(! shouldMirrorLinkedEdit(true, true, true), "the mirrored write does not mirror back");
+
+        check(nextSatTypeIndex(0) == 1 && nextSatTypeIndex(1) == 0, "sat type toggles between cream and grit");
+    }
+}
 } // namespace
 
 int main()
@@ -394,6 +467,7 @@ int main()
     runStateTests();
     runFactoryPresetTests();
     runUserPresetTests();
+    runEditorLogicTests();
 
     // 1. Continuity of the FULL chain as drive -> 0. This is the regression that motivated the
     //    whole test target: the coloration filters used to engage at full strength the instant

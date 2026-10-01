@@ -1,5 +1,7 @@
 #include "BqtPresetManager.h"
 
+#include "BqtParameterIds.h"
+
 #include <cmath>
 
 namespace
@@ -95,15 +97,7 @@ void setValueNotifyingHost(juce::RangedAudioParameter& parameter, float rawValue
 
 bool shouldStoreInPreset(const juce::String& parameterId)
 {
-    static const juce::StringArray utilityParameters {
-        "osRealtime",
-        "osRender",
-        "eqBypass",
-        "satBypass",
-        "bypass",
-    };
-
-    return ! utilityParameters.contains(parameterId);
+    return ! bqt::workflowParameterIds().contains(parameterId);
 }
 } // namespace
 
