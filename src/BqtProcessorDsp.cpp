@@ -2,7 +2,6 @@
 
 namespace
 {
-constexpr auto sqrtHalf = 0.70710678118654752440f;
 constexpr auto numOversamplingFactors = 3;
 constexpr auto vuRiseTo99Seconds = 0.3f;
 constexpr auto vuTimeConstantSeconds = vuRiseTo99Seconds / 4.605170186f;
@@ -566,15 +565,7 @@ void BqtAudioProcessor::processEqStage(float* left, float* right, int numSamples
     }
 
     if (!eqBypassed && eqMidSide)
-    {
-        for (int i = 0; i < numSamples; ++i)
-        {
-            const auto mid = (left[i] + right[i]) * sqrtHalf;
-            const auto side = (left[i] - right[i]) * sqrtHalf;
-            left[i] = mid;
-            right[i] = side;
-        }
-    }
+        bqt::encodeMidSide(left, right, numSamples);
 
     if (!eqBypassed)
     {
@@ -583,15 +574,7 @@ void BqtAudioProcessor::processEqStage(float* left, float* right, int numSamples
     }
 
     if (!eqBypassed && eqMidSide)
-    {
-        for (int i = 0; i < numSamples; ++i)
-        {
-            const auto l = (left[i] + right[i]) * sqrtHalf;
-            const auto r = (left[i] - right[i]) * sqrtHalf;
-            left[i] = l;
-            right[i] = r;
-        }
-    }
+        bqt::decodeMidSide(left, right, numSamples);
 }
 
 // Runs inside the oversampled region: this is the stage that actually generates harmonics.
@@ -603,15 +586,7 @@ void BqtAudioProcessor::processSaturationStage(float* left, float* right, int nu
     const auto satBypassed = activeConfig.satBypassed;
 
     if (!satBypassed && satMidSide)
-    {
-        for (int i = 0; i < numSamples; ++i)
-        {
-            const auto mid = (left[i] + right[i]) * sqrtHalf;
-            const auto side = (left[i] - right[i]) * sqrtHalf;
-            left[i] = mid;
-            right[i] = side;
-        }
-    }
+        bqt::encodeMidSide(left, right, numSamples);
 
     if (!satBypassed)
     {
@@ -625,15 +600,7 @@ void BqtAudioProcessor::processSaturationStage(float* left, float* right, int nu
     }
 
     if (!satBypassed && satMidSide)
-    {
-        for (int i = 0; i < numSamples; ++i)
-        {
-            const auto l = (left[i] + right[i]) * sqrtHalf;
-            const auto r = (left[i] - right[i]) * sqrtHalf;
-            left[i] = l;
-            right[i] = r;
-        }
-    }
+        bqt::decodeMidSide(left, right, numSamples);
 }
 
 int BqtAudioProcessor::getActiveOversamplingIndex() const

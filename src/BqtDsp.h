@@ -167,4 +167,28 @@ inline float saturationAutoGain(float drive01, SaturationType type)
     const auto shapedDrive = std::pow(drive01, exponent);
     return 1.0f / (1.0f + shapedDrive * amount);
 }
+
+inline constexpr float sqrtHalf = 0.70710678118654752440f;
+
+inline void encodeMidSide(float* left, float* right, int numSamples)
+{
+    for (int i = 0; i < numSamples; ++i)
+    {
+        const auto mid = (left[i] + right[i]) * sqrtHalf;
+        const auto side = (left[i] - right[i]) * sqrtHalf;
+        left[i] = mid;
+        right[i] = side;
+    }
+}
+
+inline void decodeMidSide(float* left, float* right, int numSamples)
+{
+    for (int i = 0; i < numSamples; ++i)
+    {
+        const auto l = (left[i] + right[i]) * sqrtHalf;
+        const auto r = (left[i] - right[i]) * sqrtHalf;
+        left[i] = l;
+        right[i] = r;
+    }
+}
 } // namespace bqt

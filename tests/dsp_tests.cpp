@@ -147,6 +147,27 @@ int main()
                     worstError, worstUnity);
     }
 
+    // M/S encode then decode is the identity (to float rounding) and mono input has no side.
+    {
+        float left[64], right[64], l0[64], r0[64];
+        for (int i = 0; i < 64; ++i)
+        {
+            l0[i] = left[i] = std::sin(0.1f * static_cast<float>(i));
+            r0[i] = right[i] = 0.5f * std::cos(0.07f * static_cast<float>(i));
+        }
+        bqt::encodeMidSide(left, right, 64);
+        bqt::decodeMidSide(left, right, 64);
+        auto worst = 0.0f;
+        for (int i = 0; i < 64; ++i)
+            worst = std::fmax(worst, std::fmax(std::abs(left[i] - l0[i]), std::abs(right[i] - r0[i])));
+        check(worst < 1.0e-6f, "mid/side round trip is the identity");
+
+        float ml[8] { 1, 2, 3, 4, 5, 6, 7, 8 }, mr[8] { 1, 2, 3, 4, 5, 6, 7, 8 };
+        bqt::encodeMidSide(ml, mr, 8);
+        for (auto s : mr)
+            check(s == 0.0f, "mono input has exactly zero side");
+    }
+
     if (failures == 0)
     {
         std::printf("All DSP tests passed.\n");
