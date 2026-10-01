@@ -91,11 +91,307 @@ double mean(const std::vector<float>& samples, size_t from)
         sum += samples[i];
     return sum / static_cast<double>(samples.size() - from);
 }
+
+// ============================================================================================
+// State and preset persistence tests (host state round trip, factory and user presets).
+// Kept in their own block, called once from main, so they stay apart from the DSP tests.
+// ============================================================================================
+
+const juce::StringArray workflowParameterIds { "osRealtime", "osRender", "eqBypass", "satBypass", "bypass" };
+
+juce::Array<juce::RangedAudioParameter*> rangedParameters(BqtAudioProcessor& processor)
+{
+    juce::Array<juce::RangedAudioParameter*> result;
+    for (auto* p : processor.getParameters())
+        if (auto* ranged = dynamic_cast<juce::RangedAudioParameter*>(p))
+            result.add(ranged);
+    return result;
+}
+
+float plainValue(BqtAudioProcessor& processor, const juce::String& id)
+{
+    auto* parameter = processor.state().getParameter(id);
+    jassert(parameter != nullptr);
+    return parameter->convertFrom0to1(parameter->getValue());
+}
+
+bool isAtDefault(BqtAudioProcessor& processor, const juce::String& id)
+{
+    auto* parameter = processor.state().getParameter(id);
+    return parameter != nullptr && std::abs(parameter->getValue() - parameter->getDefaultValue()) < 1.0e-6f;
+}
+
+// Moves every parameter to a distinct non-default position. `seed` varies the pattern so two
+// processors can be put in different states. Discrete parameters snap via the range.
+void scrambleParameters(BqtAudioProcessor& processor, int seed)
+{
+    auto index = 0;
+    for (auto* ranged : rangedParameters(processor))
+    {
+        // Snap through the range: AudioParameterBool keeps an unsnapped normalised value as-is.
+        const auto raw = std::fmod(0.137f * static_cast<float>(index + 1 + seed * 7) + 0.21f, 1.0f);
+        auto snapped = ranged->convertTo0to1(ranged->convertFrom0to1(raw));
+        if (std::abs(snapped - ranged->getDefaultValue()) < 1.0e-6f)
+            snapped = ranged->getDefaultValue() < 0.5f ? 1.0f : 0.0f;
+        ranged->setValueNotifyingHost(snapped);
+        ++index;
+    }
+}
+
+bool parametersMatch(BqtAudioProcessor& a, BqtAudioProcessor& b, const juce::StringArray& skip = {})
+{
+    auto same = true;
+    for (auto* ranged : rangedParameters(a))
+    {
+        const auto id = ranged->getParameterID();
+        if (skip.contains(id))
+            continue;
+        auto* other = b.state().getParameter(id);
+        same = same && other != nullptr && std::abs(ranged->getValue() - other->getValue()) < 1.0e-6f;
+        if (other != nullptr && std::abs(ranged->getValue() - other->getValue()) >= 1.0e-6f)
+            std::printf("  (%s: %.4f vs %.4f)\n", id.toRawUTF8(), ranged->getValue(), other->getValue());
+    }
+    return same;
+}
+
+std::unique_ptr<juce::XmlElement> savedStateXml(BqtAudioProcessor& processor)
+{
+    juce::MemoryBlock block;
+    processor.getStateInformation(block);
+    return juce::AudioProcessor::getXmlFromBinary(block.getData(), static_cast<int>(block.getSize()));
+}
+
+void loadStateXml(BqtAudioProcessor& processor, const juce::XmlElement& xml)
+{
+    juce::MemoryBlock block;
+    juce::AudioProcessor::copyXmlToBinary(xml, block);
+    processor.setStateInformation(block.getData(), static_cast<int>(block.getSize()));
+}
+
+juce::XmlElement* findParamChild(juce::XmlElement& xml, const juce::String& id)
+{
+    for (auto* child : xml.getChildIterator())
+        if (child->hasTagName("PARAM") && child->getStringAttribute("id") == id)
+            return child;
+    return nullptr;
+}
+
+void runStateTests()
+{
+    // Host state round trip: every parameter survives get -> set into a fresh processor.
+    {
+        auto source = makeProcessor();
+        scrambleParameters(*source, 0);
+        juce::MemoryBlock block;
+        source->getStateInformation(block);
+
+        auto target = makeProcessor();
+        target->setStateInformation(block.getData(), static_cast<int>(block.getSize()));
+        check(parametersMatch(*source, *target), "host state round-trips every parameter");
+    }
+
+    // Non-finite values in host state are stripped: the parameter gets its default, never NaN.
+    {
+        auto source = makeProcessor();
+        auto xml = savedStateXml(*source);
+        check(xml != nullptr, "host state parses as XML");
+        if (xml != nullptr)
+        {
+            findParamChild(*xml, "aDrive")->setAttribute("value", "nan");
+            findParamChild(*xml, "bMix")->setAttribute("value", "inf");
+            findParamChild(*xml, "aSatType")->setAttribute("value", "-inf");
+
+            auto target = makeProcessor();
+            scrambleParameters(*target, 1);
+            loadStateXml(*target, *xml);
+
+            check(isAtDefault(*target, "aDrive") && isAtDefault(*target, "bMix") && isAtDefault(*target, "aSatType"),
+                  "non-finite host state values fall back to the parameter default");
+
+            auto allFinite = true;
+            for (auto* ranged : rangedParameters(*target))
+                allFinite = allFinite && std::isfinite(ranged->getValue())
+                         && std::isfinite(ranged->convertFrom0to1(ranged->getValue()));
+            check(allFinite, "no NaN/Inf reaches a parameter from host state");
+        }
+    }
+
+    // State missing some parameters: those get their defaults, not the previous session's value.
+    {
+        auto source = makeProcessor();
+        scrambleParameters(*source, 0);
+        auto xml = savedStateXml(*source);
+        if (xml != nullptr)
+        {
+            const juce::StringArray dropped { "aDrive", "vintage", "bHighFreq", "osRender" };
+            for (const auto& id : dropped)
+                xml->removeChildElement(findParamChild(*xml, id), true);
+
+            auto target = makeProcessor();
+            scrambleParameters(*target, 2);
+            loadStateXml(*target, *xml);
+
+            auto droppedDefault = true;
+            for (const auto& id : dropped)
+                droppedDefault = droppedDefault && isAtDefault(*target, id);
+            check(droppedDefault, "parameters missing from host state load their defaults");
+            check(parametersMatch(*source, *target, dropped), "parameters present in host state still load");
+        }
+    }
+
+    // A foreign root tag is rejected outright; the current state is left unchanged.
+    {
+        auto source = makeProcessor();
+        auto xml = savedStateXml(*source);
+        if (xml != nullptr)
+        {
+            xml->setTagName("NOTBQST");
+            findParamChild(*xml, "aDrive")->setAttribute("value", 12.0);
+
+            auto target = makeProcessor();
+            scrambleParameters(*target, 3);
+            auto reference = makeProcessor();
+            scrambleParameters(*reference, 3);
+            loadStateXml(*target, *xml);
+            check(parametersMatch(*reference, *target), "host state with a foreign root tag is rejected");
+        }
+    }
+}
+
+void runFactoryPresetTests()
+{
+    // setParameter silently ignores unknown IDs, so a typo in factoryPresets[] would ship unnoticed.
+    auto processor = makeProcessor();
+    const auto ids = BqtPresetManager::getFactoryPresetParameterIds();
+    check(! ids.isEmpty(), "factory presets reference parameters");
+    for (const auto& id : ids)
+    {
+        const auto exists = processor->state().getParameter(id) != nullptr;
+        check(exists, "every factory preset parameter ID exists in the layout");
+        if (! exists)
+            std::printf("  (unknown factory preset parameter '%s')\n", id.toRawUTF8());
+        check(! workflowParameterIds.contains(id), "factory presets do not set workflow parameters");
+    }
+}
+
+void writePresetFile(const juce::File& file, const juce::String& rootTag, int version,
+                     std::initializer_list<std::pair<const char*, const char*>> params)
+{
+    juce::XmlElement xml(rootTag);
+    if (version >= 0)
+        xml.setAttribute("bqstPresetVersion", version);
+    for (const auto& [id, value] : params)
+    {
+        auto* child = xml.createNewChildElement("PARAM");
+        child->setAttribute("id", id);
+        child->setAttribute("value", value);
+    }
+    xml.writeTo(file);
+}
+
+void runUserPresetTests()
+{
+    const auto directory = juce::File::getSpecialLocation(juce::File::tempDirectory)
+                               .getChildFile("BqstChainTests-" + juce::String::toHexString(juce::Random::getSystemRandom().nextInt64()));
+    directory.createDirectory();
+
+    // Round trip: musical parameters travel; workflow parameters are neither stored nor changed.
+    {
+        auto source = makeProcessor();
+        scrambleParameters(*source, 0);
+        BqtPresetManager sourcePresets(source->state());
+        const auto file = directory.getChildFile("RoundTrip.bqstpreset");
+        check(sourcePresets.saveUserPreset(file), "user preset saves");
+
+        if (auto xml = juce::parseXML(file))
+        {
+            auto storesWorkflow = false;
+            for (const auto& id : workflowParameterIds)
+                storesWorkflow = storesWorkflow || findParamChild(*xml, id) != nullptr;
+            check(! storesWorkflow, "user preset does not store workflow parameters");
+            check(xml->getIntAttribute("bqstPresetVersion", 0) >= 1, "user preset is version stamped");
+        }
+        else
+        {
+            check(false, "saved user preset parses as XML");
+        }
+
+        auto target = makeProcessor();
+        scrambleParameters(*target, 4);
+        std::vector<float> workflowBefore;
+        for (const auto& id : workflowParameterIds)
+            workflowBefore.push_back(plainValue(*target, id));
+
+        BqtPresetManager targetPresets(target->state());
+        check(targetPresets.loadPresetFile(file), "user preset loads");
+        check(parametersMatch(*source, *target, workflowParameterIds), "user preset round-trips every musical parameter");
+
+        auto workflowKept = true;
+        for (int i = 0; i < workflowParameterIds.size(); ++i)
+            workflowKept = workflowKept && plainValue(*target, workflowParameterIds[i]) == workflowBefore[static_cast<size_t>(i)];
+        check(workflowKept, "loading a user preset leaves workflow parameters unchanged");
+    }
+
+    // Rejections: a preset from a newer format, and a file with a foreign root tag.
+    {
+        auto processor = makeProcessor();
+        const auto rootTag = processor->state().state.getType().toString();
+        const auto future = directory.getChildFile("Future.bqstpreset");
+        const auto foreign = directory.getChildFile("Foreign.bqstpreset");
+        writePresetFile(future, rootTag, 99, { { "aDrive", "12" } });
+        writePresetFile(foreign, "NOTBQST", 1, { { "aDrive", "12" } });
+
+        scrambleParameters(*processor, 5);
+        auto reference = makeProcessor();
+        scrambleParameters(*reference, 5);
+
+        BqtPresetManager presets(processor->state());
+        check(! presets.loadPresetFile(future), "a preset from a newer format version is rejected");
+        check(parametersMatch(*reference, *processor), "a rejected newer preset changes nothing");
+        check(! presets.loadPresetFile(foreign), "a preset with a foreign root tag is rejected");
+        check(parametersMatch(*reference, *processor), "a rejected foreign preset changes nothing");
+    }
+
+    // Workflow parameters inside a (hand-edited) preset are ignored; out-of-range and non-finite
+    // values are clamped / dropped rather than reaching the DSP.
+    {
+        auto processor = makeProcessor();
+        const auto rootTag = processor->state().state.getType().toString();
+        const auto file = directory.getChildFile("Hostile.bqstpreset");
+        writePresetFile(file, rootTag, 1,
+                        { { "osRealtime", "0" }, { "bypass", "1" }, { "eqBypass", "1" },
+                          { "aDrive", "1000" }, { "bDrive", "-50" }, { "aMix", "250" },
+                          { "aSatType", "7" }, { "inputTrim", "-99" }, { "bMix", "nan" } });
+
+        setParam(*processor, "osRealtime", 3.0f);
+        setParam(*processor, "bMix", 20.0f);
+        BqtPresetManager presets(processor->state());
+        check(presets.loadPresetFile(file), "a hand-edited current-version preset loads");
+
+        check(std::abs(plainValue(*processor, "osRealtime") - 3.0f) < 1.0e-4f
+                  && plainValue(*processor, "bypass") < 0.5f && plainValue(*processor, "eqBypass") < 0.5f,
+              "workflow parameters in a preset file are not applied");
+        check(std::abs(plainValue(*processor, "aDrive") - 18.0f) < 1.0e-4f
+                  && std::abs(plainValue(*processor, "bDrive")) < 1.0e-4f
+                  && std::abs(plainValue(*processor, "aMix") - 100.0f) < 1.0e-4f
+                  && std::abs(plainValue(*processor, "aSatType") - 1.0f) < 1.0e-4f
+                  && std::abs(plainValue(*processor, "inputTrim") + 12.0f) < 1.0e-4f,
+              "out-of-range preset values are clamped to the parameter range");
+        check(isAtDefault(*processor, "bMix"), "a non-finite preset value leaves the parameter at its default");
+    }
+
+    directory.deleteRecursively();
+}
 } // namespace
 
 int main()
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
+
+    // State and preset persistence (see the block above main).
+    runStateTests();
+    runFactoryPresetTests();
+    runUserPresetTests();
 
     // 1. Continuity of the FULL chain as drive -> 0. This is the regression that motivated the
     //    whole test target: the coloration filters used to engage at full strength the instant

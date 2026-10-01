@@ -21,6 +21,12 @@ public:
     bool loadPreset(int index);
     bool saveUserPreset(const juce::File& file) const;
 
+    // Loads a .bqstpreset file directly; loadPreset() uses this for user presets.
+    bool loadPresetFile(const juce::File& file);
+
+    // Every parameter ID the factory presets set, so tests can check each exists in the layout.
+    static juce::StringArray getFactoryPresetParameterIds();
+
     // Stable identity for a preset, so selection survives the list being rebuilt (user
     // presets are sorted and shift index when others are added/removed on disk).
     juce::String getPresetKey(int index) const;

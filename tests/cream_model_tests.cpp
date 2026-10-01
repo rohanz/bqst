@@ -46,6 +46,52 @@ double h3Db(double rate, double knob, double freq)
     };
     return 20.0 * std::log10(bin(3 * k) / bin(k));
 }
+
+// Fixture layout (doubles): rate, n, cases, x[n], then per case: knob, expected[n].
+struct FixtureCase
+{
+    double knob;
+    const double* expected;
+};
+
+struct Fixture
+{
+    double rate = 0.0;
+    size_t n = 0;
+    const double* x = nullptr;
+    std::vector<FixtureCase> cases;
+};
+
+// Returns false (instead of reading past the end) for a truncated or malformed fixture.
+bool parseFixture(const std::vector<double>& data, Fixture& out)
+{
+    if (data.size() < 3 || ! std::isfinite(data[0]) || ! (data[0] > 0.0))
+        return false;
+
+    const auto nRaw = data[1], casesRaw = data[2];
+    if (! (nRaw >= 1.0 && nRaw <= static_cast<double>(data.size()) && nRaw == std::floor(nRaw))
+        || ! (casesRaw >= 1.0 && casesRaw <= static_cast<double>(data.size()) && casesRaw == std::floor(casesRaw)))
+        return false;
+
+    out.rate = data[0];
+    out.n = static_cast<size_t>(nRaw);
+    const auto cases = static_cast<size_t>(casesRaw);
+
+    if (3 + out.n > data.size())
+        return false;
+    out.x = data.data() + 3;
+
+    out.cases.clear();
+    size_t cursor = 3 + out.n;
+    for (size_t c = 0; c < cases; ++c)
+    {
+        if (cursor + 1 + out.n > data.size())
+            return false;
+        out.cases.push_back({ data[cursor], data.data() + cursor + 1 });
+        cursor += 1 + out.n;
+    }
+    return true;
+}
 } // namespace
 
 int main(int argc, char** argv)
@@ -124,30 +170,41 @@ int main(int argc, char** argv)
         double v = 0.0;
         while (file.read(reinterpret_cast<char*>(&v), sizeof v))
             data.push_back(v);
-        check(data.size() > 4, "fixture loads");
-        if (data.size() > 4)
+        Fixture fixture;
+        const auto loaded = parseFixture(data, fixture);
+        check(loaded, "fixture loads and is complete");
+        if (loaded)
         {
-            const auto rate = data[0];
-            const auto n = static_cast<size_t>(data[1]);
-            const auto cases = static_cast<int>(data[2]);
-            const double* x = data.data() + 3;
-            size_t cursor = 3 + n;
-            for (int c = 0; c < cases; ++c)
+            const auto n = fixture.n;
+            for (const auto& testCase : fixture.cases)
             {
                 bqt::CreamModel m;
-                m.prepare(rate);
-                m.setKnob(data[cursor]);
-                const double* expected = data.data() + cursor + 1;
-                cursor += 1 + n;
+                m.prepare(fixture.rate);
+                m.setKnob(testCase.knob);
                 auto worst = 0.0, energy = 0.0;
                 for (size_t i = 0; i < n; ++i)
                 {
-                    worst = std::fmax(worst, std::fabs(m.process(x[i]) - expected[i]));
-                    energy += expected[i] * expected[i];
+                    worst = std::fmax(worst, std::fabs(m.process(fixture.x[i]) - testCase.expected[i]));
+                    energy += testCase.expected[i] * testCase.expected[i];
                 }
                 check(worst < 1.0e-9 * std::fmax(std::sqrt(energy / static_cast<double>(n)), 1.0e-3),
                       "C++ model matches the Python reference");
             }
+
+            // The parser must reject a truncated fixture instead of reading past the end:
+            // cut inside the last case, inside the input block, and inside the header.
+            for (const auto keep : { data.size() - 1, 3 + n - 1, size_t { 2 } })
+            {
+                const std::vector<double> truncated(data.begin(), data.begin() + static_cast<std::ptrdiff_t>(keep));
+                Fixture partial;
+                check(! parseFixture(truncated, partial), "a truncated fixture is rejected");
+            }
+
+            // A header claiming absurd sizes is rejected too.
+            auto lying = data;
+            lying[2] = 1.0e12;
+            Fixture bogus;
+            check(! parseFixture(lying, bogus), "a fixture with an impossible case count is rejected");
         }
     }
     else

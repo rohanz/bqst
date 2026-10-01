@@ -183,7 +183,12 @@ bool BqtPresetManager::loadPreset(int index)
         return true;
     }
 
-    if (auto xml = juce::parseXML(presets.getReference(index).file))
+    return loadPresetFile(presets.getReference(index).file);
+}
+
+bool BqtPresetManager::loadPresetFile(const juce::File& file)
+{
+    if (auto xml = juce::parseXML(file))
     {
         // Validate before touching a single parameter. Any well-formed XML with the right
         // extension used to be accepted: no root-tag check, and the bqstPresetVersion stamped by
@@ -249,6 +254,15 @@ bool BqtPresetManager::saveUserPreset(const juce::File& file) const
     }
 
     return false;
+}
+
+juce::StringArray BqtPresetManager::getFactoryPresetParameterIds()
+{
+    juce::StringArray ids;
+    for (const auto& preset : factoryPresets)
+        for (const auto& value : preset.values)
+            ids.addIfNotAlreadyThere(value.id);
+    return ids;
 }
 
 void BqtPresetManager::loadFactoryPreset(int index)
