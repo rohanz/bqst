@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.1.0
+
+Sound changes:
+
+- New Cream algorithm. Cream has been rebuilt: thicker low end, more harmonic density through the
+  mids and top, gentler peak rounding, and a Drive knob that moves continuously and evenly from
+  transparent to heavily saturated. Existing sessions and presets that use Cream will sound
+  different. The Cream factory presets have been retuned to keep their saturation amount.
+- New Vintage curve for both Cream and Grit: a broader, gentler top-end shelf.
+
+Internal:
+
+- Saturation state is reset through one shared path; mid/side conversion, parameter-ID prefixes
+  and preset defaults each have a single source.
+- Removed an unused legacy saturation curve.
+
 ## 1.0.3
 
 Sound changes:

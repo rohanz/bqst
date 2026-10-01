@@ -65,7 +65,8 @@ scripts/check.sh   # configure native arch, build VST3 + unit tests, run ctest, 
 Env overrides: `BUILD_DIR`, `STRICTNESS`, `PLUGINVAL`.
 
 Unit tests live in `tests/dsp_tests.cpp` (pure `BqtDsp.h` helpers, no JUCE) and
-`tests/chain_tests.cpp` (the real processor through `processBlock`), both gated by
+`tests/chain_tests.cpp` (the real processor through `processBlock`) and
+`tests/cream_model_tests.cpp` (the Cream model against its Python fixture), all gated by
 `BQST_BUILD_TESTS` and registered with CTest. `BqstGoldenRender` (not a CTest) renders
 fixed scenarios to raw float32 for bit-exact refactor checks: render before, refactor,
 render after, `cmp`. Run `scripts/check.sh` before handing off or releasing.
@@ -172,6 +173,9 @@ End to end, to ship a new version:
 Important files:
 
 - `src/BqtDsp.h`: small DSP constants and inline saturation/autogain functions.
+- `src/BqtCreamModel.h`: the Cream saturation model (header-only, JUCE-free).
+- `src/BqtCreamParams.h`: GENERATED Cream constants, taper, autogain and Vintage tables; do not hand-edit (see Cream model workflow).
+- `tools/cream_model/`: uv project that fits and exports the Cream model.
 - `src/BqtProcessorDsp.cpp`: audio processing, oversampling, EQ, saturation chain, metering, bypass crossfade.
 - `src/BqtParameterLayout.cpp`: APVTS parameter definitions, default values, parameter names visible to DAWs.
 - `src/PluginProcessor.h`: processor members and DSP object declarations.
@@ -231,17 +235,17 @@ Saturation module:
 
 ```text
 dry copy saved
--> low guard pre
--> algorithm-specific pre tone
--> pre-drive gain
--> waveshaper
--> algorithm-specific post tone
--> low guard post
+-> Grit: low guard pre -> Grit pre tone -> pre-drive gain -> waveshaper -> Grit post tone -> low guard post
+   Cream: Cream model (own emphasis, clipper, even-harmonic path, de-emphasis, DC blocker)
 -> vintage top rolloff, if enabled
+-> Grit only: DC blocker (colour-blended)
 -> wet autogain
 -> mix with dry copy
 -> output trim
 ```
+
+Cream bypasses the pre-drive gain, the low guards and the shared DC blocker: the model takes
+the Drive knob through its own taper and carries its own tone shaping and DC blocker.
 
 Keep this order unless there is a strong reason to change it. In particular, autogain should not be inside the nonlinear waveshaper path. It should compensate the wet signal before dry/wet mix. Output trim is the final manual trim for the blended saturation side.
 
@@ -291,30 +295,73 @@ Drive parameter is `0..18 dB`. Internally:
 
 ```cpp
 drive01 = driveDb / 18
-pre-drive gain = driveDb * 0.40
+pre-drive gain = driveDb * 0.40   // Grit only
+color = min(1, drive01 * 3)       // linear colouration ramp, full strength at 6 dB
 ```
 
-At `0 dB`, saturation is effectively bypassed. This is intentional. The curves must ramp continuously from zero drive; do not reintroduce fixed minimum saturation that turns on abruptly at `0.1 dB`.
+At `0 dB`, saturation is exactly bypassed. This is intentional. The curves must ramp continuously from zero drive; do not reintroduce fixed minimum saturation that turns on abruptly at `0.1 dB`.
 
 ### Cream
 
-Cream is smoother, dense, and polished. It uses:
+Cream is smooth, dense and polished: thick low end, harmonic density through the mids and
+top, gentle peak rounding. It is a fitted model, implemented in `src/BqtCreamModel.h`
+(header-only, JUCE-free, one stateful instance per side, run in double precision at the
+oversampled rate). Per sample:
 
-- soft asymmetric `tanh` curve
-- drive-scaled asymmetry
-- drive-scaled odd harmonic weighting
-- subtle high-frequency emphasis/de-emphasis
-- low-end guard
-
-Cream tone filters:
-
-```cpp
-densityBodyFocus   = peak 720 Hz, Q 0.52, +0.85 dB
-densityPreEmphasis = high shelf 6.2 kHz, Q 0.55, -0.65 dB
-densityDeEmphasis  = high shelf 7.0 kHz, Q 0.50, -0.55 dB
+```text
+u   = emphasis(x)                      high shelf emphHz, Q emphQ, +emphDb
+z   = drive * inputLevel * u
+v   = (clip(z + bias) - clip(bias)) / (drive * inputLevel)
+      clip(x) = x / (1 + |x|^knee)^(1/knee)          soft-knee clipper, small bias
+v  += lf2Gain * drive^lf2Slope * LP1(z, lf2Hz)^2 / (drive * inputLevel)
+      (low-passed even-harmonic path: low-end thickening)
+v   = deemphasis(v)                    high shelf emphHz, Q emphQ, post gain (see below)
+out = DCblock(v, dcBlockerHz = 5 Hz)   Cream's own DC blocker
 ```
 
-The body focus and treble shaping make Cream smoother and less clipper-like when pushed. Vintage is the intentional additional top-softening control.
+- **Drive** is the knob mapped through the generated taper table `knobDrive[]` (0.25 dB
+  steps, linearly interpolated). The taper is perceptually even (nonlinear energy rises
+  linearly in dB with the knob) and starts at exactly 0, so knob 0 is an exact bypass and
+  the clipper and even-harmonic path vanish continuously as drive goes to 0. Low knob
+  settings are real low drive, not a wet/dry blend.
+- **Net tilt is colour-ramped.** The emphasis/de-emphasis pair is not an exact inverse (a
+  small net lift above about 1.2 kHz). The de-emphasis gain is interpolated as
+  `post = -emphDb + (deemphDb + emphDb) * color`, with the same colour ramp as Grit (full
+  at 6 dB of knob), so drive 0 is flat and 0 → 0.1 dB is continuous.
+- **No pre-drive gain, no low guard, no shared DC blocker.** The model owns its gain
+  structure and DC removal; the Low-End Guard is Grit-only.
+- Coefficients and drive are refreshed at `controlRateInterval`; model state is reset
+  through the shared saturation-state reset. Nothing allocates on the audio thread, and the
+  model adds no latency.
+
+**All constants live in the generated `src/BqtCreamParams.h`** (namespace `bqt::cream`:
+`knee`, `bias`, `emphHz`, `emphQ`, `emphDb`, `deemphDb`, `lf2Gain`, `lf2Slope`, `lf2Hz`,
+`inputLevel`, `dcBlockerHz`, the taper table `knobDrive[]`, the Cream autogain table
+`autoGainDb[]` and the Vintage shelf). Never hand-edit it; regenerate it with
+`cd tools/cream_model && uv run python -m density.bqst_export` (see Cream model workflow).
+Vintage is the intentional additional top-softening control.
+
+### Cream model workflow
+
+The model pipeline lives in `tools/cream_model/` (a uv project: fitting, export, taper and
+autogain generators, evaluation; results and the research report in
+`tools/cream_model/results/`). To change Cream:
+
+1. **Refit** in `tools/cream_model/` (the fit writes its JSON under `results/`).
+2. **Export:** `cd tools/cream_model && uv run python -m density.bqst_export`. This writes
+   `src/BqtCreamParams.h`, the port fixture `tests/data/cream_fixture.bin` and
+   `results/bqst_export.json`, and prints the knob position of each calibration landmark.
+   Commit the header and the fixture together.
+3. **Test:** build and run `ctest`. `BqstCreamTests` (`tests/cream_model_tests.cpp`) checks
+   the C++ model against the Python fixture to 1e-9 relative, plus exact bypass at 0,
+   continuity from 0 to 0.1 dB, bounded output at every oversampling rate, sample-rate
+   independence, a monotonic taper starting at 0 and a sane autogain table. Never loosen the
+   fixture tolerance; a mismatch is a port defect.
+4. **Local regression check:** build the VST3, then
+   `cd tools/cream_model && uv run python -m density.regress [path/to/BQST.vst3]`. It renders
+   the reference clips in `references/density/` through the built plugin and prints tone,
+   distortion, peak-rounding and null tables against the reference captures. The WAVs are
+   gitignored, so this check is local only and not part of CI.
 
 ### Grit
 
@@ -333,7 +380,8 @@ The low-drive/partial-restore pair makes low and low-mid content hit the nonline
 
 ### Low-End Guard
 
-The saturation low-end safeguard is a pre/post shelf pair:
+The Low-End Guard is Grit-only; Cream does not use it (its low end is shaped by the model).
+It is a pre/post shelf pair:
 
 ```cpp
 saturationLowGuardPre  = low shelf 95 Hz, Q 0.55, -2.2 dB
@@ -346,13 +394,15 @@ If bass still gets too buzzy, consider drive-dependent low guarding rather than 
 
 ### Vintage
 
-Vintage is an optional top rolloff after saturation:
+Vintage is an optional top rolloff after saturation, used by both Cream and Grit. It is a
+fitted broad high shelf whose constants come from the generated header:
 
 ```cpp
-vintage = high shelf 12 kHz, Q 0.42, -3.2 dB when enabled
+vintage = high shelf bqt::cream::vintageHz (~13.6 kHz), Q vintageQ (~0.3), vintageDb (~-2.75 dB) when enabled
 ```
 
-Keep it obvious enough to be a mode, but not so dark that it is only special-effect material.
+It is built in `updateSaturationToneFilters` and colour-ramped like the other linear
+saturation filters. Keep it obvious enough to be a mode, but not so dark that it is only special-effect material.
 
 ## Autogain
 
@@ -365,28 +415,39 @@ Why not live RMS/LUFS matching inside the plugin:
 - it can behave like hidden compression/pumping
 - LUFS is better for offline calibration than real-time per-block gain correction
 
-Current curve in `BqtDsp.h`:
+`bqt::saturationAutoGain(drive01, type)` in `BqtDsp.h`, evaluated at `controlRateInterval`
+and smoothed per sample, applied to the wet signal before the mix.
+
+**Cream** is a lookup into the generated static table `bqt::cream::autoGainDb[]` (0.5 dB
+knob steps, linearly interpolated; exactly 0 dB at knob 0). It is calibrated offline for a
+median loudness change of 0 LU across a multi-material set (sine, 808, bassline, drum bus,
+dense master, plus the model's calibration clips), and the generator prints the per-material
+spread. Because the model's low end and density can make it quieter than the dry signal at
+low drive, the table can exceed unity there; that is expected. Regenerate it only through
+`cd tools/cream_model && uv run python -m density.bqst_export`; never hand-edit the values.
+
+**Grit** keeps its formula:
 
 ```cpp
-amount   = Cream ? 2.04 : 2.71
-exponent = Cream ? 1.67 : 1.48
-gain = 1 / (1 + pow(drive01, exponent) * amount)
+gain = 1 / (1 + pow(drive01, 1.48) * 2.71)
 ```
 
-Use `tools/calibrate_autogain.py` to rerun the offline material sweep before changing these values. It tests sine, 808, bassline, drum-bus, and dense-master style signals against the plugin's saturation tone path.
+Use `tools/calibrate_autogain.py` to rerun the offline Grit material sweep before changing
+these values. It tests sine, 808, bassline, drum-bus and dense-master style signals against
+Grit's saturation tone path.
 
-Approximate compensation:
+Approximate Grit compensation:
 
 ```text
-Drive    Cream      Grit
-1 dB     -0.1 dB    -0.2 dB
-3 dB     -0.8 dB    -1.5 dB
-6 dB     -2.4 dB    -3.7 dB
-12 dB    -6.2 dB    -7.9 dB
-18 dB    -9.7 dB    -11.4 dB
+Drive    Grit
+1 dB     -0.2 dB
+3 dB     -1.5 dB
+6 dB     -3.7 dB
+12 dB    -7.9 dB
+18 dB    -11.4 dB
 ```
 
-These values were calibrated from offline sweeps using sine/two-tone/808-ish tests at several levels. If retuning, use multiple sources and keep the behavior predictable.
+If retuning either type, use multiple sources and keep the behavior predictable.
 
 ## GUI And UX
 

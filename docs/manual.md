@@ -64,17 +64,20 @@ The saturation module has independent Side A and Side B Drive, Mix, and Output c
 
 **Cream/Grit** toggles the saturation type.
 
-**Cream** is a smooth, thick saturation character based on a combination of op-amp, transistor, and diode-style behavior.
+**Cream** is a smooth, dense saturation in the op-amp tradition: it thickens the low end, adds
+harmonic density through the mids and top, and rounds peaks gently. It moves continuously from
+transparent at 0 dB to heavily saturated at 18 dB, and each step of the knob adds a similar
+amount of saturation, so subtle settings get plenty of travel.
 
 **Grit** is a firmer transformer-style saturation character with more bite.
 
-**Vintage** adds gentle top-end rounding after saturation.
+**Vintage** softens the top end after saturation with a broad, gentle shelf.
 
 **Drive** controls how hard the saturation stage is pushed.
 
 **Mix** blends the saturated signal with the dry signal. At 100%, the output is fully wet.
 
-**Output** trims the final level for each side from -12 dB to +12 dB.
+**Output** trims the final level for each side from -16 dB to +16 dB.
 
 When Drive is at 0 dB, the saturation stage is effectively bypassed.
 
