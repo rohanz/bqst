@@ -11,10 +11,6 @@ using namespace bqst::ui;
 
 void BqtAudioProcessorEditor::timerCallback()
 {
-    const auto bypassIsOn = audioProcessor.state().getRawParameterValue("bypass")->load() > 0.5f;
-    bypass.setToggleState(bypassIsOn, juce::dontSendNotification);
-    requestRackBypassVisualState(bypassIsOn);
-
     satTypeButton.setToggleState(sideControls[0].satType.getSelectedItemIndex() == 1, juce::dontSendNotification);
     // Picks up link changes from host automation, preset loads and state restore; a click on a
     // link button also calls this directly.

@@ -19,8 +19,6 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
     setSize(baseEditorWidth, baseEditorHeight);
 
     addAndMakeVisible(rackComponent);
-    addAndMakeVisible(rackBypassOverlay);
-    rackBypassOverlay.setVisible(false);
     configureCombo(eqMode);
     configureCombo(satMode);
     configureCombo(osRealtime);
@@ -154,8 +152,10 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
     };
     vintageAttachment = std::make_unique<ButtonAttachment>(audioProcessor.state(), "vintage", vintage);
     bypassAttachment = std::make_unique<ButtonAttachment>(audioProcessor.state(), "bypass", bypass);
-    // bypassAttachment already writes the parameter (as one gesture) before onClick runs.
-    bypass.onClick = [this] { requestRackBypassVisualState(bypass.getToggleState()); };
+    bypassLookAttachment = std::make_unique<juce::ParameterAttachment>(
+        *audioProcessor.state().getParameter("bypass"),
+        [this](float value) { rackComponent.setBypassed(value > 0.5f); });
+    bypassLookAttachment->sendInitialUpdate();
     inputTrimCompensationStart = inputTrim.getValue();
     for (size_t index = 0; index < sideControls.size(); ++index)
         outputTrimCompensationStart[index] = sideControls[index].outputTrim.getValue();

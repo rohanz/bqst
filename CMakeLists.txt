@@ -43,6 +43,8 @@ juce_add_binary_data(BqtAssets
         assets/gui/vu-frame.png
         assets/fonts/Chillax-Regular.otf
         assets/fonts/Chillax-Semibold.otf
+        assets/fonts/DMSans-Medium.ttf
+        assets/fonts/DMSans-SemiBold.ttf
 )
 
 juce_add_plugin(BQST

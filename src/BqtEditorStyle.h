@@ -43,6 +43,16 @@ inline juce::FontOptions faceFont(float height, bool bold = true)
     return juce::FontOptions(bold && semibold != nullptr ? semibold : regular).withHeight(height);
 }
 
+// VU scale lettering (DM Sans, SIL OFL; see assets/fonts/DMSans-OFL.txt). Sized in points, i.e. em size.
+inline juce::FontOptions vuFont(float pointHeight, bool semibold)
+{
+    static auto medium = juce::Typeface::createSystemTypefaceFor(BinaryData::DMSansMedium_ttf,
+                                                                 BinaryData::DMSansMedium_ttfSize);
+    static auto bold = juce::Typeface::createSystemTypefaceFor(BinaryData::DMSansSemiBold_ttf,
+                                                               BinaryData::DMSansSemiBold_ttfSize);
+    return juce::FontOptions(semibold && bold != nullptr ? bold : medium).withPointHeight(pointHeight);
+}
+
 inline juce::Rectangle<float> getRackFaceBounds(juce::Rectangle<float> available)
 {
     available = available.reduced(4.0f, 0.0f);

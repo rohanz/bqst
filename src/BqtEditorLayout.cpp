@@ -285,21 +285,6 @@ void BqtAudioProcessorEditor::paintRack(juce::Graphics& g)
     }
 }
 
-BqtAudioProcessorEditor::BypassOverlay::BypassOverlay()
-{
-    setInterceptsMouseClicks(false, false);
-    setVisible(false);
-}
-
-void BqtAudioProcessorEditor::BypassOverlay::paint(juce::Graphics& g)
-{
-    const auto bounds = getLocalBounds().toFloat();
-    g.setColour(juce::Colours::black.withAlpha(0.28f));
-    g.fillRect(bounds);
-    g.setColour(juce::Colour(0xff8a8a8a).withAlpha(0.16f));
-    g.fillRect(bounds);
-}
-
 BqtAudioProcessorEditor::AboutPanel::AboutPanel()
 {
     setMouseCursor(juce::MouseCursor::NormalCursor);
@@ -357,45 +342,25 @@ void BqtAudioProcessorEditor::AboutPanel::mouseUp(const juce::MouseEvent& event)
         onClose();
 }
 
-void BqtAudioProcessorEditor::requestRackBypassVisualState(bool shouldBeBypassed)
-{
-    const auto wasBypassed = rackComponent.isBypassed();
-
-    // This is called unconditionally from the 60 Hz timer. The toFront() pair below ping-pongs --
-    // whichever is raised last displaces the other, so both moved every tick forever -- and
-    // Component::toFront -> reorderChildInternal calls repaintParent(), which has no visibility
-    // guard, so the hidden overlay still dirtied the whole rack. That repainted all 16 rotaries
-    // through high-quality image rotation and dispatched two synthetic mouse-moves per tick, on a
-    // completely idle UI. Bail out unless something actually changed.
-    if (wasBypassed == shouldBeBypassed
-        && rackBypassOverlay.isVisible() == shouldBeBypassed
-        && rackBypassOverlay.getBounds() == rackComponent.getBounds())
-        return;
-
-    rackComponent.setBypassed(shouldBeBypassed);
-
-    rackBypassOverlay.setBounds(rackComponent.getBounds());
-    rackBypassOverlay.setVisible(shouldBeBypassed);
-    rackBypassOverlay.toFront(false);
-    readoutBubble.toFront(false);
-
-    // This runs on the 60 Hz timer too, so re-assert the About panel above the bypass dimming;
-    // otherwise the overlay keeps coming to the front and buries an open About panel.
-    if (aboutPanel.isVisible())
-        aboutPanel.toFront(false);
-
-    if (shouldBeBypassed && wasBypassed != shouldBeBypassed)
-        rackBypassOverlay.repaint();
-    else if (wasBypassed != shouldBeBypassed)
-        repaint(rackComponent.getBounds());
-}
-
 void BqtAudioProcessorEditor::RackComponent::setBypassed(bool shouldBeBypassed)
 {
     if (bypassed == shouldBeBypassed)
         return;
 
     bypassed = shouldBeBypassed;
+    repaint();
+}
+
+void BqtAudioProcessorEditor::RackComponent::paintOverChildren(juce::Graphics& g)
+{
+    if (! bypassed)
+        return;
+
+    const auto bounds = getLocalBounds().toFloat();
+    g.setColour(juce::Colours::black.withAlpha(0.28f));
+    g.fillRect(bounds);
+    g.setColour(juce::Colour(0xff8a8a8a).withAlpha(0.16f));
+    g.fillRect(bounds);
 }
 
 void BqtAudioProcessorEditor::resized()
@@ -408,7 +373,6 @@ void BqtAudioProcessorEditor::resized()
     };
 
     for (auto* component : { static_cast<juce::Component*>(&rackComponent),
-                             static_cast<juce::Component*>(&rackBypassOverlay),
                              static_cast<juce::Component*>(&presetPrevious), static_cast<juce::Component*>(&presetMenuButton),
                              static_cast<juce::Component*>(&presetNext), static_cast<juce::Component*>(&presetSave),
                              static_cast<juce::Component*>(&aboutButton),
@@ -496,7 +460,6 @@ void BqtAudioProcessorEditor::resized()
     auto rackFloat = getRackFaceBounds(bounds.toFloat());
     auto rack = rackFloat.toNearestInt();
     rackComponent.setBounds(rack);
-    rackBypassOverlay.setBounds(rack);
     aboutPanel.setBounds(juce::Rectangle<int>(0, 0, baseEditorWidth, baseEditorHeight));
     aboutPanel.toFront(false);
     auto rackLocal = juce::Rectangle<int>(0, 0, rack.getWidth(), rack.getHeight());
@@ -559,7 +522,6 @@ void BqtAudioProcessorEditor::resized()
 
     vintage.toFront(false);
     satTypeButton.toFront(false);
-    requestRackBypassVisualState(rackComponent.isBypassed());
     readoutBubble.toFront(false);
     aboutPanel.toFront(false);
 }

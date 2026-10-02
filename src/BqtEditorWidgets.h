@@ -22,6 +22,11 @@ public:
     juce::Rectangle<int> getTooltipBounds(const juce::String& tipText, juce::Point<int> screenPos,
                                           juce::Rectangle<int> parentArea) override;
     void drawTooltip(juce::Graphics& g, const juce::String& text, int width, int height) override;
+    juce::Font getPopupMenuFont() override;
+    void drawPopupMenuItem(juce::Graphics& g, const juce::Rectangle<int>& area, bool isSeparator, bool isActive,
+                           bool isHighlighted, bool isTicked, bool hasSubMenu, const juce::String& text,
+                           const juce::String& shortcutKeyText, const juce::Drawable* icon,
+                           const juce::Colour* textColour) override;
 };
 
 class BqtReadoutBubble final : public juce::Component

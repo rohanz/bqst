@@ -51,13 +51,6 @@ private:
         std::unique_ptr<SliderAttachment> outputTrimAttachment;
     };
 
-    class BypassOverlay final : public juce::Component
-    {
-    public:
-        BypassOverlay();
-        void paint(juce::Graphics& g) override;
-    };
-
     class AboutPanel final : public juce::Component
     {
     public:
@@ -81,6 +74,9 @@ private:
         }
 
         void paint(juce::Graphics& g) override;
+        // The bypass dimming is painted here, in the same pass as the rack's children (meters
+        // included), so no part of the rack can show a different bypass state than the rest.
+        void paintOverChildren(juce::Graphics& g) override;
         void setBypassed(bool shouldBeBypassed);
         bool isBypassed() const { return bypassed; }
 
@@ -102,7 +98,6 @@ private:
     void configureLabel(juce::Label& label, const juce::String& text, juce::Justification justification = juce::Justification::centred);
     void configureSide(SideControls& controls, int sideIndex);
     void paintRack(juce::Graphics& g);
-    void requestRackBypassVisualState(bool shouldBeBypassed);
     void timerCallback() override;
     bool isGroupLinked(bqt::editor::LinkGroup group) const;
     bool shouldMirrorToOtherSide(bqt::editor::LinkGroup group) const;
@@ -157,7 +152,6 @@ private:
     BqtAudioProcessor& audioProcessor;
     BqtPresetManager presetManager;
     RackComponent rackComponent;
-    BypassOverlay rackBypassOverlay;
     juce::TextButton presetPrevious;
     juce::TextButton presetMenuButton;
     juce::TextButton presetNext;
@@ -192,6 +186,9 @@ private:
     std::unique_ptr<ButtonAttachment> satLinkAttachment;
     std::unique_ptr<ButtonAttachment> vintageAttachment;
     std::unique_ptr<ButtonAttachment> bypassAttachment;
+    // Drives the rack's bypassed look from the parameter itself (clicks, host automation, state
+    // restore); callbacks arrive on the message thread.
+    std::unique_ptr<juce::ParameterAttachment> bypassLookAttachment;
     BqtReadoutBubble readoutBubble;
     // The meters are driven from the display's vertical blank rather than the 60 Hz message
     // timer. A 60 Hz juce::Timer beats against a 60 Hz refresh -- message-loop granularity

@@ -19,6 +19,95 @@ float vuDbToScaleFraction(float db)
         return ((clamped + 20.0f) / 20.0f) * 0.82f;
     return 0.82f + (clamped / 3.0f) * 0.18f;
 }
+
+// Backlit VU face. The frame artwork bakes in a flat face; this repaints it as paper lit by a
+// soft-white bulb hidden behind the bottom bar: the face is a little darker overall (unlit), the
+// bulb's reflection brings the lower part back up and a bloom lifts it slightly past the paper.
+// Geometry is in the artwork's 2000 px space, measured from vu-frame.png.
+namespace vuface
+{
+constexpr float artSize = 2000.0f, centreX = 1000.0f, centreY = 865.0f, radius = 569.0f, cutY = 1189.0f;
+constexpr float paper[3] { 244.0f, 243.0f, 239.0f };  // neutral off-white #f4f3ef
+constexpr float bulb[3] { 255.0f, 232.0f, 208.0f };   // soft white, about 4000 K
+constexpr float unlitDarkening = 0.16f;
+constexpr float bloom = 0.9f;
+
+struct Stop { float position, alpha; };
+
+template <size_t N>
+float alphaAt(const Stop (&stops)[N], float t)
+{
+    if (t <= stops[0].position)
+        return stops[0].alpha;
+    for (size_t i = 1; i < N; ++i)
+        if (t <= stops[i].position)
+            return juce::jmap(t, stops[i - 1].position, stops[i].position, stops[i - 1].alpha, stops[i].alpha);
+    return stops[N - 1].alpha;
+}
+
+// 0..1 along a radial gradient with inner radius r0 and outer radius r1.
+float radialT(float dx, float dy, float r0, float r1)
+{
+    return juce::jlimit(0.0f, 1.0f, (std::hypot(dx, dy) - r0) / (r1 - r0));
+}
+
+// Paints the face over `layer`, whose pixels are `scale` per logical unit; `frame` is where the
+// artwork was drawn, in logical units.
+void paint(juce::Image& layer, juce::Rectangle<float> frame, float scale)
+{
+    const auto toX = [frame](float artX) { return frame.getX() + artX / artSize * frame.getWidth(); };
+    const auto toY = [frame](float artY) { return frame.getY() + artY / artSize * frame.getHeight(); };
+    const auto cx = toX(centreX), cy = toY(centreY), cut = toY(cutY);
+    const auto r = radius / artSize * frame.getWidth();
+    const auto clipR = r + 0.8f, clipBottom = cut + 0.8f;
+
+    static constexpr Stop reflection[] { { 0.0f, 1.0f }, { 0.35f, 0.85f }, { 0.7f, 0.35f }, { 1.0f, 0.0f } };
+    static constexpr Stop bloomFalloff[] { { 0.0f, 1.0f }, { 0.5f, 0.4f }, { 1.0f, 0.0f } };
+
+    float reflected[3], hot[3], base[3];
+    for (int c = 0; c < 3; ++c)
+    {
+        base[c] = paper[c] * (1.0f - unlitDarkening);
+        reflected[c] = paper[c] * bulb[c] / 255.0f;
+        hot[c] = std::round(255.0f - (255.0f - bulb[c]) * 0.5f);
+    }
+
+    const auto x0 = juce::jmax(0, static_cast<int>(std::floor((cx - clipR) * scale)));
+    const auto x1 = juce::jmin(layer.getWidth(), static_cast<int>(std::ceil((cx + clipR) * scale)));
+    const auto y0 = juce::jmax(0, static_cast<int>(std::floor((cy - clipR) * scale)));
+    const auto y1 = juce::jmin(layer.getHeight(), static_cast<int>(std::ceil(clipBottom * scale)));
+
+    juce::Image::BitmapData pixels(layer, juce::Image::BitmapData::readWrite);
+    for (int py = y0; py < y1; ++py)
+    {
+        const auto y = (static_cast<float>(py) + 0.5f) / scale;
+        for (int px = x0; px < x1; ++px)
+        {
+            const auto x = (static_cast<float>(px) + 0.5f) / scale;
+            const auto coverage = juce::jlimit(0.0f, 1.0f, (clipR - std::hypot(x - cx, y - cy)) * scale + 0.5f)
+                                * juce::jlimit(0.0f, 1.0f, (clipBottom - y) * scale + 0.5f);
+            if (coverage <= 0.0f)
+                continue;
+
+            const auto reflectionAlpha = alphaAt(reflection, radialT(x - cx, y - (cut + 22.0f), 6.0f, r * 1.55f));
+            const auto hotAlpha = 0.55f * (1.0f - radialT(x - cx, y - (cut + 4.0f), 1.0f, r * 0.45f));
+            const auto bloomAlpha = bloom * alphaAt(bloomFalloff, radialT(x - cx, y - (cut + 10.0f), 4.0f, r * 1.05f));
+
+            juce::uint8 rgb[3];
+            for (int c = 0; c < 3; ++c)
+            {
+                auto v = base[c] + (reflected[c] - base[c]) * reflectionAlpha;
+                v += hotAlpha * hot[c] * (1.0f - v / 255.0f);    // screen
+                v += bloomAlpha * hot[c] * (1.0f - v / 255.0f);  // screen
+                rgb[c] = static_cast<juce::uint8>(juce::jlimit(0.0f, 255.0f, std::round(v)));
+            }
+
+            const auto face = juce::Colour(rgb[0], rgb[1], rgb[2]);
+            pixels.setPixelColour(px, py, pixels.getPixelColour(px, py).interpolatedWith(face, coverage));
+        }
+    }
+}
+} // namespace vuface
 } // namespace
 
 void BqtReadoutBubble::setText(juce::String newText)
@@ -52,6 +141,38 @@ BqtHardwareLookAndFeel::BqtHardwareLookAndFeel()
     setColour(juce::ComboBox::outlineColourId, juce::Colour(ink));
     setColour(juce::PopupMenu::backgroundColourId, juce::Colour(cream));
     setColour(juce::PopupMenu::textColourId, juce::Colour(ink));
+    setColour(juce::PopupMenu::highlightedBackgroundColourId, juce::Colour(panelPink));
+    setColour(juce::PopupMenu::highlightedTextColourId, juce::Colour(ink));
+    setColour(juce::PopupMenu::headerTextColourId, juce::Colour(ink).withAlpha(0.6f));
+}
+
+// Drop-down and preset menus use the panel's face font, matching the buttons that open them.
+juce::Font BqtHardwareLookAndFeel::getPopupMenuFont()
+{
+    return juce::Font(faceFont(15.8f));
+}
+
+// The current choice gets a lit lamp, like the panel's cream/grit indicators, instead of a tick.
+void BqtHardwareLookAndFeel::drawPopupMenuItem(juce::Graphics& g, const juce::Rectangle<int>& area, bool isSeparator,
+                                               bool isActive, bool isHighlighted, bool isTicked, bool hasSubMenu,
+                                               const juce::String& text, const juce::String& shortcutKeyText,
+                                               const juce::Drawable* icon, const juce::Colour* textColour)
+{
+    juce::LookAndFeel_V4::drawPopupMenuItem(g, area, isSeparator, isActive, isHighlighted, false, hasSubMenu, text,
+                                            shortcutKeyText, icon, textColour);
+    if (! isTicked || isSeparator)
+        return;
+
+    // Same left column LookAndFeel_V4 reserves for the tick.
+    const auto row = area.reduced(1).toFloat();
+    const auto column = row.withWidth(row.getHeight() / 1.3f);
+    const auto lamp = juce::Rectangle<float>(9.0f, 9.0f).withCentre(column.getCentre().translated(2.0f, 0.0f));
+    g.setColour(juce::Colours::black.withAlpha(0.25f));
+    g.fillEllipse(lamp.translated(1.0f, 1.0f));
+    g.setColour(juce::Colour(lampOn));
+    g.fillEllipse(lamp);
+    g.setColour(juce::Colour(ink));
+    g.drawEllipse(lamp, 1.0f);
 }
 
 void BqtHardwareLookAndFeel::drawRotarySlider(juce::Graphics& g, int x, int y, int width, int height,
@@ -277,8 +398,9 @@ void BqtHardwareLookAndFeel::drawToggleButton(juce::Graphics& g, juce::ToggleBut
         if (pressed)
             bounds = bounds.reduced(0.8f).translated(0.0f, 0.7f);
 
-        const auto topColour = pressed ? juce::Colour(0xffeee4dc) : juce::Colour(cream);
-        const auto bottomColour = pressed ? juce::Colour(0xffcfc4bb) : juce::Colour(0xffded3ca);
+        // Latched on: panel pink, still seated a little lower. A momentary press stays cream.
+        const auto topColour = active ? juce::Colour(0xffffc3d9) : pressed ? juce::Colour(0xffeee4dc) : juce::Colour(cream);
+        const auto bottomColour = active ? juce::Colour(panelPinkDark) : pressed ? juce::Colour(0xffcfc4bb) : juce::Colour(0xffded3ca);
         juce::ColourGradient buttonGradient(topColour, bounds.getCentreX(), bounds.getY(),
                                             bottomColour, bounds.getCentreX(), bounds.getBottom(), false);
         g.setGradientFill(buttonGradient);
@@ -564,8 +686,6 @@ void BqtVuMeter::rebuildStaticLayer()
     }
 
     staticLayer = juce::Image(juce::Image::ARGB, staticLayerWidth, staticLayerHeight, true);
-    juce::Graphics g(staticLayer);
-    g.addTransform(juce::AffineTransform::scale(layerScale));
 
     const auto bounds = juce::Rectangle<float>(0.0f, 0.0f, static_cast<float>(logicalWidth),
                                                static_cast<float>(logicalHeight));
@@ -581,12 +701,18 @@ void BqtVuMeter::rebuildStaticLayer()
         const auto source = juce::ImageCache::getFromMemory(BinaryData::vuframe_png, BinaryData::vuframe_pngSize);
         return source.rescaled(1000, 1000, juce::Graphics::highResamplingQuality);
     }();
+    const auto frameArea = frameBounds.toNearestInt();
     if (frame.isValid())
     {
-        const auto frameArea = frameBounds.toNearestInt();
-        g.drawImageWithin(frame, frameArea.getX(), frameArea.getY(), frameArea.getWidth(), frameArea.getHeight(),
-                          juce::RectanglePlacement::stretchToFit, false);
+        juce::Graphics frameGraphics(staticLayer);
+        frameGraphics.addTransform(juce::AffineTransform::scale(layerScale));
+        frameGraphics.drawImageWithin(frame, frameArea.getX(), frameArea.getY(), frameArea.getWidth(), frameArea.getHeight(),
+                                      juce::RectanglePlacement::stretchToFit, false);
     }
+    vuface::paint(staticLayer, frameArea.toFloat(), layerScale);
+
+    juce::Graphics g(staticLayer);
+    g.addTransform(juce::AffineTransform::scale(layerScale));
 
     auto polar = [](juce::Point<float> centre, float radius, float degrees)
     {
@@ -625,8 +751,9 @@ void BqtVuMeter::rebuildStaticLayer()
     g.strokePath(redArc, juce::PathStrokeType(3.4f));
 
     const std::array<float, 7> majorDbs { -20.0f, -10.0f, -7.0f, -5.0f, -3.0f, 0.0f, 3.0f };
-    const std::array<const char*, 7> majorLabels { "-20", "-10", "-7", "-5", "-3", "0", "+3" };
-    g.setFont(juce::Font(faceFont(11.3f, false)));
+    // Plain numbers; the scale carries one minus sign at its left end and one plus at its right.
+    const std::array<const char*, 7> majorLabels { "20", "10", "7", "5", "3", "0", "3" };
+    const auto labelFont = juce::Font(vuFont(11.07f, false));
     for (size_t i = 0; i < majorDbs.size(); ++i)
     {
         const auto frac = vuDbToScaleFraction(majorDbs[i]);
@@ -636,10 +763,28 @@ void BqtVuMeter::rebuildStaticLayer()
                         : meterBlack.withAlpha(0.95f));
         g.drawLine({ polar(centre, radius - 7.0f, angle), polar(centre, radius + 3.0f, angle) },
                    majorDbs[i] == 0.0f ? 2.6f : 1.9f);
-        const auto labelPoint = polar(centre, radius + 9.0f, angle);
-        g.drawText(majorLabels[i], juce::Rectangle<float>(34.0f, 15.0f).withCentre(labelPoint).toNearestInt(),
-                   juce::Justification::centred);
+        // Centre the number on its tick, with the near edge of its ink box a fixed gap past the
+        // tick end; the box's extent along the tick direction depends on the angle.
+        juce::GlyphArrangement glyphs;
+        glyphs.addLineOfText(labelFont, majorLabels[i], 0.0f, 0.0f);
+        const auto inkBox = glyphs.getBoundingBox(0, -1, true);
+        const auto radians = juce::degreesToRadians(angle);
+        const auto extent = std::abs(inkBox.getWidth() * 0.5f * std::cos(radians))
+                          + std::abs(inkBox.getHeight() * 0.5f * std::sin(radians));
+        const auto labelCentre = polar(centre, radius + 3.0f + 2.5f + extent, angle);
+        glyphs.draw(g, juce::AffineTransform::translation(labelCentre - inkBox.getCentre()));
     }
+
+    const auto drawEndSign = [&](const juce::String& sign, juce::Colour colour, float angle)
+    {
+        juce::GlyphArrangement glyphs;
+        glyphs.addLineOfText(juce::Font(vuFont(11.07f * 1.25f, true)), sign, 0.0f, 0.0f);
+        g.setColour(colour);
+        glyphs.draw(g, juce::AffineTransform::translation(polar(centre, radius - 2.0f, angle)
+                                                         - glyphs.getBoundingBox(0, -1, true).getCentre()));
+    };
+    drawEndSign(juce::String::charToString(static_cast<juce::juce_wchar>(0x2212)), meterBlack.withAlpha(0.95f), start + 7.0f);
+    drawEndSign("+", meterRed.withAlpha(0.98f), end - 7.0f);
 
     for (int db = -20; db <= 3; ++db)
     {
@@ -656,7 +801,7 @@ void BqtVuMeter::rebuildStaticLayer()
     }
 
     g.setColour(meterBlack.withAlpha(0.98f));
-    g.setFont(juce::Font(faceFont(19.0f, true)));
+    g.setFont(juce::Font(vuFont(19.0f * 0.98f, true)));
     g.drawText("vu", inner.withTrimmedTop(inner.getHeight() * 0.38f).withHeight(22.0f).toNearestInt(),
                juce::Justification::centred);
 }
