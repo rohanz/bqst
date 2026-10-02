@@ -187,8 +187,10 @@ private:
     std::unique_ptr<ButtonAttachment> vintageAttachment;
     std::unique_ptr<ButtonAttachment> bypassAttachment;
     // Drives the rack's bypassed look from the parameter itself (clicks, host automation, state
-    // restore); callbacks arrive on the message thread.
+    // restore); callbacks arrive on the message thread. The new look is only applied on the next
+    // display frame (see meterVBlank), so a frame never shows part of the rack in each state.
     std::unique_ptr<juce::ParameterAttachment> bypassLookAttachment;
+    bool bypassLookPending = false;
     BqtReadoutBubble readoutBubble;
     // The meters are driven from the display's vertical blank rather than the 60 Hz message
     // timer. A 60 Hz juce::Timer beats against a 60 Hz refresh -- message-loop granularity

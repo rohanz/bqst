@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.1
+
+- Fixed the VU meters occasionally dimming a frame before the rest of the panel when bypass
+  was toggled while audio was playing.
+
 ## 1.1.0
 
 Sound and behaviour changes:

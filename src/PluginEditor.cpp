@@ -154,8 +154,9 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
     bypassAttachment = std::make_unique<ButtonAttachment>(audioProcessor.state(), "bypass", bypass);
     bypassLookAttachment = std::make_unique<juce::ParameterAttachment>(
         *audioProcessor.state().getParameter("bypass"),
-        [this](float value) { rackComponent.setBypassed(value > 0.5f); });
+        [this](float value) { bypassLookPending = value > 0.5f; });
     bypassLookAttachment->sendInitialUpdate();
+    rackComponent.setBypassed(bypassLookPending);
     inputTrimCompensationStart = inputTrim.getValue();
     for (size_t index = 0; index < sideControls.size(); ++index)
         outputTrimCompensationStart[index] = sideControls[index].outputTrim.getValue();
@@ -226,6 +227,12 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
         const auto now = juce::Time::getMillisecondCounterHiRes() * 0.001;
         const auto elapsed = now - lastMeterTickSeconds;
         lastMeterTickSeconds = now;
+
+        // Apply a bypass change here rather than when the parameter changes. On macOS, JUCE hands
+        // the frame's repaint areas to the OS right after this callback, but areas already handed
+        // over (the meters, every frame) can be drawn before then; flipping the state mid-frame
+        // drew the meters dimmed one frame ahead of the rest of the rack.
+        rackComponent.setBypassed(bypassLookPending);
 
         if (rackComponent.isBypassed())
             return;
