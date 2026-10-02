@@ -16,9 +16,6 @@ references/**/*.wav
 # Local-only agent notes: machine-specific paths + signing cert hash (never commit)
 AGENTS.local.md
 
-# density model: downloaded media and renders (never commit)
-tools/cream_model/data/
-tools/cream_model/.venv/
-tools/cream_model/**/__pycache__/
+# Cream model tooling: a separate private checkout (rohanz/bqst-research), never part of this repo
+tools/cream_model/
 tools/__pycache__/
-tools/cream_model/.pytest_cache/

@@ -175,7 +175,8 @@ Important files:
 - `src/BqtDsp.h`: small DSP constants and inline saturation/autogain functions.
 - `src/BqtCreamModel.h`: the Cream saturation model (header-only, JUCE-free).
 - `src/BqtCreamParams.h`: GENERATED Cream constants, taper, autogain and Vintage tables; do not hand-edit (see Cream model workflow).
-- `tools/cream_model/`: uv project that fits and exports the Cream model.
+- `tools/cream_model/`: uv project that fits and exports the Cream model. Not part of this repo: it is a private
+  checkout of `rohanz/bqst-research` at this path (gitignored). Without it the plugin still builds and tests.
 - `src/BqtProcessorDsp.cpp`: audio processing, oversampling, EQ, saturation chain, metering, bypass crossfade.
 - `src/BqtParameterLayout.cpp`: APVTS parameter definitions, default values, parameter names visible to DAWs.
 - `src/PluginProcessor.h`: processor members and DSP object declarations.
@@ -348,7 +349,9 @@ Vintage is the intentional additional top-softening control.
 
 The model pipeline lives in `tools/cream_model/` (a uv project: fitting, export, taper and
 autogain generators, evaluation; results and the research report in
-`tools/cream_model/results/`). To change Cream:
+`tools/cream_model/results/`). It is a separate private repo (`rohanz/bqst-research`) checked
+out at that path and gitignored here; clone it there before changing Cream:
+`git clone https://github.com/rohanz/bqst-research.git tools/cream_model`. To change Cream:
 
 1. **Refit** in `tools/cream_model/` (the fit writes its JSON under `results/`).
 2. **Export:** `cd tools/cream_model && uv run python -m density.bqst_export`. This writes

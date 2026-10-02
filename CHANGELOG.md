@@ -16,6 +16,15 @@ Sound and behaviour changes:
   sides while unlinked.
 - Sessions saved with a link on but differing sides now play R/S at the L/M value.
 
+Look and feel:
+
+- Backlit VU meters: an off-white face lit from below, with the scale numbers centred on their
+  ticks and one minus and one plus sign at the ends of the scale.
+- Bypass now dims the whole panel at once; the meters no longer dim separately when bypass is
+  toggled quickly.
+- Drop-down menus use the panel's font and colours, with a lamp marking the current choice.
+- Top-bar buttons that are switched on (links, autogain, bypass) now light up pink.
+
 Internal:
 
 - Saturation state is reset through one shared path; mid/side conversion, parameter-ID prefixes
