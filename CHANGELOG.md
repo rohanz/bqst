@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.2
+
+- Brighter VU meter faces: the unlit part of the face is less dark.
+
 ## 1.1.1
 
 - Fixed the VU meters occasionally dimming a frame before the rest of the panel when bypass

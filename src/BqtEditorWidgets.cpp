@@ -29,7 +29,7 @@ namespace vuface
 constexpr float artSize = 2000.0f, centreX = 1000.0f, centreY = 865.0f, radius = 569.0f, cutY = 1189.0f;
 constexpr float paper[3] { 244.0f, 243.0f, 239.0f };  // neutral off-white #f4f3ef
 constexpr float bulb[3] { 255.0f, 232.0f, 208.0f };   // soft white, about 4000 K
-constexpr float unlitDarkening = 0.16f;
+constexpr float unlitDarkening = 0.12f;
 constexpr float bloom = 0.9f;
 
 struct Stop { float position, alpha; };
