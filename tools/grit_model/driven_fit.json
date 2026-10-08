@@ -1,0 +1,17 @@
+{
+  "makeup_db": [
+    0.0,
+    1.6514267861010907,
+    9.846528352851317,
+    17.838144681140022
+  ],
+  "threshold": 0.7550595269882115,
+  "knee": 99.99999999999999,
+  "knob_db": [
+    3,
+    6,
+    12,
+    18
+  ],
+  "fit_note": "Shared output knee from 160/400/1000 Hz magnitude harmonics. Whole capture chain; overload origin not identified."
+}

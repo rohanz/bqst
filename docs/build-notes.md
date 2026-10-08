@@ -175,6 +175,8 @@ Implemented in the current build:
 - Cream uses a smooth asymmetric nonlinear curve with drive-scaled harmonic weighting.
 - Cream includes body focus, treble shaping, and low-end guarding around saturation.
 - Grit uses transformer-inspired low/low-mid weighting, partial low restore, and post-saturation top rounding.
+- Grit Model (host parameter): Legacy, Captured (fitted LA500A whole-path model) or Hybrid
+  (75% Legacy + 25% Captured, the default for new instances since 1.2.0).
 - Saturation Drive from 0 dB to +18 dB, with reduced internal drive scaling for gentler onset.
 - Vintage adds optional top rounding after saturation.
 - Per-side saturation Mix controls.

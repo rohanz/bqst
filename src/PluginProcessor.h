@@ -1,5 +1,7 @@
 #pragma once
 
+#include "BqtGritLabModel.h"
+
 #include <array>
 #include <atomic>
 
@@ -71,6 +73,7 @@ private:
         Filter lowShelf;
         Filter highShelf;
         Filter vintage;
+        Filter hybridCapturedVintage;
         Filter saturationLowGuardPre;
         Filter saturationLowGuardPost;
         Filter transformerLowDrive;
@@ -84,6 +87,7 @@ private:
         void forEachSaturationFilter(Fn&& fn)
         {
             fn(vintage);
+            fn(hybridCapturedVintage);
             fn(saturationLowGuardPre);
             fn(saturationLowGuardPost);
             fn(transformerLowDrive);
@@ -109,6 +113,7 @@ private:
     {
         int eqMode = 0;
         int satMode = 0;
+        int gritRevision = 2;
         bool eqBypassed = false;
         bool satBypassed = false;
         bool vintage = false;
@@ -126,6 +131,7 @@ private:
             return eqMode == other.eqMode && satMode == other.satMode
                 && eqBypassed == other.eqBypassed && satBypassed == other.satBypassed
                 && vintage == other.vintage && satType == other.satType
+                && gritRevision == other.gritRevision
                 && lowFreq == other.lowFreq && highFreq == other.highFreq
                 && oversamplingIndex == other.oversamplingIndex;
         }
@@ -166,6 +172,7 @@ private:
     std::array<SideFilters, 2> filters;
     // Cream's model (tone shaping, colour ramp and DC blocker are internal), one per side.
     std::array<bqt::CreamModel, 2> creamModels;
+    std::array<bqt::GritLabModel, 2> gritLabModels;
     std::array<std::unique_ptr<juce::dsp::Oversampling<float>>, 3> oversamplers;
     std::array<juce::AudioBuffer<float>, 2> dryBuffers;
     juce::AudioBuffer<float> bypassDryBuffer;
@@ -212,6 +219,7 @@ private:
         std::atomic<float>* inputTrim = nullptr;
         std::atomic<float>* eqMode = nullptr;
         std::atomic<float>* satMode = nullptr;
+        std::atomic<float>* gritRevision = nullptr;
         std::atomic<float>* eqBypass = nullptr;
         std::atomic<float>* satBypass = nullptr;
         std::atomic<float>* autoGain = nullptr;

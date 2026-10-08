@@ -1,0 +1,113 @@
+{
+  "method": "Same loudest drum+bass test loop, 48 kHz, 4x OS, Vintage off. Autogain on; additionally LUFS-matched for band/crest comparisons. Bands are relative to 500-2000 Hz, so they describe balance rather than overall level.",
+  "results": [
+    {
+      "drive": 6,
+      "mode": "Legacy",
+      "autogain_lu": 0.14541739224246086,
+      "bands_relative_mid_db": {
+        "bass": 30.438560485839844,
+        "body": 14.196178436279297,
+        "mid": 0.0,
+        "high": 8.096675872802734
+      },
+      "crest_db": 15.612407684326172
+    },
+    {
+      "drive": 6,
+      "mode": "Captured",
+      "autogain_lu": -0.1175811116484482,
+      "bands_relative_mid_db": {
+        "bass": 29.805299758911133,
+        "body": 13.556827545166016,
+        "mid": 0.0,
+        "high": 8.53543472290039
+      },
+      "crest_db": 16.095056533813477
+    },
+    {
+      "drive": 6,
+      "mode": "Hybrid",
+      "autogain_lu": 0.2818506216266101,
+      "bands_relative_mid_db": {
+        "bass": 30.45786476135254,
+        "body": 14.205238342285156,
+        "mid": 0.0,
+        "high": 8.123527526855469
+      },
+      "crest_db": 15.691787719726562
+    },
+    {
+      "drive": 12,
+      "mode": "Legacy",
+      "autogain_lu": 1.461222473191551,
+      "bands_relative_mid_db": {
+        "bass": 29.873153686523438,
+        "body": 13.360389709472656,
+        "mid": 0.0,
+        "high": 8.103004455566406
+      },
+      "crest_db": 13.34014892578125
+    },
+    {
+      "drive": 12,
+      "mode": "Captured",
+      "autogain_lu": 0.5552775039232287,
+      "bands_relative_mid_db": {
+        "bass": 29.84604835510254,
+        "body": 13.553020477294922,
+        "mid": 0.0,
+        "high": 8.53665542602539
+      },
+      "crest_db": 16.01243782043457
+    },
+    {
+      "drive": 12,
+      "mode": "Hybrid",
+      "autogain_lu": 1.2686847133225356,
+      "bands_relative_mid_db": {
+        "bass": 30.13737678527832,
+        "body": 13.705318450927734,
+        "mid": 0.0,
+        "high": 8.047359466552734
+      },
+      "crest_db": 14.235044479370117
+    },
+    {
+      "drive": 18,
+      "mode": "Legacy",
+      "autogain_lu": 3.9043662756941444,
+      "bands_relative_mid_db": {
+        "bass": 27.67915153503418,
+        "body": 12.03573989868164,
+        "mid": 0.0,
+        "high": 7.33917236328125
+      },
+      "crest_db": 9.722238540649414
+    },
+    {
+      "drive": 18,
+      "mode": "Captured",
+      "autogain_lu": 6.374473842637556,
+      "bands_relative_mid_db": {
+        "bass": 25.928363800048828,
+        "body": 11.525726318359375,
+        "mid": 0.0,
+        "high": 7.4483795166015625
+      },
+      "crest_db": 10.087776184082031
+    },
+    {
+      "drive": 18,
+      "mode": "Hybrid",
+      "autogain_lu": 5.0575659932013615,
+      "bands_relative_mid_db": {
+        "bass": 27.339448928833008,
+        "body": 11.842536926269531,
+        "mid": 0.0,
+        "high": 7.136653900146484
+      },
+      "crest_db": 9.100970268249512
+    }
+  ]
+}

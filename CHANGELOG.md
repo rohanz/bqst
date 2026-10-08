@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.2.0
+
+Sound and behaviour changes:
+
+- New Grit. New instances use Hybrid Grit: 75% of the original Grit, at its original Drive
+  mapping, blended with 25% of a new model fitted to captures of the whole engaged LA500A
+  signal path. The captured branch has its own Drive mapping, filter state and Vintage, and is
+  level-aligned before the blend. Hybrid has its own static Autogain table, measured offline;
+  it is source dependent and does not promise an exact loudness match.
+- New host parameter **Grit Model** (Legacy, Captured, Hybrid). Captured is the fitted LA500A
+  path on its own, with a calibrated Drive taper and its own static Autogain.
+- Existing sessions and user presets saved before 1.2.0 keep the original (Legacy) Grit, so
+  they sound the same. Factory presets and new instances use Hybrid. Saved state and the user
+  preset format are now version 2.
+- Cream, the EQ and the Legacy Grit signal path are unchanged. The plugin identity is unchanged,
+  so DAWs recall existing instances.
+
 ## 1.1.2
 
 - Brighter VU meter faces: the unlit part of the face is less dark.

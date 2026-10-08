@@ -181,6 +181,20 @@ juce::XmlElement* findParamChild(juce::XmlElement& xml, const juce::String& id)
 
 void runStateTests()
 {
+    {
+        auto source = makeProcessor();
+        check(juce::roundToInt(plainValue(*source, "gritRevision")) == 2, "new instances use Hybrid Grit");
+        auto xml = savedStateXml(*source);
+        xml->setAttribute("bqstStateVersion", 1);
+        xml->removeChildElement(findParamChild(*xml, "gritRevision"), true);
+        auto target = makeProcessor();
+        loadStateXml(*target, *xml);
+        check(juce::roundToInt(plainValue(*target, "gritRevision")) == (BQST_GRIT_LAB ? 1 : 0), "old production state retains legacy Grit");
+        auto resaved = savedStateXml(*target);
+        auto fresh = makeProcessor();
+        loadStateXml(*fresh, *resaved);
+        check(juce::roundToInt(plainValue(*fresh, "gritRevision")) == juce::roundToInt(plainValue(*target, "gritRevision")), "Grit revision survives resaving");
+    }
     // Host state round trip: every parameter survives get -> set into a fresh processor.
     {
         auto source = makeProcessor();
@@ -294,9 +308,11 @@ void writePresetFile(const juce::File& file, const juce::String& rootTag, int ve
 
 void runUserPresetTests()
 {
-    const auto directory = juce::File::getSpecialLocation(juce::File::tempDirectory)
-                               .getChildFile("BqstChainTests-" + juce::String::toHexString(juce::Random::getSystemRandom().nextInt64()));
-    directory.createDirectory();
+    const auto overrideDirectory = juce::SystemStats::getEnvironmentVariable("BQST_TEST_PRESET_DIR", {});
+    const auto testRoot = overrideDirectory.isEmpty()
+        ? juce::File::getSpecialLocation(juce::File::tempDirectory) : juce::File(overrideDirectory);
+    const auto directory = testRoot.getChildFile("BqstChainTests-" + juce::String::toHexString(juce::Random::getSystemRandom().nextInt64()));
+    check(directory.createDirectory().wasOk(), "preset test directory is writable");
 
     // Round trip: musical parameters travel; workflow parameters are neither stored nor changed.
     {
@@ -370,6 +386,7 @@ void runUserPresetTests()
         setParam(*processor, "bMix", 20.0f);
         BqtPresetManager presets(processor->state());
         check(presets.loadPresetFile(file), "a hand-edited current-version preset loads");
+        check(juce::roundToInt(plainValue(*processor, "gritRevision")) == (BQST_GRIT_LAB ? 1 : 0), "pre-v2 preset retains legacy Grit in production");
 
         check(std::abs(plainValue(*processor, "osRealtime") - 3.0f) < 1.0e-4f
                   && plainValue(*processor, "bypass") < 0.5f && plainValue(*processor, "eqBypass") < 0.5f,

@@ -1,0 +1,104 @@
+{
+  "method": "Universal VST3 in Pedalboard, 4x oversampling, 48 kHz. Hardware-bypass drum capture as input after removing 0.535 dB converter gain; restore measured makeup for comparison. Each retained loop aligned within +/-8 samples at quarter-sample increments and gain matched. Every eighth sample used for residual. No drum audio used in fitting.",
+  "excluded": "3 oclock loops 2 and 3 each contain digital full-scale samples.",
+  "results": [
+    {
+      "take": "9_5",
+      "loop": 1,
+      "bypass": {
+        "residual_db": -12.068306946073564,
+        "delay_samples": 7.5,
+        "gain_correction_db": 0.9116688856421347
+      },
+      "model": {
+        "residual_db": -21.43894249740205,
+        "delay_samples": 0.25,
+        "gain_correction_db": 0.04467645853453035
+      }
+    },
+    {
+      "take": "9_5",
+      "loop": 2,
+      "bypass": {
+        "residual_db": -13.045556270457748,
+        "delay_samples": 7.5,
+        "gain_correction_db": 1.05859838116905
+      },
+      "model": {
+        "residual_db": -21.828014582672132,
+        "delay_samples": 0.25,
+        "gain_correction_db": 0.05172404245670534
+      }
+    },
+    {
+      "take": "9_5",
+      "loop": 3,
+      "bypass": {
+        "residual_db": -13.940924942085584,
+        "delay_samples": 0.0,
+        "gain_correction_db": 1.1297658066470189
+      },
+      "model": {
+        "residual_db": -21.856383809619903,
+        "delay_samples": 0.25,
+        "gain_correction_db": 0.024627664399853998
+      }
+    },
+    {
+      "take": "12_5",
+      "loop": 1,
+      "bypass": {
+        "residual_db": -13.31501155337132,
+        "delay_samples": 7.5,
+        "gain_correction_db": 9.320389894117925
+      },
+      "model": {
+        "residual_db": -21.880930195401834,
+        "delay_samples": 0.25,
+        "gain_correction_db": 0.07997219898645937
+      }
+    },
+    {
+      "take": "12_5",
+      "loop": 2,
+      "bypass": {
+        "residual_db": -14.160603715247975,
+        "delay_samples": 0.0,
+        "gain_correction_db": 9.385034033174925
+      },
+      "model": {
+        "residual_db": -21.78955935740117,
+        "delay_samples": 0.25,
+        "gain_correction_db": 0.04402034670688843
+      }
+    },
+    {
+      "take": "12_5",
+      "loop": 3,
+      "bypass": {
+        "residual_db": -12.834983532546245,
+        "delay_samples": 0.0,
+        "gain_correction_db": 8.93658543651372
+      },
+      "model": {
+        "residual_db": -20.594769156583425,
+        "delay_samples": 0.25,
+        "gain_correction_db": 0.1024342368301842
+      }
+    },
+    {
+      "take": "3_5",
+      "loop": 1,
+      "bypass": {
+        "residual_db": -14.000641940172036,
+        "delay_samples": 0.0,
+        "gain_correction_db": 17.350495501282964
+      },
+      "model": {
+        "residual_db": -21.731660551547574,
+        "delay_samples": 0.25,
+        "gain_correction_db": 0.03611650630507119
+      }
+    }
+  ]
+}

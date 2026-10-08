@@ -1,0 +1,175 @@
+{
+  "method": "Actual VST3 4x OS 48 kHz. Hybrid compared to 75% standalone Legacy at original Drive + 25% standalone Captured at remapped Drive with known alignment; Autogain off, Vintage both off/on. LF tests measure fundamental loss from branch phase relative to perfectly aligned magnitude sum. Three seconds silence settles state before each test.",
+  "identity": [
+    {
+      "drive": 1,
+      "captured_drive": 1,
+      "vintage": false,
+      "max_sample_error": 1.0176782194726286e-07
+    },
+    {
+      "drive": 9,
+      "captured_drive": 15,
+      "vintage": false,
+      "max_sample_error": 2.3255546344191913e-07
+    },
+    {
+      "drive": 12,
+      "captured_drive": 16,
+      "vintage": false,
+      "max_sample_error": 2.367689315718735e-07
+    },
+    {
+      "drive": 15,
+      "captured_drive": 17,
+      "vintage": false,
+      "max_sample_error": 4.046022832326912e-07
+    },
+    {
+      "drive": 18,
+      "captured_drive": 18,
+      "vintage": false,
+      "max_sample_error": 3.4693546702158073e-07
+    },
+    {
+      "drive": 1,
+      "captured_drive": 1,
+      "vintage": true,
+      "max_sample_error": 1.1030760560526431e-07
+    },
+    {
+      "drive": 9,
+      "captured_drive": 15,
+      "vintage": true,
+      "max_sample_error": 1.8317538474921236e-07
+    },
+    {
+      "drive": 12,
+      "captured_drive": 16,
+      "vintage": true,
+      "max_sample_error": 2.1885966727808182e-07
+    },
+    {
+      "drive": 15,
+      "captured_drive": 17,
+      "vintage": true,
+      "max_sample_error": 3.1962406565888557e-07
+    },
+    {
+      "drive": 18,
+      "captured_drive": 18,
+      "vintage": true,
+      "max_sample_error": 3.387044629210578e-07
+    }
+  ],
+  "phase": [
+    {
+      "drive": 9,
+      "hz": 40,
+      "input_dbfs": -30,
+      "phase_cancellation_db": -0.042016894059957066
+    },
+    {
+      "drive": 9,
+      "hz": 40,
+      "input_dbfs": -12,
+      "phase_cancellation_db": -0.021127615765777
+    },
+    {
+      "drive": 9,
+      "hz": 80,
+      "input_dbfs": -30,
+      "phase_cancellation_db": -0.013206333701920559
+    },
+    {
+      "drive": 9,
+      "hz": 80,
+      "input_dbfs": -12,
+      "phase_cancellation_db": -0.00432543740921569
+    },
+    {
+      "drive": 9,
+      "hz": 160,
+      "input_dbfs": -30,
+      "phase_cancellation_db": -0.006000011409617937
+    },
+    {
+      "drive": 9,
+      "hz": 160,
+      "input_dbfs": -12,
+      "phase_cancellation_db": -0.0020520375502412957
+    },
+    {
+      "drive": 12,
+      "hz": 40,
+      "input_dbfs": -30,
+      "phase_cancellation_db": -0.03589114498695932
+    },
+    {
+      "drive": 12,
+      "hz": 40,
+      "input_dbfs": -12,
+      "phase_cancellation_db": -0.015197962166245813
+    },
+    {
+      "drive": 12,
+      "hz": 80,
+      "input_dbfs": -30,
+      "phase_cancellation_db": -0.011218781125471398
+    },
+    {
+      "drive": 12,
+      "hz": 80,
+      "input_dbfs": -12,
+      "phase_cancellation_db": -0.003153261571551419
+    },
+    {
+      "drive": 12,
+      "hz": 160,
+      "input_dbfs": -30,
+      "phase_cancellation_db": -0.005204552166401281
+    },
+    {
+      "drive": 12,
+      "hz": 160,
+      "input_dbfs": -12,
+      "phase_cancellation_db": -0.0017837165231664627
+    },
+    {
+      "drive": 18,
+      "hz": 40,
+      "input_dbfs": -30,
+      "phase_cancellation_db": -0.02267244149767634
+    },
+    {
+      "drive": 18,
+      "hz": 40,
+      "input_dbfs": -12,
+      "phase_cancellation_db": -0.0048923724321186645
+    },
+    {
+      "drive": 18,
+      "hz": 80,
+      "input_dbfs": -30,
+      "phase_cancellation_db": -0.0067655036160625065
+    },
+    {
+      "drive": 18,
+      "hz": 80,
+      "input_dbfs": -12,
+      "phase_cancellation_db": -6.0336612119821776e-05
+    },
+    {
+      "drive": 18,
+      "hz": 160,
+      "input_dbfs": -30,
+      "phase_cancellation_db": -0.0035605792753309515
+    },
+    {
+      "drive": 18,
+      "hz": 160,
+      "input_dbfs": -12,
+      "phase_cancellation_db": -0.0028379455896964264
+    }
+  ]
+}

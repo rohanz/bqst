@@ -26,7 +26,7 @@ Input Trim -> EQ -> Saturation -> Mix -> Output Trim
 
 **Render Oversampling** sets oversampling for offline export.
 
-**Autogain** compensates saturation drive level so changes are easier to compare.
+**Autogain** compensates saturation drive level so changes are easier to compare. It is a static, drive-based correction measured offline across several kinds of material, not a live loudness follower, so the match varies with the source.
 
 **Bypass** bypasses the whole plugin with a short fade and dimmed faceplate.
 
@@ -69,7 +69,11 @@ harmonic density through the mids and top, and rounds peaks gently. It moves con
 transparent at 0 dB to heavily saturated at 18 dB, and each step of the knob adds a similar
 amount of saturation, so subtle settings get plenty of travel.
 
-**Grit** is a firmer transformer-style saturation character with more bite.
+**Grit** is a firmer transformer-style saturation character with more bite. New instances use
+the Hybrid Grit model: 75% of the original Grit blended with 25% of a model fitted to captures of
+an LA500A's whole signal path. The host's **Grit Model** parameter selects Legacy (the original
+Grit, used by sessions and user presets saved before 1.2.0), Captured (the fitted path alone) or
+Hybrid.
 
 **Vintage** softens the top end after saturation with a broad, gentle shelf. It acts on the saturated signal only, so it has no effect when Drive or Mix is at 0, and it fades in over the first 6 dB of Drive.
 

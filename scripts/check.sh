@@ -22,7 +22,7 @@ info "Configuring ($ARCH) in $BUILD_DIR"
 cmake -S "$ROOT_DIR" -B "$BUILD_DIR" -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="$ARCH" >/dev/null
 
 info "Building all plugin formats + unit tests"
-TARGETS="BQST_VST3 BQST_Standalone BqstDspTests BqstChainTests BqstCreamTests"
+TARGETS="BQST_VST3 BQST_Standalone BqstDspTests BqstChainTests BqstCreamTests BqstGritLabTests"
 if [ "$(uname)" = "Darwin" ]; then
     # An AU-only compile break used to survive every pre-release check.
     TARGETS="$TARGETS BQST_AU"
@@ -33,7 +33,11 @@ cmake --build "$BUILD_DIR" --target $TARGETS -j "$JOBS"
 info "Running unit tests"
 ctest --test-dir "$BUILD_DIR" --output-on-failure
 
-VST3=$(find "$BUILD_DIR" -name 'BQST.vst3' -type d | head -1)
+PRODUCT_NAME="BQST"
+if grep -q '^BQST_GRIT_LAB:BOOL=ON$' "$BUILD_DIR/CMakeCache.txt"; then
+    PRODUCT_NAME="BQST Grit Lab"
+fi
+VST3=$(find "$BUILD_DIR" -name "$PRODUCT_NAME.vst3" -type d | head -1)
 
 # pluginval is a release gate, so a missing binary must fail rather than quietly pass. Set
 # SKIP_PLUGINVAL=1 to opt out deliberately; the final message then says so.

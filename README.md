@@ -29,7 +29,8 @@ https://ko-fi.com/rohanjk
 - Bax-style low and high shelves with broad, low-Q curves.
 - Independent side controls in L/R or M/S mode.
 - Separate routing modes for the EQ and saturation sections.
-- Cream and Grit saturation modes.
+- Cream and Grit saturation modes. Grit blends the original transformer-inspired curve with
+  a model fitted to captures of an LA500A; older sessions keep the original Grit.
 - Per-side Drive, Mix, and Output controls.
 - Vintage top rounding after saturation.
 - Static drive-based autogain calibrated from offline test material.

@@ -1,0 +1,77 @@
+{
+  "method": "Installed previous Hybrid versus new universal VST3. Deterministic stereo noise, 48 kHz, 4x OS, Mix 100%, Vintage off; comparisons with Autogain both off/on, preceded by one second of silence for parameter smoothing and filter state to settle.",
+  "results": [
+    {
+      "new_drive": 0,
+      "previous_drive": 0,
+      "autogain": false,
+      "max_sample_error": 0.0
+    },
+    {
+      "new_drive": 1,
+      "previous_drive": 1,
+      "autogain": false,
+      "max_sample_error": 0.0
+    },
+    {
+      "new_drive": 9,
+      "previous_drive": 15,
+      "autogain": false,
+      "max_sample_error": 0.0
+    },
+    {
+      "new_drive": 12,
+      "previous_drive": 16,
+      "autogain": false,
+      "max_sample_error": 0.0
+    },
+    {
+      "new_drive": 15,
+      "previous_drive": 17,
+      "autogain": false,
+      "max_sample_error": 0.0
+    },
+    {
+      "new_drive": 18,
+      "previous_drive": 18,
+      "autogain": false,
+      "max_sample_error": 0.0
+    },
+    {
+      "new_drive": 0,
+      "previous_drive": 0,
+      "autogain": true,
+      "max_sample_error": 0.0
+    },
+    {
+      "new_drive": 1,
+      "previous_drive": 1,
+      "autogain": true,
+      "max_sample_error": 0.0
+    },
+    {
+      "new_drive": 9,
+      "previous_drive": 15,
+      "autogain": true,
+      "max_sample_error": 0.0
+    },
+    {
+      "new_drive": 12,
+      "previous_drive": 16,
+      "autogain": true,
+      "max_sample_error": 0.0
+    },
+    {
+      "new_drive": 15,
+      "previous_drive": 17,
+      "autogain": true,
+      "max_sample_error": 0.0
+    },
+    {
+      "new_drive": 18,
+      "previous_drive": 18,
+      "autogain": true,
+      "max_sample_error": 0.0
+    }
+  ]
+}

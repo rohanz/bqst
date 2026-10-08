@@ -173,7 +173,7 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
     satTypeButton.setButtonText("sat type");
     satTypeButton.addMouseListener(this, true);
     satTypeButton.getProperties().set("bqtCreamHelp", "Combination of op-amps, transistors and diodes for a smooth, thick saturation.");
-    satTypeButton.getProperties().set("bqtGritHelp", "Transformer-style saturation with firmer edge and bite.");
+    satTypeButton.getProperties().set("bqtGritHelp", "Transformer-inspired saturation with firmer edge and bite, blended with a captured LA500A path.");
     satTypeButton.onClick = [this] { toggleSatTypeBothSides(satTypeButton); };
     rackComponent.addAndMakeVisible(satTypeButton);
 

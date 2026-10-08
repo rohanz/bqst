@@ -34,5 +34,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout BqtAudioProcessor::createPar
         params.push_back(std::make_unique<juce::AudioParameterFloat>(prefix + "OutputTrim", label + " Output", juce::NormalisableRange<float>(-16.0f, 16.0f, 0.1f), 0.0f));
     }
 
+    // Append to preserve existing host parameter indices. Stored in sessions and presets.
+    params.push_back(std::make_unique<juce::AudioParameterChoice>("gritRevision", "Grit Model", juce::StringArray { "Legacy", "Captured", "Hybrid" }, 2));
     return { params.begin(), params.end() };
 }

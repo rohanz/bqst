@@ -371,7 +371,25 @@ out at that path and gitignored here; clone it there before changing Cream:
 
 ### Grit
 
-Grit is transformer-inspired: firmer, more forward, more edge/bite than Cream.
+New instances use Hybrid Grit (see below), which includes the captured LA500A whole-path model
+in `src/BqtGritLabModel.h`. Despite the historical Lab filename, this is integrated into production
+BQST. `gritRevision` is an appended host choice: Legacy=0, Captured=1, Hybrid=2 (default for new
+production and Lab instances since 1.2.0, also in `StructuralConfig`). State and
+preset format v2 preserve this choice; older production sessions/presets missing it
+migrate to Legacy. Old Lab states remain Captured. Revision changes use the structural
+fade. Never remove the legacy path or change its parameter IDs.
+
+Captured Grit owns tone shaping, seven filtered odd shapers, four LF nonlinear paths,
+the fitted output knee and its DC blocker. It bypasses the legacy pre-drive, guards,
+tone filters and shared DC blocker. Vintage, wet/dry and output trim retain their order.
+Its Drive taper uses Cream's nonlinear-energy calibration metric and -40 dB at knob 1
+anchor; zero is exact bypass. Intermediate positions interpolate the generated table.
+Generate constants/taper/autogain via `tools/grit_model/`; see its README. Never hand-edit
+`BqtGritLabParams.h`. Keep the Python fixture and generated header together.
+The captured limiting has not been identified as transformer versus amplifier/input
+limiting; do not call it a component-level transformer simulation.
+
+Legacy Grit is transformer-inspired: firmer, more forward, more edge/bite than Cream.
 
 Grit tone filters:
 
@@ -383,6 +401,20 @@ transformerTop        = high shelf 7.8 kHz, Q 0.50, -0.75 dB
 ```
 
 The low-drive/partial-restore pair makes low and low-mid content hit the nonlinear stage harder without simply adding a large final bass boost. The top filter is intentionally mild. It rounds Grit without making it dark.
+
+### Hybrid Grit (default)
+
+Hybrid is 75% complete Legacy at the original Drive value plus 25% complete Captured
+at an independently remapped value (`GritHybrid::capturedKnob`). Never remap the old
+contribution or the whole blend. The captured branch has independent Vintage filter
+state and nominal level alignment before summing. Static blend Autogain is measured
+at the user knob value, without remapping again. Its generated table lives in
+`BqtGritHybridParams.h`; regenerate using `tools/grit_model/calibrate_hybrid.py` on the
+current VST3 with Autogain off. No identity-table bootstrap is required anymore.
+See the README and independent-path phase/identity validation report.
+Existing revision 0/1 sessions are preserved. New production and Lab instances default to Hybrid
+(released in 1.2.0). The user approved this sound; do not retune it, including the slight
+loudness variation at maximum Drive.
 
 ### Low-End Guard
 
@@ -433,7 +465,14 @@ about +3.7 dB at 18 dB), because the model gets quieter as it compresses; that i
 Regenerate it only through
 `cd tools/cream_model && uv run python -m density.bqst_export`; never hand-edit the values.
 
-**Grit** keeps its formula:
+**Captured Grit** uses `GritLabModel::autoGain`, a generated static table calibrated for
+median 0 LU change across sine, 808, bassline, drums and dense master. Compensation is
+unity at zero and about +10.65 dB at maximum. Vintage is off during calibration. The
+existing smoothed Autogain toggle blends this wet compensation; no live detector.
+Recalibrate with `tools/grit_model/calibrate.py`, export and regenerate the fixture.
+See its validation report for the per-material spread; static matching is not exact.
+
+**Legacy Grit** keeps its formula:
 
 ```cpp
 gain = 1 / (1 + pow(drive01, 1.48) * 2.71)
@@ -495,7 +534,7 @@ This is intentional. Help text should feel consistent with the JUCE tooltip dela
 Cream/Grit help is dynamic on the sat type button:
 
 - Cream: "Combination of op-amps, transistors and diodes for a smooth, thick saturation."
-- Grit: "Transformer-style saturation with firmer edge and bite."
+- Grit: "Transformer-inspired saturation with firmer edge and bite, blended with a captured LA500A path."
 
 When the sat type changes while help is visible, update the visible readout immediately.
 
