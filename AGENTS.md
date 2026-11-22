@@ -70,10 +70,10 @@ Unit tests live in `tests/dsp_tests.cpp` (pure `BqtDsp.h` helpers, no JUCE) and
 `BQST_BUILD_TESTS` and registered with CTest. `BqstGoldenRender` (not a CTest) renders
 fixed scenarios to raw float32 for bit-exact refactor checks: render before, refactor,
 render after, `cmp`. Of its nine scenarios, 4, 8 and 9 use Grit; the other six are Cream/EQ
-only. The double-precision Grit change re-recorded only scenarios 4, 8 and 9 (native arm64
-Release, Apple clang 21: full render SHA-256
-`d051d231c304aa1af95c3dda89e3cd1fcbb1a753ea9fc33e90ba4b272c626517`; the hash is
-toolchain-specific). Run `scripts/check.sh` before handing off or releasing.
+only. The single-model Grit change in 1.3.1 changes only scenario 8 (formerly Legacy).
+Scenarios 1–7 and 9 remain byte-identical to 1.3.0. Native arm64 Release, Apple clang 21:
+full render SHA-256 `bbd7d81b8d461e764326d9cbbe1d79493ddad0554054a3d64a5741f779a3157c`
+(toolchain-specific). Run `scripts/check.sh` before handing off or releasing.
 
 ## Public macOS Release Signing
 
@@ -240,10 +240,10 @@ Saturation module:
 
 ```text
 dry copy saved
--> Grit: low guard pre -> Grit pre tone -> pre-drive gain -> waveshaper -> Grit post tone -> low guard post
+-> Grit: 75% original branch (guards, tone, pre-drive, shaper, Vintage, DC blocker)
+       + 25% aligned captured branch (own tone/shapers/DC blocker, separate Vintage)
    Cream: Cream model (own emphasis, clipper, even-harmonic path, de-emphasis, DC blocker)
--> vintage top rolloff, if enabled
--> Grit only: DC blocker (colour-blended)
+       -> vintage top rolloff, if enabled
 -> wet autogain
 -> mix with dry copy
 -> output trim
@@ -375,43 +375,31 @@ out at that path and gitignored here; clone it there before changing Cream:
 
 ### Grit
 
-New instances use Hybrid Grit (see below), which includes the captured LA500A whole-path model
-in `src/BqtGritLabModel.h`. Despite the historical Lab filename, this is integrated into production
-BQST. `gritRevision` is an appended host choice: Legacy=0, Captured=1, Hybrid=2 (default for new
-production and Lab instances since 1.2.0, also in `StructuralConfig`). State and
-preset format v2 preserve this choice; older production sessions/presets missing it
-migrate to Legacy. Old Lab states remain Captured. Revision changes use the structural
-fade. Never remove the legacy path or change its parameter IDs.
+Grit is one model as of 1.3.1: 75% complete original Grit plus 25% captured LA500A
+whole-path model. This is the unchanged sound formerly called Hybrid (the default since
+1.2.0). There is no `gritRevision` / Grit Model host parameter or revision switching.
+Older sessions and presets load regardless of the revision they carry; it is ignored.
+This intentionally changes older Legacy/Captured projects. Cream, EQ and existing
+Hybrid projects remain byte-identical. State and preset writers use v3; all older
+versions remain readable. State loading removes obsolete revision nodes before adoption.
 
-Captured Grit owns tone shaping, seven filtered odd shapers, four LF nonlinear paths,
-the fitted output knee and its DC blocker. It bypasses the legacy pre-drive, guards,
-tone filters and shared DC blocker. Vintage, wet/dry and output trim retain their order.
-Its Drive taper uses Cream's nonlinear-energy calibration metric and -40 dB at knob 1
-anchor; zero is exact bypass. Intermediate positions interpolate the generated table.
-Generate constants/taper/autogain via `tools/grit_model/`; see its README. Never hand-edit
-`BqtGritLabParams.h`. Keep the Python fixture and generated header together.
-The captured limiting has not been identified as transformer versus amplifier/input
-limiting; do not call it a component-level transformer simulation.
+The original branch lives in `src/BqtLegacyGrit.h` (`LegacyGrit<Sample>`: six tone
+filters, shaper controls and DC blocker). The captured branch lives in
+`src/BqtGritLabModel.h`: tone shaping, seven filtered odd shapers, four LF nonlinear
+paths, fitted output knee and its own DC blocker. It bypasses the original branch's
+pre-drive, guards and tone filters. The captured limiting has not been identified as
+transformer versus amplifier/input limiting; do not call it a component-level
+transformer simulation. Generate its constants/taper/alignment compensation with
+`tools/grit_model/`; never hand-edit `BqtGritLabParams.h`. Keep the Python fixture
+and generated header together.
 
-Legacy Grit is transformer-inspired: firmer, more forward, more edge/bite than Cream.
-
-The legacy path lives once, in `src/BqtLegacyGrit.h` (`LegacyGrit<Sample>`: the six tone filters,
-the shaper controls and the DC blocker). BQST runs it in `double` (the public
-`BqtAudioProcessor::LegacyGrit` alias in `src/PluginProcessor.h`), and Legacy/Hybrid Grit stay in
-double end to end: coefficient design, filter state, shaper, Grit's own Vintage shelf
-(`gritVintage`) and the captured branch's Vintage, DC blocker and the Hybrid sum, down to the
-final float wet sample. Cream and Captured-only Grit keep the float `vintage` filter. This was an
-approved sound change for every project, with no legacy mode: in float the tone filters lost
-low-frequency gain as the processing rate rose (about 0.1 dB at 4x, up to about 0.6 dB at 20 Hz
-at 8x), had a rounding floor, and at 176.4/192 kHz with 8x a pole became marginal or unstable
-(a residual that never decays at 192 kHz x8; non-finite output on x86_64). Do not move it back
-to float. `tests/grit_precision_tests.cpp` (in `BqstChainTests`) asserts the guarantees on the
-real processor: every pole inside the unit circle and design LF gain within 1e-6 dB at
-44.1-192 kHz x Off-8x, 30 s programme plus 5 s silence finite and settling at 176.4/192 kHz x8,
-and a 20-200 Hz level spread across oversampling below 0.05 dB for Legacy and Hybrid.
-`tests/grit_equivalence/run.py` compares the real processor before (last float source) and
-after the change: Captured cases must stay byte-identical and Legacy/Hybrid finite; `--levels`
-and `--cpu` print the before/after level table and Grit CPU cost.
+Both branches run in double through coefficient design, filter state, shapers,
+independent Vintage shelves, DC blockers and the sum, down to the final float wet
+sample. Cream keeps its float Vintage filter. Do not move Grit back to float:
+it lost LF gain at high processing rates and became marginal/unstable at 176.4/192 kHz
+with 8x. `tests/grit_precision_tests.cpp` (in `BqstChainTests`) guards pole stability,
+design LF gain within 1e-6 dB at 44.1–192 kHz x Off–8x, 30 s programme plus 5 s silence
+at 176.4/192 kHz x8, Vintage response and 20–200 Hz level consistency across oversampling.
 
 Grit tone filters:
 
@@ -424,9 +412,9 @@ transformerTop        = high shelf 7.8 kHz, Q 0.50, -0.75 dB
 
 The low-drive/partial-restore pair makes low and low-mid content hit the nonlinear stage harder without simply adding a large final bass boost. The top filter is intentionally mild. It rounds Grit without making it dark.
 
-### Hybrid Grit (default)
+### Grit branch blend
 
-Hybrid is 75% complete Legacy at the original Drive value plus 25% complete Captured
+Grit is 75% complete original branch at the original Drive value plus 25% complete captured branch
 at an independently remapped value (`GritHybrid::capturedKnob`). Never remap the old
 contribution or the whole blend. The captured branch has independent Vintage filter
 state and nominal level alignment before summing. Static blend Autogain is measured
@@ -434,9 +422,9 @@ at the user knob value, without remapping again. Its generated table lives in
 `BqtGritHybridParams.h`; regenerate using `tools/grit_model/calibrate_hybrid.py` on the
 current VST3 with Autogain off. No identity-table bootstrap is required anymore.
 See the README and independent-path phase/identity validation report.
-Existing revision 0/1 sessions are preserved. New production and Lab instances default to Hybrid
-(released in 1.2.0). The user approved this sound; do not retune it, including the slight
-loudness variation at maximum Drive.
+The user approved this sound; do not retune it, including the slight loudness variation
+at maximum Drive. Historical Hybrid/Legacy names remain in the shared implementation
+to avoid needless churn; they name internal branches, not selectable models.
 
 ### Low-End Guard
 
@@ -487,33 +475,17 @@ about +3.7 dB at 18 dB), because the model gets quieter as it compresses; that i
 Regenerate it only through
 `cd tools/cream_model && uv run python -m density.bqst_export`; never hand-edit the values.
 
-**Captured Grit** uses `GritLabModel::autoGain`, a generated static table calibrated for
-median 0 LU change across sine, 808, bassline, drums and dense master. Compensation is
-unity at zero and about +10.65 dB at maximum. Vintage is off during calibration. The
-existing smoothed Autogain toggle blends this wet compensation; no live detector.
-Recalibrate with `tools/grit_model/calibrate.py`, export and regenerate the fixture.
-See its validation report for the per-material spread; static matching is not exact.
+**Grit** uses `GritHybrid::autoGain`, the generated static blend compensation table in
+`BqtGritHybridParams.h`, at the original user knob value. Regenerate with
+`tools/grit_model/calibrate_hybrid.py` against the current VST3 with Autogain off.
 
-**Legacy Grit** keeps its formula:
-
-```cpp
-gain = 1 / (1 + pow(drive01, 1.48) * 2.71)
-```
-
-Use `tools/calibrate_autogain.py` to rerun the offline Grit material sweep before changing
-these values. It tests sine, 808, bassline, drum-bus and dense-master style signals against
-Grit's saturation tone path.
-
-Approximate Grit compensation:
-
-```text
-Drive    Grit
-1 dB     -0.2 dB
-3 dB     -1.5 dB
-6 dB     -3.7 dB
-12 dB    -7.9 dB
-18 dB    -11.4 dB
-```
+The captured branch's `GritLabModel::autoGain` table and the original branch's
+`saturationAutoGain(..., transformer)` formula are still required for
+`GritHybrid::capturedAlignment`: captured compensation at the remapped knob divided
+by original compensation at the user knob. These align the branches before summing,
+even when the Autogain toggle is off. Do not remove or retune them as obsolete
+standalone-model compensation. `tools/calibrate_autogain.py` also supplies the material
+signals used by the blend calibration.
 
 If retuning either type, use multiple sources and keep the behavior predictable.
 

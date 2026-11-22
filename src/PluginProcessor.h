@@ -65,7 +65,7 @@ public:
 
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
-    // Legacy and Hybrid Grit run in double from coefficient design to the Hybrid sum: in float
+    // Grit runs in double from coefficient design to the final branch sum: in float
     // the low tone filters lost accuracy (and stability) at high oversampled rates.
     using LegacyGrit = bqt::LegacyGrit<double>;
 
@@ -78,9 +78,9 @@ private:
     {
         Filter lowShelf;
         Filter highShelf;
-        // Vintage for Cream and Captured Grit.
+        // Vintage for Cream.
         Filter vintage;
-        // The same Vintage shelf inside the Legacy/Hybrid Grit path, and on Hybrid's captured
+        // The same Vintage shelf inside the original Grit path, and on its captured
         // branch, in Grit's precision.
         GritFilter gritVintage;
         GritFilter hybridCapturedVintage;
@@ -114,7 +114,6 @@ private:
     {
         int eqMode = 0;
         int satMode = 0;
-        int gritRevision = 2;
         bool eqBypassed = false;
         bool satBypassed = false;
         bool vintage = false;
@@ -132,7 +131,6 @@ private:
             return eqMode == other.eqMode && satMode == other.satMode
                 && eqBypassed == other.eqBypassed && satBypassed == other.satBypassed
                 && vintage == other.vintage && satType == other.satType
-                && gritRevision == other.gritRevision
                 && lowFreq == other.lowFreq && highFreq == other.highFreq
                 && oversamplingIndex == other.oversamplingIndex;
         }
@@ -217,7 +215,6 @@ private:
         std::atomic<float>* inputTrim = nullptr;
         std::atomic<float>* eqMode = nullptr;
         std::atomic<float>* satMode = nullptr;
-        std::atomic<float>* gritRevision = nullptr;
         std::atomic<float>* eqBypass = nullptr;
         std::atomic<float>* satBypass = nullptr;
         std::atomic<float>* autoGain = nullptr;

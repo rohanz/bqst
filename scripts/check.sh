@@ -36,9 +36,6 @@ info "Running unit tests"
 ctest --test-dir "$BUILD_DIR" --output-on-failure --no-tests=error
 
 PRODUCT_NAME="BQST"
-if grep -q '^BQST_GRIT_LAB:BOOL=ON$' "$BUILD_DIR/CMakeCache.txt"; then
-    PRODUCT_NAME="BQST Grit Lab"
-fi
 # Only the freshly built artefact: a search of the whole build tree once picked a stale snapshot.
 VST3=$(find "$BUILD_DIR/BQST_artefacts" -name "$PRODUCT_NAME.vst3" -type d 2>/dev/null | head -1)
 

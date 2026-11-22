@@ -175,8 +175,8 @@ Implemented in the current build:
 - Cream uses a smooth asymmetric nonlinear curve with drive-scaled harmonic weighting.
 - Cream includes body focus, treble shaping, and low-end guarding around saturation.
 - Grit uses transformer-inspired low/low-mid weighting, partial low restore, and post-saturation top rounding.
-- Grit Model (host parameter): Legacy, Captured (fitted LA500A whole-path model) or Hybrid
-  (75% Legacy + 25% Captured, the default for new instances since 1.2.0).
+- Grit is one model: 75% original Grit + 25% captured LA500A whole-path model.
+  Older Grit model choices in states and presets are ignored.
 - Saturation Drive from 0 dB to +18 dB, with reduced internal drive scaling for gentler onset.
 - Vintage adds optional top rounding after saturation.
 - Per-side saturation Mix controls.
@@ -195,3 +195,28 @@ Implemented in the current build:
 - Top-bar controls for input, mode, link, oversampling, auto gain and bypass; the editor resizes freely from a corner grip.
 - Preset strip with factory presets, previous/next navigation, and user preset saving.
 - 500-series-inspired UI using local PNG assets and procedural faceplate rendering.
+
+## Single-model Grit regression (1.3.1)
+
+Compared native arm64 Release renders with Apple clang 21.0.0 before and after
+removing the Grit Model choice. Each of the nine scenarios contains 382,976 bytes
+of interleaved-by-block float32 output.
+
+| Scenario | Before | Result |
+|---|---|---|
+| 1–3 | Cream | Byte-identical |
+| 4 | Current Grit (formerly Hybrid) | Byte-identical |
+| 5–7 | Cream/EQ | Byte-identical |
+| 8 | Legacy Grit, Vintage on | Changed intentionally to current Grit |
+| 9 | Current Grit, M/S, 8x | Byte-identical |
+
+Full render SHA-256 before:
+`d051d231c304aa1af95c3dda89e3cd1fcbb1a753ea9fc33e90ba4b272c626517`
+
+Full render SHA-256 after:
+`bbd7d81b8d461e764326d9cbbe1d79493ddad0554054a3d64a5741f779a3157c`
+
+The chain tests also load state versions 0–3 with each old revision value, no value,
+out-of-range values and NaN; rendered output must match fresh current Grit byte for
+byte, with Vintage off/on. Old preset revision values are covered separately.
+State and preset writers now emit v3; old revisions are discarded/ignored.

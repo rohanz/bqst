@@ -12,7 +12,7 @@ if (NOT CMAKE_OSX_DEPLOYMENT_TARGET)
     set(CMAKE_OSX_DEPLOYMENT_TARGET "10.13" CACHE STRING "Minimum macOS deployment target")
 endif()
 
-project(BQST VERSION 1.3.0 LANGUAGES C CXX)
+project(BQST VERSION 1.3.1 LANGUAGES C CXX)
 
 # Single source of truth for the version and bundle identifier. Everything downstream -- the
 # plugin bundles, the generated packaging templates, and the shell/PowerShell packaging scripts
@@ -20,15 +20,8 @@ project(BQST VERSION 1.3.0 LANGUAGES C CXX)
 set(BQST_VERSION "${PROJECT_VERSION}")
 set(BQST_IDENTIFIER "tech.ebraudio.bqst")
 
-# Opt-in audition build. The released BQST identity and signal path remain unchanged.
-option(BQST_GRIT_LAB "Build the separately identified experimental LA500A Grit model" OFF)
 set(BQST_PRODUCT_NAME "BQST")
 set(BQST_PLUGIN_CODE Bqs1)
-if (BQST_GRIT_LAB)
-    set(BQST_PRODUCT_NAME "BQST Grit Lab")
-    set(BQST_IDENTIFIER "tech.ebraudio.bqst.gritlab")
-    set(BQST_PLUGIN_CODE BqGL)
-endif()
 
 
 set(CMAKE_CXX_STANDARD 17)
@@ -111,7 +104,6 @@ target_sources(BQST
 
 target_compile_definitions(BQST
     PUBLIC
-        BQST_GRIT_LAB=$<BOOL:${BQST_GRIT_LAB}>
         ${BQST_VU_NEEDLE_DEFINITION}
         JUCE_WEB_BROWSER=0
         JUCE_USE_CURL=0
@@ -190,7 +182,6 @@ if (BQST_BUILD_TESTS)
 
     target_compile_definitions(BqstChainTests
         PRIVATE
-            BQST_GRIT_LAB=$<BOOL:${BQST_GRIT_LAB}>
             BQST_HEADLESS_TESTS=1
             JUCE_WEB_BROWSER=0
             JUCE_USE_CURL=0
@@ -216,7 +207,7 @@ if (BQST_BUILD_TESTS)
     juce_add_console_app(BqstGoldenRender PRODUCT_NAME "BqstGoldenRender")
     target_sources(BqstGoldenRender PRIVATE tests/golden_render.cpp src/PluginProcessor.cpp
                                             src/BqtParameterLayout.cpp src/BqtProcessorDsp.cpp)
-    target_compile_definitions(BqstGoldenRender PRIVATE BQST_GRIT_LAB=$<BOOL:${BQST_GRIT_LAB}> BQST_HEADLESS_TESTS=1 JUCE_WEB_BROWSER=0
+    target_compile_definitions(BqstGoldenRender PRIVATE BQST_HEADLESS_TESTS=1 JUCE_WEB_BROWSER=0
                                JUCE_USE_CURL=0 JUCE_STANDALONE_APPLICATION=1 JucePlugin_Name="BQST")
     target_link_libraries(BqstGoldenRender PRIVATE juce::juce_audio_processors juce::juce_audio_utils
                           juce::juce_dsp PUBLIC juce::juce_recommended_config_flags)
@@ -228,7 +219,7 @@ if (BQST_BUILD_TESTS)
                    src/BqtParameterLayout.cpp src/BqtProcessorDsp.cpp src/BqtPresetManager.cpp
                    src/BqtEditorWidgets.cpp src/BqtVuMeter.cpp src/BqtEditorInteraction.cpp
                    src/BqtEditorLayout.cpp src/BqtEditorPresets.cpp src/PluginEditor.cpp ${BQST_VU_NEEDLE_SOURCES})
-    target_compile_definitions(BqstEditorSnapshot PRIVATE BQST_GRIT_LAB=$<BOOL:${BQST_GRIT_LAB}> ${BQST_VU_NEEDLE_DEFINITION} JUCE_WEB_BROWSER=0
+    target_compile_definitions(BqstEditorSnapshot PRIVATE ${BQST_VU_NEEDLE_DEFINITION} JUCE_WEB_BROWSER=0
                                JUCE_USE_CURL=0 JUCE_STANDALONE_APPLICATION=1 JucePlugin_Name="BQST"
                                JucePlugin_VersionString="${BQST_VERSION}")
     target_link_libraries(BqstEditorSnapshot PRIVATE BqtAssets juce::juce_audio_processors juce::juce_audio_utils
@@ -244,7 +235,7 @@ if (BQST_BUILD_TESTS)
                        src/BqtEditorWidgets.cpp src/BqtVuMeter.cpp src/BqtEditorInteraction.cpp
                        src/BqtEditorLayout.cpp src/BqtEditorPresets.cpp src/PluginEditor.cpp ${BQST_VU_NEEDLE_SOURCES})
         set_source_files_properties(tests/vu_needle_tests.mm PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
-        target_compile_definitions(BqstVuNeedleTests PRIVATE BQST_GRIT_LAB=$<BOOL:${BQST_GRIT_LAB}> ${BQST_VU_NEEDLE_DEFINITION}
+        target_compile_definitions(BqstVuNeedleTests PRIVATE ${BQST_VU_NEEDLE_DEFINITION}
                                    JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_STANDALONE_APPLICATION=1 JucePlugin_Name="BQST"
                                    JucePlugin_VersionString="${BQST_VERSION}")
         target_link_libraries(BqstVuNeedleTests PRIVATE BqtAssets juce::juce_audio_processors juce::juce_audio_utils

@@ -126,11 +126,10 @@ double programme(double t)
          + .17 * std::sin(2 * pi * 73 * t) * std::exp(-12 * std::fmod(t, .25));
 }
 
-void configureGrit(BqtAudioProcessor& p, int revision, float drive, int oversampling)
+void configureGrit(BqtAudioProcessor& p, float drive, int oversampling)
 {
     set(p, "aSatType", 1);
     set(p, "bSatType", 1);
-    set(p, "gritRevision", static_cast<float>(revision));
     set(p, "aDrive", drive);
     set(p, "bDrive", drive);
     set(p, "osRealtime", static_cast<float>(oversampling));
@@ -140,73 +139,72 @@ void configureGrit(BqtAudioProcessor& p, int revision, float drive, int oversamp
 void longProgrammeStability()
 {
     constexpr int block = 512;
-    for (int revision : { 0, 2 })
-        for (double rate : { 176400., 192000. })
-            for (float drive : { 6.f, 18.f })
-              for (bool vintage : { false, true })
+    for (double rate : { 176400., 192000. })
+        for (float drive : { 6.f, 18.f })
+          for (bool vintage : { false, true })
+        {
+            BqtAudioProcessor p;
+            configureGrit(p, drive, 3);
+            set(p, "vintage", vintage ? 1.f : 0.f);
+            p.setPlayConfigDetails(2, 2, rate, block);
+            p.prepareToPlay(rate, block);
+
+            std::vector<float> input(static_cast<size_t>(rate * 3));
+            double maximum = 0;
+            for (size_t i = 0; i < input.size(); ++i)
             {
-                BqtAudioProcessor p;
-                configureGrit(p, revision, drive, 3);
-                set(p, "vintage", vintage ? 1.f : 0.f);
-                p.setPlayConfigDetails(2, 2, rate, block);
-                p.prepareToPlay(rate, block);
-
-                std::vector<float> input(static_cast<size_t>(rate * 3));
-                double maximum = 0;
-                for (size_t i = 0; i < input.size(); ++i)
-                {
-                    input[i] = static_cast<float>(programme(static_cast<double>(i) / rate));
-                    maximum = std::max(maximum, std::abs(static_cast<double>(input[i])));
-                }
-                for (auto& x : input)
-                    x = static_cast<float>(x / maximum * std::pow(10., -.6));
-
-                juce::AudioBuffer<float> buffer(2, block);
-                juce::MidiBuffer midi;
-                double peak = 0, tail = 0, sum = 0;
-                long count = 0;
-                bool finite = true;
-                const auto total = static_cast<long>(rate * 35), programmeEnd = static_cast<long>(rate * 30);
-                for (long offset = 0; offset < total; offset += block)
-                {
-                    const int n = static_cast<int>(std::min<long>(block, total - offset));
-                    buffer.setSize(2, n, false, false, true);
-                    for (int i = 0; i < n; ++i)
-                        for (int c = 0; c < 2; ++c)
-                            buffer.setSample(c, i, offset + i < programmeEnd
-                                                       ? input[static_cast<size_t>(offset + i) % input.size()]
-                                                       : 0.f);
-                    p.processBlock(buffer, midi);
-                    for (int c = 0; c < 2; ++c)
-                        for (int i = 0; i < n; ++i)
-                        {
-                            const double x = buffer.getSample(c, i);
-                            finite = finite && std::isfinite(x);
-                            peak = std::max(peak, std::abs(x));
-                            if (offset + i >= static_cast<long>(rate * 34))
-                            {
-                                tail = std::max(tail, std::abs(x));
-                                sum += x;
-                                ++count;
-                            }
-                        }
-                }
-                const auto tailMean = sum / static_cast<double>(count);
-                check(finite && peak < 1., "Grit at 176.4/192 kHz with 8x stays finite and bounded");
-                check(std::isfinite(tail) && tail < 1e-7 && std::abs(tailMean) < 1e-8,
-                      "Grit settles to silence with no residual offset or limit cycle");
-                std::printf("grit long run: revision %d, %.0f Hz x8, drive %.0f, vintage %d: peak %.9f, final-second peak %.3g, "
-                            "mean %.3g\n",
-                            revision, rate, drive, vintage, peak, tail, tailMean);
+                input[i] = static_cast<float>(programme(static_cast<double>(i) / rate));
+                maximum = std::max(maximum, std::abs(static_cast<double>(input[i])));
             }
+            for (auto& x : input)
+                x = static_cast<float>(x / maximum * std::pow(10., -.6));
+
+            juce::AudioBuffer<float> buffer(2, block);
+            juce::MidiBuffer midi;
+            double peak = 0, tail = 0, sum = 0;
+            long count = 0;
+            bool finite = true;
+            const auto total = static_cast<long>(rate * 35), programmeEnd = static_cast<long>(rate * 30);
+            for (long offset = 0; offset < total; offset += block)
+            {
+                const int n = static_cast<int>(std::min<long>(block, total - offset));
+                buffer.setSize(2, n, false, false, true);
+                for (int i = 0; i < n; ++i)
+                    for (int c = 0; c < 2; ++c)
+                        buffer.setSample(c, i, offset + i < programmeEnd
+                                                   ? input[static_cast<size_t>(offset + i) % input.size()]
+                                                   : 0.f);
+                p.processBlock(buffer, midi);
+                for (int c = 0; c < 2; ++c)
+                    for (int i = 0; i < n; ++i)
+                    {
+                        const double x = buffer.getSample(c, i);
+                        finite = finite && std::isfinite(x);
+                        peak = std::max(peak, std::abs(x));
+                        if (offset + i >= static_cast<long>(rate * 34))
+                        {
+                            tail = std::max(tail, std::abs(x));
+                            sum += x;
+                            ++count;
+                        }
+                    }
+            }
+            const auto tailMean = sum / static_cast<double>(count);
+            check(finite && peak < 1., "Grit at 176.4/192 kHz with 8x stays finite and bounded");
+            check(std::isfinite(tail) && tail < 1e-7 && std::abs(tailMean) < 1e-8,
+                  "Grit settles to silence with no residual offset or limit cycle");
+            std::printf("grit long run: %.0f Hz x8, drive %.0f, vintage %d: peak %.9f, final-second peak %.3g, "
+                        "mean %.3g\n",
+                        rate, drive, vintage, peak, tail, tailMean);
+        }
 }
 
-double sineLevel(int revision, float drive, int oversampling, double hz, double rate,
+double sineLevel(float drive, int oversampling, double hz, double rate,
                  double amplitude, bool vintage = false)
 {
     constexpr int block = 256;
     BqtAudioProcessor p;
-    configureGrit(p, revision, drive, oversampling);
+    configureGrit(p, drive, oversampling);
     set(p, "vintage", vintage ? 1.f : 0.f);
     p.setPlayConfigDetails(2, 2, rate, block);
     p.prepareToPlay(rate, block);
@@ -240,25 +238,24 @@ double sineLevel(int revision, float drive, int oversampling, double hz, double 
 }
 
 // At full colour and tiny input the Vintage shelf is a common linear factor of both
-// Hybrid branches, including their DC blockers. The on/off ratio cancels their different
+// Grit branches, including their DC blockers. The on/off ratio cancels their different
 // gain/tone and the oversampler response. Tiny input avoids nonlinear harmonic RMS bias.
 void vintageResponse()
 {
     double worst = 0;
     for (double rate : { 44100., 48000., 88200., 96000., 176400., 192000. })
         for (int os = 0; os < 4; ++os)
-            for (int revision : { 0, 2 })
-                for (double hz : { 20., 200., 1000., 10000. })
-                {
-                    const auto off = sineLevel(revision, 18.f, os, hz, rate, 1e-4);
-                    const auto on = sineLevel(revision, 18.f, os, hz, rate, 1e-4, true);
-                    const auto internalRate = rate * (1 << os);
-                    const auto expected = std::abs(response(intent(6, internalRate), hz, internalRate));
-                    const auto error = std::abs(20 * std::log10(on / off / static_cast<double>(expected)));
-                    worst = std::max(worst, error);
-                    check(std::isfinite(error) && error < .001,
-                          "installed Grit Vintage response matches independent shelf within 0.001 dB");
-                }
+            for (double hz : { 20., 200., 1000., 10000. })
+            {
+                const auto off = sineLevel(18.f, os, hz, rate, 1e-4);
+                const auto on = sineLevel(18.f, os, hz, rate, 1e-4, true);
+                const auto internalRate = rate * (1 << os);
+                const auto expected = std::abs(response(intent(6, internalRate), hz, internalRate));
+                const auto error = std::abs(20 * std::log10(on / off / static_cast<double>(expected)));
+                worst = std::max(worst, error);
+                check(std::isfinite(error) && error < .001,
+                      "installed Grit Vintage response matches independent shelf within 0.001 dB");
+            }
     std::printf("grit Vintage: worst installed shelf response error %.6g dB\n", worst);
 }
 
@@ -270,19 +267,18 @@ void oversamplingConsistency()
       for (double amplitude : { .25, .99 })
     {
         double worst = 0;
-        for (int revision : { 0, 2 })
-            for (float drive : { 6.f, 12.f, 18.f })
-                for (double hz : { 20., 50., 100., 200. })
+        for (float drive : { 6.f, 12.f, 18.f })
+            for (double hz : { 20., 50., 100., 200. })
+            {
+                const auto reference = sineLevel(drive, 0, hz, rate, amplitude);
+                for (int oversampling = 1; oversampling < 4; ++oversampling)
                 {
-                    const auto reference = sineLevel(revision, drive, 0, hz, rate, amplitude);
-                    for (int oversampling = 1; oversampling < 4; ++oversampling)
-                    {
-                        const auto spread = 20 * std::log10(sineLevel(revision, drive, oversampling, hz, rate, amplitude) / reference);
-                        worst = std::max(worst, std::abs(spread));
-                        check(std::isfinite(spread) && std::abs(spread) < .05,
-                              "Grit low-frequency level matches across oversampling within 0.05 dB");
-                    }
+                    const auto spread = 20 * std::log10(sineLevel(drive, oversampling, hz, rate, amplitude) / reference);
+                    worst = std::max(worst, std::abs(spread));
+                    check(std::isfinite(spread) && std::abs(spread) < .05,
+                          "Grit low-frequency level matches across oversampling within 0.05 dB");
                 }
+            }
         // Native arm64 Release measured 0.00258/0.00265 dB at 48 kHz and
         // 0.00282/0.00290 dB at 44.1 kHz (0.25/0.99 peak). A 0.005 dB
         // regression bound leaves numerical/toolchain headroom; 0.05 remains the hard limit.

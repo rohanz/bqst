@@ -15,6 +15,14 @@ inline int heightForWidth(int width)
     return juce::roundToInt(static_cast<double>(width) * designHeight / designWidth);
 }
 
+// Largest allowed width whose height fits in availableHeight (same units as the widths).
+inline int widthFittingHeight(double availableHeight)
+{
+    const auto width = std::floor(availableHeight * designWidth / designHeight);
+    return juce::roundToInt(juce::jlimit(static_cast<double>(minimumWidth),
+                                       static_cast<double>(maximumWidth), width));
+}
+
 // Width is session-only metadata, never an automatable audio parameter.
 inline int restoredWidth(const juce::ValueTree& state)
 {

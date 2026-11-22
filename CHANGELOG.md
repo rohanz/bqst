@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.3.1
+
+Interface:
+
+- Resizing stops at the bottom of the screen, so the corner grip can no longer be dragged out
+  of reach. Double-click the grip to return to the default size.
+- The unlit Vintage, Cream and Grit lamps are a lighter grey.
+- New PDF manual.
+
+Sound changes:
+
+- Grit is now one model, using the current Grit sound introduced as Hybrid in 1.2.0.
+  Projects saved before 1.2.0 with Grit, or that selected Legacy or Captured through the
+  host's Grit Model parameter, now use current Grit and will sound different. Cream,
+  EQ and projects already using current Grit are unchanged. The Grit Model parameter
+  has been removed.
+
 ## 1.3.0
 
 Interface:

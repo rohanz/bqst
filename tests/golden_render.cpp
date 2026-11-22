@@ -30,11 +30,11 @@ const Scenario scenarios[] {
     { { { "aDrive", 9.0f }, { "bDrive", 4.0f }, { "satMode", 1.0f }, { "eqMode", 1.0f }, { "aHighGain", 3.0f } } },
     { { { "aDrive", 10.0f }, { "bDrive", 10.0f }, { "aMix", 50.0f }, { "bMix", 50.0f }, { "autoGain", 0.0f }, { "osRealtime", 3.0f } } },
     { { { "aLowGain", 4.0f }, { "bHighGain", -3.0f }, { "inputTrim", 6.0f } } },
-    // Append only: the original seven scenarios remain a byte-identical prefix.
+    // Scenario 8 formerly selected Legacy; from 1.3.1 it uses the single current Grit model.
     { { { "aDrive", 12.0f }, { "bDrive", 6.0f }, { "aSatType", 1.0f }, { "bSatType", 1.0f },
-        { "satLink", 0.0f }, { "vintage", 1.0f }, { "gritRevision", 0.0f } } },
+        { "satLink", 0.0f }, { "vintage", 1.0f } } },
     { { { "aDrive", 18.0f }, { "bDrive", 9.0f }, { "aSatType", 1.0f }, { "bSatType", 1.0f },
-        { "satLink", 0.0f }, { "satMode", 1.0f }, { "osRealtime", 3.0f }, { "gritRevision", 2.0f } } },
+        { "satLink", 0.0f }, { "satMode", 1.0f }, { "osRealtime", 3.0f } } },
 };
 } // namespace
 

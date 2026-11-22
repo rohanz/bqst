@@ -12,7 +12,7 @@ namespace
 {
 // Stamped into saved state so a future format change can detect and migrate older data.
 // Bump this when the on-disk parameter format changes incompatibly.
-constexpr int bqstStateVersion = 2;
+constexpr int bqstStateVersion = 3;
 } // namespace
 
 BqtAudioProcessor::BqtAudioProcessor()
@@ -55,8 +55,12 @@ void BqtAudioProcessor::setStateInformation(const void* data, int sizeInBytes)
     if (xml == nullptr || ! xml->hasTagName(parameters.state.getType()))
         return;
 
-    // Pre-v2 production sessions retain legacy Grit when they omit its revision parameter.
-    const auto loadedStateVersion = xml->getIntAttribute("bqstStateVersion", 0);
+    // Grit is one model from v3 onward. Discard obsolete choices from every older
+    // state (including Lab states), so resaving cannot preserve a misleading revision.
+    for (int i = xml->getNumChildElements(); --i >= 0;)
+        if (auto* child = xml->getChildElement(i))
+            if (child->hasTagName("PARAM") && child->getStringAttribute("id") == "gritRevision")
+                xml->removeChildElement(child, true);
 
     // Strip any non-finite parameter value. The APVTS replaceState path applies values
     // without a finite check, and convertTo0to1/jlimit pass NaN/Inf through unchanged,
@@ -86,8 +90,7 @@ void BqtAudioProcessor::setStateInformation(const void* data, int sizeInBytes)
                 {
                     auto* child = xml->createNewChildElement("PARAM");
                     child->setAttribute("id", withId->paramID);
-                    const auto oldGrit = withId->paramID == "gritRevision" && loadedStateVersion < 2;
-                    child->setAttribute("value", oldGrit ? (BQST_GRIT_LAB ? 1.0f : 0.0f) : ranged->convertFrom0to1(ranged->getDefaultValue()));
+                    child->setAttribute("value", ranged->convertFrom0to1(ranged->getDefaultValue()));
                 }
 
     parameters.replaceState(juce::ValueTree::fromXml(*xml));

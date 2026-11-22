@@ -80,7 +80,6 @@ void BqtAudioProcessor::cacheParameterPointers()
     paramPtrs.inputTrim  = get("inputTrim");
     paramPtrs.eqMode     = get("eqMode");
     paramPtrs.satMode    = get("satMode");
-    paramPtrs.gritRevision = get("gritRevision");
     paramPtrs.eqBypass   = get("eqBypass");
     paramPtrs.satBypass  = get("satBypass");
     paramPtrs.autoGain   = get("autoGain");
@@ -230,7 +229,7 @@ void BqtAudioProcessor::updateSaturationToneFilters()
         *filters[sideIndex].vintage.coefficients = ArrayCoeffs::makeHighShelf(
             currentSampleRate, static_cast<float>(bqt::cream::vintageHz), static_cast<float>(bqt::cream::vintageQ),
             dbToGain(vintageEnabled != 0 ? static_cast<float>(bqt::cream::vintageDb) : 0.0f));
-        // The same shelf for the Legacy/Hybrid Grit path, designed in Grit's precision.
+        // The same shelf for the Grit path, designed in Grit's precision.
         using GritValue = LegacyGrit::Value;
         const auto gritVintage = juce::dsp::IIR::ArrayCoefficients<GritValue>::makeHighShelf(
             currentSampleRate, static_cast<GritValue>(bqt::cream::vintageHz),
@@ -268,7 +267,6 @@ BqtAudioProcessor::StructuralConfig BqtAudioProcessor::readStructuralConfig() co
     StructuralConfig config;
     config.eqMode = loadChoice(paramPtrs.eqMode);
     config.satMode = loadChoice(paramPtrs.satMode);
-    config.gritRevision = loadChoice(paramPtrs.gritRevision);
     config.eqBypassed = loadFlag(paramPtrs.eqBypass);
     config.satBypassed = loadFlag(paramPtrs.satBypass);
     config.vintage = loadFlag(paramPtrs.vintage);
@@ -451,7 +449,6 @@ void BqtAudioProcessor::processSide(float* samples, int numSamples, int sideInde
         auto autoGain = 1.0f;
         auto capturedAlignment = 1.0f;
         auto capturedColor = 0.0f;
-        const auto isHybrid = ! isDensity && activeConfig.gritRevision == 2;
 
         for (int sample = 0; sample < numSamples; ++sample)
         {
@@ -462,22 +459,15 @@ void BqtAudioProcessor::processSide(float* samples, int numSamples, int sideInde
             const auto mix = saturationMix[smoothIndex].getNextValue();
             const auto autoGainAmount = autoGainBlend[smoothIndex].getNextValue();
 
-            // saturationAutoGain calls std::pow, which at 8x oversampling ran ~768k times a
-            // second in stereo whenever drive was non-zero. It is a smooth function of drive, so
-            // refreshing it at the control rate is inaudible; when drive is not smoothing it is
-            // exactly constant anyway.
+            // Refresh drive-dependent controls and static wet compensation at the control rate.
             if (sample % controlRateInterval == 0)
             {
-                autoGain = bqt::saturationAutoGain(drive, satType);
                 if (isDensity)
-                    creamModels[smoothIndex].setKnob(static_cast<double>(drive) * 18.0);
-                else if (activeConfig.gritRevision == 1)
                 {
-                    gritLabModels[smoothIndex].setKnob(static_cast<double>(drive) * 18.0);
-                    // Calibrated wet compensation follows the new perceptual taper.
-                    autoGain = static_cast<float>(bqt::GritLabModel::autoGain(static_cast<double>(drive) * 18.0));
+                    autoGain = bqt::saturationAutoGain(drive, satType);
+                    creamModels[smoothIndex].setKnob(static_cast<double>(drive) * 18.0);
                 }
-                else if (isHybrid)
+                else
                 {
                     const auto capturedKnob = bqt::GritHybrid::capturedKnob(drive * 18.0);
                     gritLabModels[smoothIndex].setKnob(capturedKnob);
@@ -501,38 +491,25 @@ void BqtAudioProcessor::processSide(float* samples, int numSamples, int sideInde
             }
             else
             {
-                if (activeConfig.gritRevision == 1)
-                {
-                    value = static_cast<float>(gritLabModels[smoothIndex].process(value));
-                    value = colored(sideFilters.vintage, value);
-                }
-                else
-                {
-                    // Legacy and Hybrid stay in Grit's precision until the wet sample is final.
-                    using GritValue = LegacyGrit::Value;
-                    const auto input = static_cast<GritValue>(value);
-                    const auto gritDrive = static_cast<GritValue>(drive);
-                    const auto gritColor = std::min(GritValue(1), gritDrive * GritValue(colorationRampScale));
-                    auto capturedValue = GritValue(0);
-                    if (isHybrid)
+                // Both Grit branches stay in double until the final wet sample.
+                using GritValue = LegacyGrit::Value;
+                const auto input = static_cast<GritValue>(value);
+                const auto gritDrive = static_cast<GritValue>(drive);
+                const auto gritColor = std::min(GritValue(1), gritDrive * GritValue(colorationRampScale));
+                auto capturedValue = static_cast<GritValue>(gritLabModels[smoothIndex].process(input));
+                capturedValue += (sideFilters.hybridCapturedVintage.processSample(capturedValue)
+                                  - capturedValue) * static_cast<GritValue>(capturedColor);
+                sideFilters.legacy.setDrive(gritDrive);
+                auto gritValue = sideFilters.legacy.process(
+                    input, gritDrive, static_cast<GritValue>(driveGainValue),
+                    [&](GritValue sampleValue)
                     {
-                        capturedValue = static_cast<GritValue>(gritLabModels[smoothIndex].process(input));
-                        capturedValue += (sideFilters.hybridCapturedVintage.processSample(capturedValue)
-                                          - capturedValue) * static_cast<GritValue>(capturedColor);
-                    }
-                    sideFilters.legacy.setDrive(gritDrive);
-                    auto gritValue = sideFilters.legacy.process(
-                        input, gritDrive, static_cast<GritValue>(driveGainValue),
-                        [&](GritValue sampleValue)
-                        {
-                            return sampleValue
-                                 + (sideFilters.gritVintage.processSample(sampleValue) - sampleValue) * gritColor;
-                        });
-                    if (isHybrid)
-                        gritValue = bqt::GritHybrid::blend(gritValue, capturedValue,
-                                                           static_cast<GritValue>(capturedAlignment));
-                    value = static_cast<float>(gritValue);
-                }
+                        return sampleValue
+                             + (sideFilters.gritVintage.processSample(sampleValue) - sampleValue) * gritColor;
+                    });
+                gritValue = bqt::GritHybrid::blend(gritValue, capturedValue,
+                                                 static_cast<GritValue>(capturedAlignment));
+                value = static_cast<float>(gritValue);
             }
 
             // Blend toward the autogain rather than smoothing the gain itself: the toggle ramps,

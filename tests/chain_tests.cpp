@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <functional>
 #include <limits>
 #include <vector>
@@ -185,20 +186,41 @@ juce::XmlElement* findParamChild(juce::XmlElement& xml, const juce::String& id)
 
 void runStateTests()
 {
-    {
-        auto source = makeProcessor();
-        check(juce::roundToInt(plainValue(*source, "gritRevision")) == 2, "new instances use Hybrid Grit");
-        auto xml = savedStateXml(*source);
-        xml->setAttribute("bqstStateVersion", 1);
-        xml->removeChildElement(findParamChild(*xml, "gritRevision"), true);
-        auto target = makeProcessor();
-        loadStateXml(*target, *xml);
-        check(juce::roundToInt(plainValue(*target, "gritRevision")) == (BQST_GRIT_LAB ? 1 : 0), "old production state retains legacy Grit");
-        auto resaved = savedStateXml(*target);
-        auto fresh = makeProcessor();
-        loadStateXml(*fresh, *resaved);
-        check(juce::roundToInt(plainValue(*fresh, "gritRevision")) == juce::roundToInt(plainValue(*target, "gritRevision")), "Grit revision survives resaving");
-    }
+    // Every historical choice (and absent/invalid choices) now recalls the current Grit.
+    // Compare rendered bytes, including smoothing/structural startup, rather than only params.
+    for (int version : { 0, 1, 2, 3 })
+        for (const char* revision : { "", "0", "1", "2", "-99", "99", "nan" })
+            for (float vintage : { 0.f, 1.f })
+            {
+                auto source = makeProcessor();
+                setParam(*source, "aSatType", 1.f);
+                setParam(*source, "bSatType", 1.f);
+                setParam(*source, "aDrive", 12.f);
+                setParam(*source, "bDrive", 12.f);
+                setParam(*source, "vintage", vintage);
+                check(source->state().getParameter("gritRevision") == nullptr, "Grit Model host parameter is removed");
+                auto xml = savedStateXml(*source);
+                xml->setAttribute("bqstStateVersion", version);
+                if (*revision != '\0')
+                {
+                    auto* child = xml->createNewChildElement("PARAM");
+                    child->setAttribute("id", "gritRevision");
+                    child->setAttribute("value", revision);
+                }
+                auto target = makeProcessor();
+                loadStateXml(*target, *xml);
+                // Both start from the same freshly prepared state, with identical settings.
+                source->prepareToPlay(sampleRate, blockSize);
+                target->prepareToPlay(sampleRate, blockSize);
+                const auto expected = render(*source, 110., .6f, .1);
+                const auto actual = render(*target, 110., .6f, .1);
+                check(actual.size() == expected.size()
+                          && std::memcmp(actual.data(), expected.data(), actual.size() * sizeof(float)) == 0,
+                      "old Grit state renders byte-identically to fresh current Grit");
+                auto resaved = savedStateXml(*target);
+                check(resaved->getIntAttribute("bqstStateVersion") == 3, "state writes v3");
+                check(findParamChild(*resaved, "gritRevision") == nullptr, "state discards obsolete Grit revision");
+            }
     // Host state round trip: every parameter survives get -> set into a fresh processor.
     {
         auto source = makeProcessor();
@@ -334,7 +356,7 @@ void runUserPresetTests()
                 storesWorkflow = storesWorkflow || findParamChild(*xml, id) != nullptr;
             check(! storesWorkflow, "user preset does not store workflow parameters");
             check(! xml->hasAttribute("editorWidth"), "user preset does not store free editor size");
-            check(xml->getIntAttribute("bqstPresetVersion", 0) >= 1, "user preset is version stamped");
+            check(xml->getIntAttribute("bqstPresetVersion", 0) == 2, "user preset stays v2 so 1.3.0 can load it");
         }
         else
         {
@@ -395,7 +417,6 @@ void runUserPresetTests()
         setParam(*processor, "bMix", 20.0f);
         BqtPresetManager presets(processor->state());
         check(presets.loadPresetFile(file), "a hand-edited current-version preset loads");
-        check(juce::roundToInt(plainValue(*processor, "gritRevision")) == (BQST_GRIT_LAB ? 1 : 0), "pre-v2 preset retains legacy Grit in production");
 
         check(std::abs(plainValue(*processor, "osRealtime") - 3.0f) < 1.0e-4f
                   && plainValue(*processor, "bypass") < 0.5f && plainValue(*processor, "eqBypass") < 0.5f,
@@ -408,6 +429,30 @@ void runUserPresetTests()
               "out-of-range preset values are clamped to the parameter range");
         check(isAtDefault(*processor, "bMix"), "a non-finite preset value leaves the parameter at its default");
     }
+
+    for (int version : { 0, 1, 2 })
+        for (const char* revision : { "0", "1", "2", "-99", "99", "nan" })
+        {
+            auto expected = makeProcessor();
+            auto actual = makeProcessor();
+            setParam(*expected, "aSatType", 1.f);
+            setParam(*expected, "bSatType", 1.f);
+            setParam(*expected, "aDrive", 12.f);
+            setParam(*expected, "bDrive", 12.f);
+            const auto file = directory.getChildFile("OldGrit.bqstpreset");
+            writePresetFile(file, actual->state().state.getType().toString(), version,
+                            { { "gritRevision", revision }, { "aSatType", "1" }, { "bSatType", "1" },
+                              { "aDrive", "12" }, { "bDrive", "12" } });
+            BqtPresetManager presets(actual->state());
+            check(presets.loadPresetFile(file), "old Grit preset loads regardless of revision");
+            expected->prepareToPlay(sampleRate, blockSize);
+            actual->prepareToPlay(sampleRate, blockSize);
+            const auto reference = render(*expected, 110., .6f, .1);
+            const auto restored = render(*actual, 110., .6f, .1);
+            check(restored.size() == reference.size()
+                      && std::memcmp(restored.data(), reference.data(), restored.size() * sizeof(float)) == 0,
+                  "old Grit preset renders byte-identically to fresh current Grit");
+        }
 
     directory.deleteRecursively();
 }
@@ -691,6 +736,13 @@ int main()
         juce::ValueTree state("PARAMETERS");
         state.setProperty("editorWidth", value, nullptr);
         check(bqt::editor::restoredWidth(state) == 865, "invalid width falls back to default");
+        check(bqt::editor::heightForWidth(bqt::editor::widthFittingHeight(900.0)) <= 900
+                  && bqt::editor::heightForWidth(bqt::editor::widthFittingHeight(900.0) + 2) > 900,
+              "screen fit picks the largest width whose height fits");
+        check(bqt::editor::widthFittingHeight(100.0) == bqt::editor::minimumWidth
+                  && bqt::editor::widthFittingHeight(-50.0) == bqt::editor::minimumWidth
+                  && bqt::editor::widthFittingHeight(1.0e6) == bqt::editor::maximumWidth,
+              "screen fit stays inside the size limits");
         state.setProperty("editorScale", 3, nullptr);
         check(bqt::editor::restoredWidth(state) == 1081, "invalid width falls back to legacy choice");
         auto source = makeProcessor();
@@ -918,82 +970,75 @@ int main()
         }
     }
 
-    // Grit round trips exercise both double Vintage states and every revision transition.
-    // Compare against an uninterrupted processor with identical input/phase, including both
-    // channels. The 4 ms down/up structural fade resets filters. Captured has a measured
-    // 2.68e-6 residual at 1 s, but all revisions agree exactly at 5 s and 20 s with EQ
-    // bypassed (Vintage off/on); allow 5 s before requiring 1e-6 sample agreement.
-    // EQ is bypassed because its float filter reset leaves a pre-existing ~1.1e-5 floor.
+    // Grit round trips exercise both double Vintage states and the Cream/Grit transition.
+    // Allow five seconds for the reset filters to settle before comparing to uninterrupted
+    // output. EQ is bypassed because its float filter reset leaves a pre-existing ~1.1e-5 floor.
     {
         struct GritSwitch { const char* id; float from; float to; };
-        for (int revision : { 0, 1, 2 })
-            for (int os : { 0, 3 })
-                for (const auto& item : std::vector<GritSwitch> {
-                         { "vintage", 0.f, 1.f }, { "vintage", 1.f, 0.f },
-                         { "gritRevision", static_cast<float>(revision), static_cast<float>((revision + 1) % 3) },
-                         { "gritRevision", static_cast<float>(revision), static_cast<float>((revision + 2) % 3) },
-                         { "aSatType", 1.f, 0.f } })
+        for (int os : { 0, 3 })
+            for (const auto& item : std::vector<GritSwitch> {
+                     { "vintage", 0.f, 1.f }, { "vintage", 1.f, 0.f },
+                     { "aSatType", 1.f, 0.f } })
+            {
+                auto changed = makeProcessor();
+                auto reference = makeProcessor();
+                for (auto* p : { changed.get(), reference.get() })
                 {
-                    auto changed = makeProcessor();
-                    auto reference = makeProcessor();
-                    for (auto* p : { changed.get(), reference.get() })
-                    {
-                        // Isolate saturation state from the host-rate EQ filter reset.
-                        setParam(*p, "eqBypass", 1.f);
-                        setParam(*p, "aSatType", 1.f);
-                        setParam(*p, "bSatType", 1.f);
-                        setParam(*p, "aDrive", 6.f);
-                        setParam(*p, "bDrive", 6.f);
-                        setParam(*p, "gritRevision", static_cast<float>(revision));
-                        setParam(*p, "osRealtime", static_cast<float>(os));
-                        // Keep Vintage active during model/type changes to exercise its reset.
-                        setParam(*p, "vintage", 1.f);
-                        setParam(*p, item.id, item.from);
-                    }
-                    juce::AudioBuffer<float> actual(2, blockSize), expected(2, blockSize);
-                    juce::MidiBuffer midi;
-                    std::array<float, 2> previous {};
-                    double worstStep = 0, returnError = 0;
-                    bool finite = true;
-                    constexpr int leaveBlock = 100, returnBlock = 200, settleBlocks = 938;
-                    for (int block = 0; block < 1200; ++block)
-                    {
-                        if (block == leaveBlock || block == returnBlock)
-                        {
-                            const auto value = block == leaveBlock ? item.to : item.from;
-                            setParam(*changed, item.id, value);
-                            if (juce::String(item.id) == "aSatType")
-                                setParam(*changed, "bSatType", value);
-                        }
-                        for (int c = 0; c < 2; ++c)
-                            for (int i = 0; i < blockSize; ++i)
-                            {
-                                const auto phase = 2.0 * juce::MathConstants<double>::pi * 220.0
-                                                 * (block * blockSize + i) / sampleRate + c * .37;
-                                const auto x = .5f * static_cast<float>(std::sin(phase));
-                                actual.setSample(c, i, x);
-                                expected.setSample(c, i, x);
-                            }
-                        changed->processBlock(actual, midi);
-                        reference->processBlock(expected, midi);
-                        for (int c = 0; c < 2; ++c)
-                            for (int i = 0; i < blockSize; ++i)
-                            {
-                                const auto x = actual.getSample(c, i);
-                                finite = finite && std::isfinite(x) && std::isfinite(expected.getSample(c, i));
-                                if (block >= leaveBlock)
-                                    worstStep = std::max(worstStep, static_cast<double>(std::abs(x - previous[static_cast<size_t>(c)])));
-                                previous[static_cast<size_t>(c)] = x;
-                                if (block >= returnBlock + settleBlocks)
-                                    returnError = std::max(returnError,
-                                        static_cast<double>(std::abs(x - expected.getSample(c, i))));
-                            }
-                    }
-                    check(finite && worstStep < .05, "Grit round-trip switch stays finite and click-free");
-                    check(returnError < 1e-6, "Grit round trip matches uninterrupted output after settling");
-                    std::printf("grit switch: revision %d, OS %d, %s %.0f->%.0f->%.0f: step %.6g, return error %.3g\n",
-                                revision, os, item.id, item.from, item.to, item.from, worstStep, returnError);
+                    // Isolate saturation state from the host-rate EQ filter reset.
+                    setParam(*p, "eqBypass", 1.f);
+                    setParam(*p, "aSatType", 1.f);
+                    setParam(*p, "bSatType", 1.f);
+                    setParam(*p, "aDrive", 6.f);
+                    setParam(*p, "bDrive", 6.f);
+                    setParam(*p, "osRealtime", static_cast<float>(os));
+                    // Keep Vintage active during model/type changes to exercise its reset.
+                    setParam(*p, "vintage", 1.f);
+                    setParam(*p, item.id, item.from);
                 }
+                juce::AudioBuffer<float> actual(2, blockSize), expected(2, blockSize);
+                juce::MidiBuffer midi;
+                std::array<float, 2> previous {};
+                double worstStep = 0, returnError = 0;
+                bool finite = true;
+                constexpr int leaveBlock = 100, returnBlock = 200, settleBlocks = 938;
+                for (int block = 0; block < 1200; ++block)
+                {
+                    if (block == leaveBlock || block == returnBlock)
+                    {
+                        const auto value = block == leaveBlock ? item.to : item.from;
+                        setParam(*changed, item.id, value);
+                        if (juce::String(item.id) == "aSatType")
+                            setParam(*changed, "bSatType", value);
+                    }
+                    for (int c = 0; c < 2; ++c)
+                        for (int i = 0; i < blockSize; ++i)
+                        {
+                            const auto phase = 2.0 * juce::MathConstants<double>::pi * 220.0
+                                             * (block * blockSize + i) / sampleRate + c * .37;
+                            const auto x = .5f * static_cast<float>(std::sin(phase));
+                            actual.setSample(c, i, x);
+                            expected.setSample(c, i, x);
+                        }
+                    changed->processBlock(actual, midi);
+                    reference->processBlock(expected, midi);
+                    for (int c = 0; c < 2; ++c)
+                        for (int i = 0; i < blockSize; ++i)
+                        {
+                            const auto x = actual.getSample(c, i);
+                            finite = finite && std::isfinite(x) && std::isfinite(expected.getSample(c, i));
+                            if (block >= leaveBlock)
+                                worstStep = std::max(worstStep, static_cast<double>(std::abs(x - previous[static_cast<size_t>(c)])));
+                            previous[static_cast<size_t>(c)] = x;
+                            if (block >= returnBlock + settleBlocks)
+                                returnError = std::max(returnError,
+                                    static_cast<double>(std::abs(x - expected.getSample(c, i))));
+                        }
+                }
+                check(finite && worstStep < .05, "Grit round-trip switch stays finite and click-free");
+                check(returnError < 1e-6, "Grit round trip matches uninterrupted output after settling");
+                std::printf("grit switch: OS %d, %s %.0f->%.0f->%.0f: step %.6g, return error %.3g\n",
+                            os, item.id, item.from, item.to, item.from, worstStep, returnError);
+            }
     }
 
     // Loading the Default factory preset restores every musical parameter to its layout default

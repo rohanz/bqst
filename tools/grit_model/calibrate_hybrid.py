@@ -20,7 +20,7 @@ if sys.argv[1]=='--export-existing':
  if report.get('revision')!=2:raise SystemExit('Refit the independent-path Hybrid first.')
  export_tables(report);raise SystemExit(0)
 spec=importlib.util.spec_from_file_location('cal',root/'tools/calibrate_autogain.py');cal=importlib.util.module_from_spec(spec);spec.loader.exec_module(cal)
-p=load_plugin(str(Path(sys.argv[1]).resolve()));p.grit_model='Hybrid';p.l_m_type='Grit';p.r_s_type='Grit';p.l_m_mix=100;p.r_s_mix=100;p.autogain=False;p.vintage=False;p.realtime_os='4x';p.render_os='4x'
+p=load_plugin(str(Path(sys.argv[1]).resolve()));p.l_m_type='Grit';p.r_s_type='Grit';p.l_m_mix=100;p.r_s_mix=100;p.autogain=False;p.vintage=False;p.realtime_os='4x';p.render_os='4x'
 mats={n:np.asarray(x,dtype='float32') for n,x in cal.materials.items()};meter=pyln.Meter(48000)
 base={n:meter.integrated_loudness(x) for n,x in mats.items()};rows=[];gains=[]
 for k in np.arange(0,18.001,.5):

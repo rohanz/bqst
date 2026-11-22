@@ -30,7 +30,7 @@ Input Trim -> EQ -> Saturation -> Mix -> Output Trim
 
 **Bypass** bypasses the whole plugin with a short fade and dimmed faceplate.
 
-**Resizing:** drag the grip in the bottom-right corner to make the window any size between small and large. The size is remembered with the project.
+**Resizing:** drag the grip in the bottom-right corner to make the window any size from 75% to 200% of its normal size; it keeps its proportions and stops growing at the bottom of the screen. Double-click the grip to return to the normal size. The size is remembered with the project.
 
 ## Presets
 
@@ -46,7 +46,7 @@ Presets save sound settings only. Utility/session controls such as plugin size, 
 
 ## EQ Module
 
-The EQ has independent Side A and Side B controls. Depending on the top-bar mode, these represent either L/R or M/S.
+The EQ has independent controls for its two sides, the l/m and r/s columns. Depending on the top-bar mode, these represent either L/R or M/S.
 
 **HF** boosts or cuts the high shelf from -6 dB to +6 dB.
 
@@ -60,7 +60,7 @@ The EQ is intentionally broad and smooth. It is meant for tonal shaping rather t
 
 ## Saturation Module
 
-The saturation module has independent Side A and Side B Drive, Mix, and Output controls.
+The saturation module has independent Drive, Mix, and Output controls for each side (the l/m and r/s columns).
 
 **Cream/Grit** toggles the saturation type.
 
@@ -69,11 +69,8 @@ harmonic density through the mids and top, and rounds peaks gently. It moves con
 transparent at 0 dB to heavily saturated at 18 dB, and each step of the knob adds a similar
 amount of saturation, so subtle settings get plenty of travel.
 
-**Grit** is a firmer transformer-style saturation character with more bite. New instances use
-the Hybrid Grit model: 75% of the original Grit blended with 25% of a model fitted to captures of
-an LA500A's whole signal path. The host's **Grit Model** parameter selects Legacy (the original
-Grit, used by sessions and user presets saved before 1.2.0), Captured (the fitted path alone) or
-Hybrid.
+**Grit** is a firmer transformer-style saturation character with more bite and a harder edge. It
+suits drums, guitars and vocals that need to cut.
 
 **Vintage** softens the top end after saturation with a broad, gentle shelf. It acts on the saturated signal only, so it has no effect when Drive or Mix is at 0, and it fades in over the first 6 dB of Drive.
 
@@ -102,6 +99,8 @@ Drag a knob to adjust it.
 Hold Shift while dragging for finer control.
 
 Double-click the Input, HF, LF, Drive, Mix or Output knob to reset it to its default (0 dB, or 100% for Mix). The frequency knobs have no double-click reset.
+
+Control-double-click the Input knob to reset both Output knobs to 0 dB.
 
 Hover over a knob to see its current value.
 

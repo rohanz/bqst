@@ -1,0 +1,426 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>BQST User Manual</title>
+<style>
+@font-face { font-family: "Chillax"; font-weight: 400; src: url("../../assets/fonts/Chillax-Regular.otf"); }
+@font-face { font-family: "Chillax"; font-weight: 600; src: url("../../assets/fonts/Chillax-Semibold.otf"); }
+@font-face { font-family: "DM Sans"; font-weight: 500; src: url("../../assets/fonts/DMSans-Medium.ttf"); }
+@font-face { font-family: "DM Sans"; font-weight: 600; src: url("../../assets/fonts/DMSans-SemiBold.ttf"); }
+
+/* The plugin's own palette (src/BqtEditorStyle.h). */
+:root {
+  --plate: #ffadcb; --plate-dark: #f095bd; --bar: #f9a2c4; --cream: #fff4ed; --field: #fbf1ea;
+  --menu: #f7ece4; --ink: #111111; --ink-soft: #4d3a42; --red: #c8322e;
+}
+@page { size: A4; margin: 18mm 18mm 20mm 18mm; background: #fff4ed;
+  @bottom-left { content: "bqst  user manual"; font: 600 8pt "Chillax"; color: #6d5961; }
+  @bottom-right { content: counter(page); font: 600 8pt "Chillax"; color: #6d5961; } }
+@page cover { margin: 0; @bottom-left { content: none; } @bottom-right { content: none; } }
+
+* { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+html { font: 500 10.3pt/1.52 "DM Sans", sans-serif; color: var(--ink); background: var(--cream); }
+body { margin: 0; }
+h1, h2, h3, .chillax { font-family: "Chillax", sans-serif; font-weight: 600; }
+p { margin: 0 0 2.6mm; }
+ul { margin: 0 0 3mm; padding-left: 5mm; }
+li { margin-bottom: 1.2mm; }
+strong { font-weight: 600; }
+a { color: inherit; text-decoration-color: #d6457f; text-underline-offset: .6mm; }
+/* Chillax sits low in its own line box, so the key face gets more padding below than above. */
+.k { display: inline-block; font: 600 .95em/1 "Chillax"; background: var(--field); border: .25mm solid #e5d3c9; border-radius: 1.2mm; padding: .55mm 1.4mm .85mm; margin: -1mm 0; white-space: nowrap; }
+.k.on { background: var(--ink); color: var(--field); border-color: var(--ink); }
+code { font: 500 8.8pt ui-monospace, Menlo, monospace; background: var(--field); border: .25mm solid #eadad1; padding: .2mm 1.2mm; border-radius: 1mm; }
+kbd { font: 600 8.4pt "DM Sans"; background: #fff; border: .25mm solid #cdb9c1; border-bottom-width: .6mm; border-radius: 1.2mm; padding: .1mm 1.5mm; white-space: nowrap; }
+
+/* A chapter opens on a little pink plate, like the module faceplates. */
+.chapter { break-before: page; }
+.plate { position: relative; background: var(--plate); border: .7mm solid var(--ink); border-radius: 1mm;
+  padding: 6mm 8mm 5.5mm; margin-bottom: 6mm; display: flex; align-items: flex-end; justify-content: space-between; }
+.plate h1 { font-size: 25pt; line-height: 1; margin: 0; text-transform: lowercase; letter-spacing: -.01em; }
+.plate .no { font: 600 9pt "Chillax"; text-transform: lowercase; }
+h2 { font-size: 13.5pt; margin: 6.5mm 0 2mm; break-after: avoid; text-transform: lowercase; }
+h2::before { content: ""; display: inline-block; width: 2.6mm; height: 2.6mm; border-radius: 50%; background: var(--ink);
+  margin-right: 2mm; vertical-align: 0; }
+h3 { font-size: 11pt; margin: 4mm 0 1mm; break-after: avoid; }
+.lead { font-size: 12pt; line-height: 1.45; margin-bottom: 4.5mm; }
+
+figure { margin: 3mm 0 4.5mm; break-inside: avoid; }
+figure img { display: block; width: 100%; border-radius: 2mm; }
+figure.edge img { box-shadow: 0 0 0 .3mm var(--plate-dark); }
+figure.panel img { border-radius: 0; }
+figcaption { font-size: 8.4pt; color: var(--ink-soft); margin-top: 1.5mm; }
+.side { break-inside: avoid; display: grid; grid-template-columns: 62mm 1fr; gap: 7mm; align-items: start; }
+.side.narrow { grid-template-columns: 44mm 1fr; }
+.side.satside { grid-template-columns: 64mm 1fr; }
+.side.eqside { grid-template-columns: 64mm 1fr; }
+.side.vu { grid-template-columns: 48mm 1fr; }
+.side figure { margin: 0; }
+/* The first line of text beside a figure starts with its ascenders level with the figure top. */
+.side > div > h2:first-child { margin-top: -1.1mm; }
+.side > div > .lead:first-child { margin-top: -1.3mm; }
+.side > div > p:first-child:not(.lead) { margin-top: -1mm; }
+
+.field { break-inside: avoid; background: var(--field); border: .3mm solid #ead6cc; border-radius: 2mm; padding: 3mm 4mm; margin: 3mm 0 4mm; font-size: 9.6pt; }
+.field.pink { background: #ffd9e7; border-color: #f6bcd1; }
+.field b:first-child { font-family: "Chillax"; font-weight: 600; display: block; margin-bottom: .5mm; text-transform: lowercase; font-size: 10.4pt; }
+.field p:last-child, .field ul:last-child { margin-bottom: 0; }
+
+table { border-collapse: collapse; width: 100%; margin: 2mm 0 4.5mm; font-size: 9.4pt; }
+tr { break-inside: avoid; }
+th { text-align: left; font: 600 8.4pt "Chillax"; text-transform: lowercase; color: var(--ink-soft); padding: 1.4mm 2.4mm; border-bottom: .45mm solid var(--ink); }
+td { padding: 1.7mm 2.4mm; border-bottom: .2mm solid #ead6cc; vertical-align: top; }
+td:first-child { white-space: nowrap; font-weight: 600; }
+td code { white-space: nowrap; }
+
+/* cover */
+.cover { page: cover; height: 297mm; background: var(--plate); padding: 22mm 20mm 16mm; display: flex; flex-direction: column; position: relative; }
+.cover .word { font: 600 92pt/0.9 "Chillax"; letter-spacing: -.02em; margin-left: -2mm; }
+.cover .sub { font: 600 17pt "Chillax"; margin-top: 4mm; text-transform: lowercase; }
+.cover .what { font-size: 11.5pt; max-width: 125mm; margin-top: 5mm; color: #3c2530; }
+.cover img { width: 152mm; margin: auto auto 0; border-radius: 2.5mm; box-shadow: 0 5mm 14mm rgba(110, 30, 65, .30); }
+.cover .foot { display: flex; justify-content: space-between; font: 600 9.5pt "Chillax"; margin-top: 9mm; text-transform: lowercase; }
+
+.toc { list-style: none; padding: 0; margin: 2mm 0 0; }
+.toc li { margin: 0; border-bottom: .25mm solid #ead6cc; }
+.toc a { display: flex; gap: 4mm; align-items: baseline; padding: 2.1mm 0; color: inherit; text-decoration: none; font: 600 11pt "Chillax"; text-transform: lowercase; }
+.toc a span { font: 600 9pt "DM Sans"; width: 7mm; }
+.toc a em { font: 500 9pt "DM Sans"; font-style: normal; color: var(--ink-soft); margin-left: auto; text-transform: none; }
+
+.flow { display: flex; align-items: stretch; gap: 2mm; margin: 3mm 0 5mm; break-inside: avoid; }
+.flow div { display: flex; flex-direction: column; justify-content: center; background: var(--field); border: .3mm solid #ead6cc; border-radius: 1.6mm; padding: 2.4mm 2mm; text-align: center; font: 600 9.4pt/1.35 "Chillax"; text-transform: lowercase; flex: 1 1 0; }
+.flow div.big { background: var(--plate); border-color: var(--ink); flex-grow: 1.3; }
+.flow div small { display: block; font: 500 7.8pt "DM Sans"; text-transform: none; color: var(--ink-soft); }
+.flow i { font-style: normal; font-weight: 600; align-self: center; }
+
+/* labelled interface */
+.tour { position: relative; margin: 6mm auto 4mm; width: 124mm; break-inside: avoid; }
+.tour img { display: block; width: 100%; border-radius: 2mm; }
+.tour b, .legend li b { display: flex; align-items: center; justify-content: center; border-radius: 50%; background: var(--ink); color: var(--field);
+  font-family: "DM Sans"; font-weight: 600; line-height: 1; font-variant-numeric: tabular-nums;
+  padding-top: .2em; /* DM Sans figures sit high in their line box; this centres them optically */ }
+.tour b { position: absolute; transform: translate(-50%, -50%); width: 4.8mm; height: 4.8mm; font-size: 7.4pt; box-shadow: 0 0 0 .45mm var(--field); }
+.legend { columns: 2; column-gap: 8mm; list-style: none; padding: 0; margin: 0; font-size: 9.2pt; }
+.legend li { break-inside: avoid; display: flex; gap: 2.2mm; margin-bottom: 1.4mm; }
+.legend li b { flex: none; width: 5mm; height: 5mm; font-size: 7.6pt; margin-top: .3mm; }
+.legend li span em { font-style: normal; color: var(--ink-soft); }
+
+.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 5mm; margin: 3mm 0 4mm; break-inside: avoid; }
+.pair > div { background: var(--field); border: .3mm solid #ead6cc; border-radius: 2mm; padding: 3.3mm 4mm 3.5mm; }
+.pair > div.dark { background: var(--ink); color: var(--field); border-color: var(--ink); }
+.pair h3 { margin: 0 0 2mm; font-size: 14pt; line-height: 1; text-transform: lowercase; }
+.pair p { font-size: 9.6pt; }
+.pair p:last-child { margin-bottom: 0; }
+
+.tips { list-style: none; padding: 0; }
+.tips li { position: relative; padding-left: 6mm; margin-bottom: 3.2mm; break-inside: avoid; }
+.tips li::before { content: ""; position: absolute; left: .6mm; top: .44em; width: 2.2mm; height: 2.2mm; border-radius: 50%;
+  background: var(--ink); box-sizing: border-box; }
+.tips li strong { font-family: "Chillax"; }
+</style>
+</head>
+<body>
+
+<!-- ───────────── cover ───────────── -->
+<section class="cover">
+  <div class="word">bqst</div>
+  <div class="sub">baxandall eq and saturation · user manual</div>
+  <p class="what">A mastering tone plugin: a broad, gentle EQ feeding a two-flavour saturation stage. Made for lift, weight and glue on the mix bus and master, not for turning things into a distortion box.</p>
+  <img src="img/interface.png" alt="The BQST window">
+  <div class="foot"><span>version 1.3.1</span><span>ebr audio tech</span></div>
+</section>
+
+<!-- ───────────── contents ───────────── -->
+<section class="chapter" style="break-before: auto">
+  <div class="plate"><h1>contents</h1><span class="no">bqst 1.3.1</span></div>
+  <ol class="toc">
+    <li><a href="#what"><span>1</span>what bqst is<em>the idea and the signal path</em></a></li>
+    <li><a href="#install"><span>2</span>installing<em>formats and where things go</em></a></li>
+    <li><a href="#tour"><span>3</span>the window at a glance<em>every control, labelled</em></a></li>
+    <li><a href="#bar"><span>4</span>the top bar<em>input, routing, links, oversampling, autogain</em></a></li>
+    <li><a href="#presets"><span>5</span>presets<em>factory sounds and your own</em></a></li>
+    <li><a href="#eq"><span>6</span>the eq module<em>high and low shelves</em></a></li>
+    <li><a href="#sat"><span>7</span>the saturation module<em>cream, grit, vintage, drive, mix, output</em></a></li>
+    <li><a href="#vu"><span>8</span>the vu meters<em>reading the needles</em></a></li>
+    <li><a href="#os"><span>9</span>oversampling<em>realtime and render</em></a></li>
+    <li><a href="#size"><span>10</span>resizing and handy gestures<em>the grip, mouse and keyboard</em></a></li>
+    <li><a href="#tips"><span>11</span>tips<em>getting a good sound quickly</em></a></li>
+  </ol>
+
+  <h2 id="what" style="margin-top:10mm">1 · what bqst is</h2>
+  <p class="lead">BQST is a stereo mastering EQ and saturator laid out like two modules in a 500-series rack. On the left, a broad Baxandall-style low and high shelf EQ. On the right, a saturation stage with two characters, <strong>Cream</strong> and <strong>Grit</strong>, and a pair of VU meters.</p>
+  <p>Both modules have two columns of controls. They can work on the left and right channels, or on the mid (what the two speakers share) and the side (what differs between them). The EQ and the saturation each choose this for themselves.</p>
+  <p>Sound passes through the plugin in this order:</p>
+  <div class="flow">
+    <div>input<small>level in</small></div><i>→</i>
+    <div class="big">eq<small>hf and lf shelves</small></div><i>→</i>
+    <div class="big">saturation<small>cream or grit, drive</small></div><i>→</i>
+    <div>mix<small>wet against dry</small></div><i>→</i>
+    <div>output<small>level out</small></div>
+  </div>
+  <p>It is built for small moves: a decibel of shelf, a few decibels of drive. Turned all the way up it will happily get loud and dirty, but its sweet spot is the kind of colour you feel more than hear.</p>
+</section>
+
+<!-- ───────────── install ───────────── -->
+<section class="chapter" id="install">
+  <div class="plate"><h1>installing</h1><span class="no">chapter 2</span></div>
+  <p class="lead">BQST runs on macOS. The installer puts two plugin formats in the system plugin folders, so every host on the Mac can find them.</p>
+  <table>
+    <tr><th>format</th><th>installed to</th><th>use it in</th></tr>
+    <tr><td>VST3</td><td><code>/Library/Audio/Plug-Ins/VST3/BQST.vst3</code></td><td>Ableton Live, Reaper, Bitwig, Cubase and most other hosts</td></tr>
+    <tr><td>Audio Unit</td><td><code>/Library/Audio/Plug-Ins/Components/BQST.component</code></td><td>Logic Pro, GarageBand and other AU hosts</td></tr>
+  </table>
+  <p>After installing, open your host and, if it does not see BQST straight away, ask it to rescan its plugins. BQST appears under the maker name <strong>EBR Audio Tech</strong>. A standalone app can also be built from the source code; the installer does not include it.</p>
+  <p>The factory presets are built into the plugin, so there is nothing else to copy. Presets you save yourself live in your user Library (see <a href="#presets">chapter 5</a>).</p>
+
+  <h2>where to put it</h2>
+  <p>BQST is happiest at the end of a chain: on the master bus, a mix bus, or a group of instruments that should sit together. Put it after corrective EQ and dynamics, and before your final limiter, so the limiter sees the colour BQST adds.</p>
+  <div class="field pink"><b>a new instance is clean</b><p>When you first load BQST, every EQ gain and both Drives are at 0, so it adds no EQ and no saturation. Nothing changes until you turn something.</p></div>
+
+</section>
+
+<!-- ───────────── tour ───────────── -->
+<section class="chapter" id="tour">
+  <div class="plate"><h1>the window at a glance</h1><span class="no">chapter 3</span></div>
+  <div class="tour">
+    <img src="img/interface.png" alt="The BQST window with numbered labels">
+    <b style="left:13.1%;top:4.3%">1</b>
+    <b style="left:76.4%;top:4.3%">2</b>
+    <b style="left:99.2%;top:4.35%">3</b>
+    <b style="left:9.85%;top:15%">4</b>
+    <b style="left:21.9%;top:15%">5</b>
+    <b style="left:40.8%;top:15%">6</b>
+    <b style="left:72.7%;top:15%">7</b>
+    <b style="left:99.2%;top:11%">8</b>
+    <b style="left:25.9%;top:26.1%">9</b>
+    <b style="left:25.9%;top:50.5%">10</b>
+    <b style="left:25.9%;top:76.0%">11</b>
+    <b style="left:74.0%;top:21.5%">12</b>
+    <b style="left:54.4%;top:48.7%">13</b>
+    <b style="left:92.6%;top:48.7%">14</b>
+    <b style="left:74.0%;top:64.0%">15</b>
+    <b style="left:74.85%;top:92.8%">16</b>
+    <b style="left:102.4%;top:98.8%">17</b>
+  </div>
+  <ol class="legend">
+    <li><b>1</b><span><strong>Presets</strong>: previous, menu, next, save <em>(ch. 5)</em></span></li>
+    <li><b>2</b><span><strong>Bypass</strong> the whole plugin</span></li>
+    <li><b>3</b><span><strong>About</strong>: version and credits</span></li>
+    <li><b>4</b><span><strong>Input</strong> level <em>(ch. 4)</em></span></li>
+    <li><b>5</b><span><strong>EQ routing</strong> l/r or m/s, and <strong>link</strong></span></li>
+    <li><b>6</b><span><strong>Saturation routing</strong> l/r or m/s, and <strong>link</strong></span></li>
+    <li><b>7</b><span><strong>Oversampling</strong> for playback and for render <em>(ch. 9)</em></span></li>
+    <li><b>8</b><span><strong>Autogain</strong> on or off</span></li>
+    <li><b>9</b><span><strong>HF</strong>: high shelf boost or cut <em>(ch. 6)</em></span></li>
+    <li><b>10</b><span><strong>Freq</strong>: high and low shelf frequencies</span></li>
+    <li><b>11</b><span><strong>LF</strong>: low shelf boost or cut</span></li>
+    <li><b>12</b><span><strong>VU meters</strong>, one per side <em>(ch. 8)</em></span></li>
+    <li><b>13</b><span><strong>Vintage</strong> top-end rounding <em>(ch. 7)</em></span></li>
+    <li><b>14</b><span><strong>Cream / Grit</strong> saturation type</span></li>
+    <li><b>15</b><span><strong>Drive</strong>, one per side</span></li>
+    <li><b>16</b><span><strong>Mix</strong> and <strong>Output</strong>, one pair per side</span></li>
+    <li><b>17</b><span><strong>Resize grip</strong>: drag to resize <em>(ch. 10)</em></span></li>
+  </ol>
+  <div class="field" style="margin-top:4mm"><b>left column, right column</b><p>Each module has an <strong>l/m</strong> column and an <strong>r/s</strong> column. In l/r mode they are the left and right channels; in m/s mode they are the mid and the side. Hover over any control to see what it does, or over a knob to read its exact value.</p></div>
+</section>
+
+<!-- ───────────── top bar ───────────── -->
+<section class="chapter" id="bar">
+  <div class="plate"><h1>the top bar</h1><span class="no">chapter 4</span></div>
+  <figure class="edge"><img src="img/topbar.png" alt="The two rows of the top bar"><figcaption>The top bar: presets, bypass and about on the first row; level, routing, oversampling and autogain on the second.</figcaption></figure>
+
+  <h2>input</h2>
+  <p>The small <span class="k">input</span> knob sets the level going into the EQ and saturation, from −12 to +12 dB. Because saturation responds to level, more input means more colour, much like Drive.</p>
+  <p>Hold <kbd>Control</kbd> while you drag Input and both Output knobs move the opposite way by the same amount, so you change how hard the plugin is driven without changing how loud it comes out. <kbd>Control</kbd>-double-click Input to set both Outputs back to 0 dB.</p>
+
+  <h2>eq and sat: routing</h2>
+  <p>The <span class="k on">l/r</span> <span class="k">m/s</span> switch next to <strong>eq</strong> chooses whether the EQ works on left and right or on mid and side. The one next to <strong>sat</strong> does the same for the saturation. They are independent, so you can, for example, EQ in m/s and saturate in l/r.</p>
+
+  <h2>link</h2>
+  <p>Each module has a <span class="k on">link</span> button, and both are on in a new instance. While a module is linked, its r/s column simply follows the l/m column: both columns show and change the same settings. For the EQ that covers both gains and both frequencies; for the saturation it covers Drive, Mix and Output.</p>
+  <p>Turn link off when you want the two sides to differ, for instance a little more air on the side channel only. When you switch it off, the r/s column starts from the l/m settings, so nothing jumps. With link off you can still hold <kbd>Control</kbd> while dragging a knob to move both sides together.</p>
+  <div class="field"><b>good to know</b><p>While a module is linked, any automation you recorded on its r/s controls is ignored. The Cream/Grit switch always sets both sides, linked or not.</p></div>
+
+  <h2>oversampling</h2>
+  <p>Two menus set how much oversampling the saturation uses: <span class="k">realtime</span> while you play and mix, <span class="k">render</span> when you bounce or export. Each offers off, 2x, 4x or 8x. See <a href="#os">chapter 9</a>.</p>
+
+  <h2>autogain</h2>
+  <p>With <span class="k on">autogain</span> on (the default), BQST turns the saturated signal down as you turn Drive up, so you can judge the change in character rather than just hearing it get louder. It is a fixed correction for each Drive setting, measured beforehand on several kinds of music. It does not listen to your track, so the match is close but varies with the source. Turn it off if you want Drive to push level as well.</p>
+
+  <h2>bypass</h2>
+  <p><span class="k">bypass</span> switches the whole plugin out with a short fade, so it never clicks, and dims the faceplate so you can see at a glance that it is off. It is the fairest way to compare before and after, especially with Autogain on.</p>
+  <h2>about</h2>
+  <div class="side">
+    <figure class="panel"><img src="img/about.png" alt="The about panel"></figure>
+    <div><p>The <span class="k">about</span> button at the top right shows the version number and credits. Click anywhere on the panel to close it again.</p>
+    <p>If you ever need to check which version a session is using, this is the place to look.</p></div>
+  </div>
+</section>
+
+<!-- ───────────── presets ───────────── -->
+<section class="chapter" id="presets">
+  <div class="plate"><h1>presets</h1><span class="no">chapter 5</span></div>
+  <div class="side">
+    <figure><img src="img/menu.png" alt="The preset menu and an oversampling menu"><figcaption>Right: the preset menu, with the factory presets in categories. Left: an oversampling menu.</figcaption></figure>
+    <div>
+      <p>The preset row sits at the very top of the window. Click the preset name to open the menu, or use <span class="k">&lt;</span> and <span class="k">&gt;</span> to step through the presets one by one.</p>
+      <p><span class="k">save</span> stores the current settings as your own preset. Your presets appear in the same menu, in a <strong>user</strong> section under the factory ones.</p>
+    </div>
+  </div>
+
+  <h2>factory presets</h2>
+  <table>
+    <tr><th>preset</th><th>category</th><th>what it does</th></tr>
+    <tr><td>Default</td><td>General</td><td>Everything at its starting point: flat EQ, no drive.</td></tr>
+    <tr><td>Clean Bax Lift</td><td>Master</td><td>A gentle lift at both ends with a touch of Cream.</td></tr>
+    <tr><td>Wide Air MS</td><td>Master</td><td>EQ in m/s and unlinked: more top on the side channel than the mid.</td></tr>
+    <tr><td>Subtle Master Polish</td><td>Master</td><td>Small shelves and a little Cream, mixed in at under half.</td></tr>
+    <tr><td>Cream Glue</td><td>Saturation</td><td>More Cream drive, partly mixed, with Vintage on.</td></tr>
+    <tr><td>Cream Sheen</td><td>Saturation</td><td>Light Cream with a small high and low lift.</td></tr>
+    <tr><td>Grit Console Push</td><td>Saturation</td><td>Grit at a moderate drive, mixed in a little over half.</td></tr>
+  </table>
+
+  <h2>your own presets</h2>
+  <p>User presets are saved as <code>.bqstpreset</code> files in this folder:</p>
+  <p><code>~/Library/BQST/Presets</code></p>
+  <p>You can copy them to another Mac, or share them, by copying the files. Subfolders show up as their own groups in the menu.</p>
+  <div class="field pink"><b>what a preset keeps</b><p>Presets store the sound: EQ, saturation, routing, link, Vintage and Autogain. They do not store the window size, the two oversampling settings or Bypass, so loading a preset never changes how your session is set up to run.</p></div>
+</section>
+
+<!-- ───────────── eq ───────────── -->
+<section class="chapter" id="eq">
+  <div class="plate"><h1>the eq module</h1><span class="no">chapter 6</span></div>
+  <div class="side eqside">
+    <figure class="edge"><img src="img/eq.png" alt="The EQ module"></figure>
+    <div>
+      <p class="lead">Two broad shelves: one for the top, one for the bottom. They are wide and smooth on purpose, so they shape the overall tone rather than fixing single problem frequencies.</p>
+      <h3>HF, the big top knob</h3>
+      <p>Boosts or cuts everything above the chosen high frequency, from −6 to +6 dB. Small moves go a long way: half a decibel to a decibel is often plenty on a master.</p>
+      <h3>Freq, the two small knobs</h3>
+      <p>The upper small knob picks where the high shelf starts:</p>
+      <p><code>1.6k 1.8k 2.1k 2.5k 3.4k 4.8k 7.1k 18k</code></p>
+      <p>The lower one picks where the low shelf starts (in Hz):</p>
+      <p><code>74 84 98 116 131 166 230 361</code></p>
+      <p>A new instance starts at 4.8k and 116 Hz. A low high-shelf frequency brightens the whole upper mid; 18k only adds air at the very top. Likewise, 74 Hz adds weight to the sub and kick, while 361 Hz warms up the whole lower half.</p>
+      <h3>LF, the big bottom knob</h3>
+      <p>Boosts or cuts everything below the chosen low frequency, from −6 to +6 dB.</p>
+    </div>
+  </div>
+  <div class="field"><b>mid and side</b><p>Switch the EQ to <strong>m/s</strong> and turn <strong>link</strong> off, and the l/m column shapes the centre (vocals, kick, bass) while the r/s column shapes the sides (wide pads, reverbs, overheads). Adding a little HF to the side only is a classic way to open up a mix without making the vocal harsher.</p></div>
+</section>
+
+<!-- ───────────── saturation ───────────── -->
+<section class="chapter" id="sat">
+  <div class="plate"><h1>the saturation module</h1><span class="no">chapter 7</span></div>
+  <p class="lead">Saturation is what analogue gear does when you lean on it: it rounds off peaks and adds harmonics, new overtones above the notes that are already there. A little makes things sound denser and more finished.</p>
+
+  <h2>cream or grit</h2>
+  <figure><img src="img/switches.png" alt="The Vintage switch and the Cream/Grit switch"><figcaption>The Vintage switch (off) and the Cream/Grit switch (set to Cream). The lit lamp shows the current choice.</figcaption></figure>
+  <p>Click the <strong>cream / grit</strong> switch to change the saturation type. It always sets both sides at once.</p>
+  <div class="pair">
+    <div>
+      <h3>cream</h3>
+      <p>Smooth and dense, in the op-amp tradition. It thickens the low end, adds harmonic richness through the mids and top, and rounds peaks gently.</p>
+      <p>It goes from transparent at 0 dB of Drive to heavily saturated at 18 dB, and each step of the knob adds a similar amount, so subtle settings get plenty of travel. It is the default.</p>
+    </div>
+    <div class="dark">
+      <h3>grit</h3>
+      <p>A firmer, transformer-style saturation with more bite and a harder edge.</p>
+      <p>Where Cream thickens, Grit pushes forward: it brings out the attack of drums, guitars and vocals and gives a mix a more solid, driven edge as Drive goes up.</p>
+    </div>
+  </div>
+  <p>As a rough guide, Cream suits weight and glue, and Grit suits edge and presence.</p>
+
+  <h2>vintage</h2>
+  <p>The <strong>vint.</strong> switch softens the top end of the saturated sound with a broad, gentle shelf, a little like older gear. It only touches the saturated signal, so it does nothing while Drive or Mix is at 0, and it fades in over the first 6 dB of Drive.</p>
+
+  <div class="side satside" style="break-before: page">
+    <figure><img src="img/sat.png" alt="The saturation module"></figure>
+    <div>
+      <h2>drive</h2>
+      <p>The big knobs set how hard each side is pushed, from 0 to 18 dB. At 0 dB the saturation is effectively out of the circuit. With link on, one knob drives both sides.</p>
+      <h2>mix</h2>
+      <p>Blends the saturated sound with the clean sound, from 0 to 100%. At 100% (the default) you hear only the saturated signal. Pulling Mix back lets you drive harder for more character while keeping the clean transients underneath.</p>
+      <h2>output</h2>
+      <p>Sets the final level of each side, from −16 to +16 dB. Use it to match the level with Bypass so that comparisons are fair.</p>
+      <div class="field"><b>autogain and drive</b><p>With <strong>autogain</strong> on in the top bar, turning Drive up changes the character much more than the loudness. Output is for the final trim on top of that.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- ───────────── vu ───────────── -->
+<section class="chapter" id="vu" style="break-before: auto; margin-top: 10mm">
+  <div class="plate"><h1>the vu meters</h1><span class="no">chapter 8</span></div>
+  <div class="side vu">
+    <figure><img src="img/vu.png" alt="One VU meter"></figure>
+    <div>
+      <p class="lead">The two meters show the level leaving the saturation module, one for each side, after Mix and Output.</p>
+      <p>They are calibrated so that <strong>0 VU = −18 dBFS</strong>. A needle sitting around 0, sometimes nudging into the red, means a healthy level going into whatever comes next.</p>
+      <p>Like the meters on analogue gear, they show average level and move smoothly, taking about 300 ms to settle. They are for judging loudness and balance by eye, not for catching peaks: keep a peak meter or your limiter for that.</p>
+      <p>In m/s mode the left meter shows the mid and the right meter shows the side, so you can see how wide the saturated signal is.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ───────────── oversampling ───────────── -->
+<section class="chapter" id="os">
+  <div class="plate"><h1>oversampling</h1><span class="no">chapter 9</span></div>
+  <p class="lead">Saturation creates new high harmonics. If they go above what the sample rate can hold, they fold back down as harsh, unmusical tones called aliasing. Oversampling runs the saturation at a higher rate to keep them clean.</p>
+  <table>
+    <tr><th>menu</th><th>used when</th><th>choices</th><th>starts at</th></tr>
+    <tr><td>realtime</td><td>normal playback and mixing</td><td>off, 2x, 4x, 8x</td><td>2x</td></tr>
+    <tr><td>render</td><td>offline bounce or export</td><td>off, 2x, 4x, 8x</td><td>4x</td></tr>
+  </table>
+  <p>Higher settings sound cleaner when you drive hard, especially with lots of high-frequency content, but use more CPU. Having two menus lets you keep playback light and still bounce at the best quality. Only the saturation is oversampled; the EQ always runs at your session's own rate, so its curves do not change with these menus.</p>
+  <p>Oversampling adds a small delay, which BQST reports to the host so that it can line everything up. Changing a setting is handled with a very short fade, so it does not click.</p>
+  <div class="field pink"><b>a sensible setup</b><p>Leave realtime at 2x while you work. Set render to 4x or 8x for the final bounce. If your computer struggles with a large session, realtime off is fine for light drive settings.</p></div>
+</section>
+
+<!-- ───────────── resizing ───────────── -->
+<section class="chapter" id="size">
+  <div class="plate"><h1>resizing and gestures</h1><span class="no">chapter 10</span></div>
+  <div class="side narrow">
+    <figure class="edge"><img src="img/grip.png" alt="The resize grip in the bottom-right corner"></figure>
+    <div>
+      <h2>resizing</h2>
+      <p>Drag the striped grip in the bottom-right corner of the window to make BQST any size you like, from three quarters of its normal size up to twice its normal size. The window keeps its shape as you drag, and it stops growing when it reaches the bottom of your screen, so the grip stays in reach. Double-click the grip to go back to the normal size.</p>
+      <p>The size is saved with your project, so it opens the same way next time. It is not part of presets.</p>
+    </div>
+  </div>
+
+  <h2>mouse and keyboard</h2>
+  <table>
+    <tr><th>to do this</th><th>do this</th></tr>
+    <tr><td>Change a knob</td><td>Drag it up or down (or left and right).</td></tr>
+    <tr><td>Fine adjustment</td><td>Hold <kbd>Shift</kbd> while dragging.</td></tr>
+    <tr><td>Reset a knob</td><td>Double-click Input, HF, LF, Drive, Mix or Output to return it to its default (0 dB, or 100% for Mix). The frequency knobs have no double-click reset.</td></tr>
+    <tr><td>Read a value</td><td>Hover over a knob; the value also shows while you drag.</td></tr>
+    <tr><td>See what a control does</td><td>Hover over it for a short description.</td></tr>
+    <tr><td>Drive harder, same loudness</td><td><kbd>Control</kbd>-drag Input; both Outputs move the opposite way.</td></tr>
+    <tr><td>Reset both Outputs</td><td><kbd>Control</kbd>-double-click Input.</td></tr>
+    <tr><td>Move both sides together</td><td>With link off, <kbd>Control</kbd>-drag a knob.</td></tr>
+    <tr><td>Undo / redo</td><td><kbd>⌘ Z</kbd> undoes the last change made in the BQST window; <kbd>⇧ ⌘ Z</kbd> redoes it.</td></tr>
+  </table>
+  <figure style="width:110mm"><img src="img/tips.png" alt="A hover description and a value readout"><figcaption>Hovering: a description over a top-bar control, and a value over a knob.</figcaption></figure>
+</section>
+
+<!-- ───────────── tips ───────────── -->
+<section class="chapter" id="tips">
+  <div class="plate"><h1>tips</h1><span class="no">chapter 11</span></div>
+  <ol class="tips">
+    <li><strong>Start small.</strong> On a master, try half a decibel to a decibel of HF or LF and two to six decibels of Drive. Bypass often; if you cannot hear it on and off, that may be exactly right.</li>
+    <li><strong>Compare at the same loudness.</strong> Louder almost always sounds better at first. Keep Autogain on and trim Output so that bypassing does not change the level, then decide.</li>
+    <li><strong>Use Mix for more character.</strong> If a setting sounds good but too much, pull Mix back before you pull Drive back. A heavily driven signal tucked in at 30 to 60% keeps the punch of the dry sound.</li>
+    <li><strong>Pick the flavour first.</strong> Cream for weight and glue on full mixes, bass and keys; Grit for edge on drums, guitars and vocals that need to cut.</li>
+    <li><strong>Open the sides.</strong> Set the EQ to m/s, turn link off, and add a little HF to the r/s (side) column only. The mix gets wider and airier while the centre stays put.</li>
+    <li><strong>Saturate the centre.</strong> Set the saturation to m/s with link off and drive the l/m (mid) column harder than the side, to thicken kick, bass and vocal without smearing the stereo image.</li>
+    <li><strong>Vintage to tame the top.</strong> If driving brings out fizz or harshness, switch on Vintage before you reach for another EQ.</li>
+    <li><strong>Render clean.</strong> Set render oversampling to 4x or 8x before the final bounce, even if you mix at 2x.</li>
+    <li><strong>Watch the needles, trust your ears.</strong> Aim for the VU needles around 0 on the loud parts, then let your ears make the final call.</li>
+  </ol>
+  <div class="field" style="margin-top:6mm"><b>bqst 1.3.1</b><p>Made by Rohan Kulshrestha, EBR Audio Tech. BQST is free to download from rohanjk.xyz/projects/bqst.</p></div>
+</section>
+
+</body>
+</html>

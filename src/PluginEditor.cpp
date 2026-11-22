@@ -126,9 +126,13 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
     aboutPanel.onClose = [this] { hideAboutPanel(); };
 
     setResizable(true, true);
-    setResizeLimits(bqt::editor::minimumWidth, bqt::editor::heightForWidth(bqt::editor::minimumWidth),
-                    bqt::editor::maximumWidth, bqt::editor::heightForWidth(bqt::editor::maximumWidth));
-    getConstrainer()->setFixedAspectRatio(static_cast<double>(baseEditorWidth) / baseEditorHeight);
+    screenFit.setSizeLimits(bqt::editor::minimumWidth, bqt::editor::heightForWidth(bqt::editor::minimumWidth),
+                            bqt::editor::maximumWidth, bqt::editor::heightForWidth(bqt::editor::maximumWidth));
+    screenFit.setFixedAspectRatio(static_cast<double>(baseEditorWidth) / baseEditorHeight);
+    setConstrainer(&screenFit);
+    // Double-clicking the grip returns the editor to its default size (see mouseDoubleClick).
+    if (resizableCorner != nullptr)
+        resizableCorner->addMouseListener(this, false);
     setSize(savedWidth, bqt::editor::heightForWidth(savedWidth));
 
     auto bindSwitch = [this](BqtSwitch& modeSwitch, const juce::String& parameterId)
@@ -387,4 +391,25 @@ void BqtAudioProcessorEditor::configureSide(SideControls& controls, int sideInde
                              static_cast<juce::Component*>(&controls.mix),
                              static_cast<juce::Component*>(&controls.outputTrim) })
         rackComponent.addAndMakeVisible(*component);
+}
+
+void BqtScreenFitConstrainer::checkBounds(juce::Rectangle<int>& bounds, const juce::Rectangle<int>& previous,
+                                          const juce::Rectangle<int>& limits, bool top, bool left, bool bottom, bool right)
+{
+    juce::ComponentBoundsConstrainer::checkBounds(bounds, previous, limits, top, left, bottom, right);
+
+    if (bounds.getWidth() <= previous.getWidth() || editor.getPeer() == nullptr || editor.getHeight() <= 0)
+        return;
+
+    const auto onScreen = editor.getScreenBounds();
+    const auto* display = juce::Desktop::getInstance().getDisplays().getDisplayForRect(onScreen);
+    if (display == nullptr || onScreen.getHeight() <= 0)
+        return;
+
+    // A host may scale the editor, so convert the room left on screen into editor units.
+    const auto editorUnitsPerScreenUnit = static_cast<double>(editor.getHeight()) / onScreen.getHeight();
+    const auto room = (display->userArea.getBottom() - onScreen.getY()) * editorUnitsPerScreenUnit;
+    const auto width = juce::jmax(previous.getWidth(), bqt::editor::widthFittingHeight(room));
+    if (bounds.getWidth() > width)
+        bounds.setSize(width, bqt::editor::heightForWidth(width));
 }

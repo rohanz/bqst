@@ -1,18 +1,15 @@
-# Experimental Grit / LA500A capture model
+# Grit / LA500A capture model
 
-The captured model is integrated into BQST and can also be auditioned as **BQST Grit Lab**,
-which has a separate plugin identity. Cream and EQ are unchanged. This is an empirical
-model of the full engaged LA500A path, not a physically identified output-transformer
-model or an endorsed JLM emulation.
+BQST has one Grit model: the independent-path blend formerly called Hybrid.
+It combines original Grit with a model of the full engaged LA500A path, not a physically
+identified output transformer or an endorsed JLM emulation. The separate Lab audition
+build and host model selector have been removed.
 
-## Hybrid audition: independent paths (current)
+## Independent paths (current)
 
-Since BQST 1.2.0, new production and **BQST Grit Lab** instances default to **Hybrid**.
-Existing saved instances retain their revision; select **Hybrid** in the host's **Grit Model**
-parameter when needed. Legacy and Captured remain available. For auditions: Grit, Mix 100%,
-Vintage off and Autogain on.
+For auditions: Grit, Mix 100%, Vintage off and Autogain on.
 
-The corrected Hybrid blends **75% complete Legacy + 25% complete Captured**:
+Grit blends **75% complete Legacy + 25% complete Captured**:
 
 - Legacy runs at the original knob value, with its original pre-drive, filter colour
   ramp, waveshaper, Vintage path and DC removal. Its Drive mapping is unchanged.
@@ -24,7 +21,7 @@ The corrected Hybrid blends **75% complete Legacy + 25% complete Captured**:
 - A newly measured static Autogain table compensates the blend at the original knob
   position. It is not remapped again and is not a live loudness detector.
 
-`hybrid_independent_validation.json` verifies that Hybrid equals the weighted outputs
+`hybrid_independent_validation.json` records historical validation that Hybrid equals the weighted outputs
 of standalone Legacy and Captured, with Vintage both off and on. Low-frequency tests
 at 40/80/160 Hz, input -30/-12 dBFS and Drive 9/12/18 found at most 0.043 dB fundamental
 loss from phase differences relative to a perfectly aligned magnitude sum. This is a
@@ -38,7 +35,7 @@ turned off while measuring, so no bootstrap or identity Drive tables are require
 
 ```
 cmake --build /private/tmp/bqst-grit-check --target BQST_VST3 -j 8
-python tools/grit_model/calibrate_hybrid.py "/private/tmp/bqst-grit-check/BQST_artefacts/Release/VST3/BQST Grit Lab.vst3"
+uv run python tools/grit_model/calibrate_hybrid.py "/private/tmp/bqst-grit-check/BQST_artefacts/Release/VST3/BQST.vst3"
 cmake --build /private/tmp/bqst-grit-check --target BQST_VST3 BqstGritLabTests BqstChainTests -j 8
 ctest --test-dir /private/tmp/bqst-grit-check --output-on-failure
 ```
@@ -50,7 +47,7 @@ Neither describes the current independent-path blend.
 
 ## Captured controls and calibration
 
-Select **Grit**, Mix 100%, Vintage off, EQ flat and Autogain on. Drive now uses a generated
+The captured branch uses a generated
 perceptual taper instead of directly mapping to makeup knob positions. `calibrate.py`
 uses the same nonlinear-energy metric as Cream: output-power-weighted 1-coherence with
 4096-point Welch windows. The average across synthetic 808, bassline, drum-bus and dense
@@ -70,14 +67,15 @@ Approximate measured landmarks on the new taper:
 | 16.10 dB | Noon | +9.85 dB |
 | 18 dB | 3 o’clock | +17.84 dB |
 
-The core still divides its output by makeup gain. Autogain now adds a separate static
-wet compensation table, measured at 0.5 dB knob intervals with integrated LUFS across
+The core still divides its output by makeup gain. Its branch-alignment compensation uses a static
+table, measured at 0.5 dB knob intervals with integrated LUFS across
 five synthetic sources: sine, 808, bassline, drums and dense master. Median loudness
 change is targeted at 0 LU. Compensation is exactly 0 dB at zero drive and reaches
-+10.65 dB at maximum drive. The toggle uses the existing smooth wet-gain blend; there
-is no live detector, loudness tracking or gain pumping. Output trim remains final.
++10.65 dB at maximum drive. This table and the original Grit compensation formula are both required by
+`GritHybrid::capturedAlignment`, even when final blend Autogain is off. Neither is dead
+standalone-model data. The blend has its own compensation table; Output trim remains final.
 
-The universal VST3 was measured at 4x oversampling, 48 kHz, nine Drive positions:
+Historically, the Captured-only VST3 was measured at 4x oversampling, 48 kHz, nine Drive positions:
 musical sources are within approximately -1.36 to +0.78 LU, and the sine reaches
 +4.82 LU at maximum Drive. Static compensation cannot match all sources simultaneously.
 `calibration.json` and `calibrated_validation.json` include the full per-material spread.
@@ -85,17 +83,11 @@ Vintage intentionally changes tone/loudness and is off during calibration.
 
 ## Session and preset compatibility
 
-A new appended `gritRevision` choice (host name **Grit Model**, Legacy/Captured/Hybrid) defaults
-to Hybrid in production and Lab (production defaulted to Captured before the 1.2.0 release). Host state and user preset formats are now version 2. Production sessions
-and user presets predating version 2 use Legacy when they do not specify a revision;
-resaving preserves that choice. Older experimental Lab sessions stay on Captured.
-Factory presets use the new default. The host's parameter list exposes the choice for
-an intentional upgrade; existing parameter IDs, indices and plugin identity are retained.
-Revision changes use the existing structural fade and state reset.
-
-The legacy DSP remains intact. The current production VST3 was compared with the
-previously installed BQST at Drive 0, 9 and 18, 4x oversampling, Vintage and Autogain on:
-both Cream and Legacy Grit were bit-identical for deterministic noise input.
+From 1.3.1, Grit is always the 75/25 blend. The `gritRevision` host choice is removed.
+State and preset writers use v3 to mark this sound change. All older files remain readable:
+state loading strips obsolete revision nodes, while preset loading ignores unknown IDs.
+Pre-1.2.0 projects with Grit and any projects selecting Legacy or Captured now use current
+Grit and sound different. Cream, EQ and current-Grit projects are unchanged.
 
 ## Signal flow
 
@@ -176,34 +168,18 @@ Python dependencies: numpy, scipy, pyloudnorm (calibration), soundfile (capture 
 and Pedalboard (built-plugin evaluation). Calibration also requires a C++17 compiler. The existing private research virtualenv can supply them.
 
 ```
-python tools/grit_model/fit.py tools/grit_model/capture_targets.npz
-python tools/grit_model/fit_driven.py
-python tools/grit_model/export.py
-python tools/grit_model/calibrate.py
-python tools/grit_model/export.py
-python tools/grit_model/fixture.py
-cmake -S . -B /private/tmp/bqst-grit-check -DBQST_GRIT_LAB=ON -DCMAKE_OSX_ARCHITECTURES=arm64
-BUILD_DIR=/private/tmp/bqst-grit-check scripts/check.sh
-cmake -S . -B build-release/grit-lab -DCMAKE_BUILD_TYPE=Release -DBQST_GRIT_LAB=ON -DBQST_BUILD_TESTS=OFF
-cmake --build build-release/grit-lab --config Release -j 8
+uv run python tools/grit_model/fit.py tools/grit_model/capture_targets.npz
+uv run python tools/grit_model/fit_driven.py
+uv run python tools/grit_model/export.py
+uv run python tools/grit_model/calibrate.py
+uv run python tools/grit_model/export.py
+uv run python tools/grit_model/fixture.py
+cmake -S . -B /private/tmp/bqst-grit-check -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=arm64
+cmake --build /private/tmp/bqst-grit-check --target BqstGritLabTests BqstChainTests -j 3
+ctest --test-dir /private/tmp/bqst-grit-check -R 'Bqst(GritLab|Chain)Tests' --output-on-failure
 ```
 
-The fresh release directory inherits universal arm64/x86_64 and macOS 10.13 defaults.
-Do not use public packaging scripts for this audition build.
-
-## Local validation and installation
-
-Both standard and Lab CTest configurations pass all four suites, including Python/C++
-fixture agreement, measured reference bounds, 8 kHz–768 kHz stability, symmetry,
-zero-drive bypass, continuity, automation and structural changes. The universal VST3 is also checked in Pedalboard against the held-out drum captures
-at Drive 6/12/18 dB and 4x oversampling.
-
-For the 1.2.0 release, the full `scripts/check.sh` gate (four CTests plus pluginval
-strictness 10) passed for both the production and Lab configurations in the desktop
-session. The universal 1.2.0 production VST3, as a fresh instance (default Hybrid), was
-bit-identical to the approved universal Lab build with Hybrid selected, at Drive 1/6/9/12/18,
-Vintage off/on and Autogain off/on (4x oversampling, 48 kHz, settled smoothing).
-`scripts/install-grit-lab-local.sh` runs pluginval strictness 10 BEFORE installing either bundle.
-Set BQST_VST3_DIR to the custom DAW scan folder when invoking it. The script requires
-both universal bundles and valid local signatures. AU goes to the standard user folder.
-The local build is ad-hoc signed, not a notarized public release.
+The historical Lab names on the captured model, fixture and unit-test target remain
+because that branch is still part of Grit. The obsolete model-comparison harness and
+Lab installer have been removed. The Python fitting/export/fixture tools remain:
+they regenerate the captured branch that current Grit requires.

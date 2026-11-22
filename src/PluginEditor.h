@@ -13,6 +13,21 @@
 #include <functional>
 #include <vector>
 
+// Stops a resize from growing the editor past the bottom of the screen it is on, so the corner
+// grip stays reachable. It only limits growth: a window that is already too tall (a project saved
+// on a larger screen) is left alone and can still be made smaller.
+class BqtScreenFitConstrainer final : public juce::ComponentBoundsConstrainer
+{
+public:
+    explicit BqtScreenFitConstrainer(juce::Component& editorToFit) : editor(editorToFit) {}
+
+    void checkBounds(juce::Rectangle<int>& bounds, const juce::Rectangle<int>& previous,
+                     const juce::Rectangle<int>& limits, bool top, bool left, bool bottom, bool right) override;
+
+private:
+    juce::Component& editor;
+};
+
 class BqtAudioProcessorEditor final : public juce::AudioProcessorEditor,
                                       private juce::Timer,
                                       private juce::Slider::Listener,
@@ -26,6 +41,8 @@ public:
     void resized() override;
 
 private:
+    BqtScreenFitConstrainer screenFit { *this };
+
     using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
     using ComboBoxAttachment = juce::AudioProcessorValueTreeState::ComboBoxAttachment;
     using ButtonAttachment = juce::AudioProcessorValueTreeState::ButtonAttachment;

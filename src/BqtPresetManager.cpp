@@ -200,8 +200,6 @@ bool BqtPresetManager::loadPresetFile(const juce::File& file)
         // previously loaded preset's value. Workflow state (oversampling, bypass) is not reset,
         // so this does not disturb the user's session settings.
         resetMusicalParametersToDefaults();
-        if (xml->getIntAttribute("bqstPresetVersion", 0) < 2)
-            setParameter("gritRevision", BQST_GRIT_LAB ? 1.0f : 0.0f);
 
         for (auto* child : xml->getChildIterator())
         {

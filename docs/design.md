@@ -87,10 +87,11 @@ Grit should:
 - avoid becoming a high-mid buzz machine
 - be capable of heavier pushed settings
 
-Since 1.2.0 the default Grit is a Hybrid: 75% of the original curve at its original Drive
+Grit is one model: 75% of the original curve at its original Drive
 mapping plus 25% of a model fitted to captures of an LA500A's whole engaged path. The captured
 share adds the measured tone and limiting of that hardware without replacing the original Grit
-character. Older sessions keep the original Grit.
+character. Since 1.3.1 all sessions use this model, including older projects that used
+Legacy or Captured Grit. Cream, EQ and projects already using this blend are unchanged.
 
 ## Autogain Philosophy
 

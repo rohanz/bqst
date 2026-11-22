@@ -464,6 +464,12 @@ void BqtAudioProcessorEditor::mouseExit(const juce::MouseEvent& event)
 
 void BqtAudioProcessorEditor::mouseDoubleClick(const juce::MouseEvent& event)
 {
+    if (resizableCorner != nullptr && event.originalComponent == resizableCorner.get())
+    {
+        setSize(bqt::editor::designWidth, bqt::editor::heightForWidth(bqt::editor::designWidth));
+        return;
+    }
+
     if (! event.mods.isCtrlDown())
         return;
 
