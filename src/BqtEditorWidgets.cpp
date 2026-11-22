@@ -10,105 +10,236 @@ using namespace bqst::ui;
 
 namespace
 {
-// VU scale position (0 = left stop, 1 = right stop) of a VU reading: -20..0 VU takes the first 82%
-// of the arc, 0..+3 VU the red remainder.
-float vuDbToScaleFraction(float db)
+bool hasFlag(const juce::Component& component, const char* flag)
 {
-    const auto clamped = juce::jlimit(-20.0f, 3.0f, db);
-    if (clamped <= 0.0f)
-        return ((clamped + 20.0f) / 20.0f) * 0.82f;
-    return 0.82f + (clamped / 3.0f) * 0.18f;
+    return static_cast<bool>(component.getProperties().getWithDefault(flag, false));
 }
 
-// Backlit VU face. The frame artwork bakes in a flat face; this repaints it as paper lit by a
-// soft-white bulb hidden behind the bottom bar: the face is a little darker overall (unlit), the
-// bulb's reflection brings the lower part back up and a bloom lifts it slightly past the paper.
-// Geometry is in the artwork's 2000 px space, measured from vu-frame.png.
-namespace vuface
-{
-constexpr float artSize = 2000.0f, centreX = 1000.0f, centreY = 865.0f, radius = 569.0f, cutY = 1189.0f;
-constexpr float paper[3] { 244.0f, 243.0f, 239.0f };  // neutral off-white #f4f3ef
-constexpr float bulb[3] { 255.0f, 232.0f, 208.0f };   // soft white, about 4000 K
-constexpr float unlitDarkening = 0.12f;
-constexpr float bloom = 0.9f;
+bool isFlatBar(const juce::Component& component) { return hasFlag(component, "bqtFlatBar"); }
 
-struct Stop { float position, alpha; };
+// Offscreen pictures of the hover and pressed looks set this, since no pointer is present there.
+bool previewHot(const juce::Component& component) { return hasFlag(component, "bqtPreviewHot"); }
 
-template <size_t N>
-float alphaAt(const Stop (&stops)[N], float t)
+juce::Colour inkAlpha(float alpha) { return juce::Colour(ink).withAlpha(alpha); }
+
+// Keyboard focus shows as a thin outline, only after Tab; on a solid ink fill it is drawn in cream.
+void drawFocusRing(juce::Graphics& g, bool ringsVisible, const juce::Component& component,
+                   juce::Rectangle<float> area, bool onFill)
 {
-    if (t <= stops[0].position)
-        return stops[0].alpha;
-    for (size_t i = 1; i < N; ++i)
-        if (t <= stops[i].position)
-            return juce::jmap(t, stops[i - 1].position, stops[i].position, stops[i - 1].alpha, stops[i].alpha);
-    return stops[N - 1].alpha;
+    if (! ringsVisible || ! component.hasKeyboardFocus(false))
+        return;
+    g.setColour(onFill ? juce::Colour(barField) : inkAlpha(0.85f));
+    g.drawRoundedRectangle(area.reduced(onFill ? 2.5f : 0.75f), fieldCorner, 1.5f);
 }
 
-// 0..1 along a radial gradient with inner radius r0 and outer radius r1.
-float radialT(float dx, float dy, float r0, float r1)
+// The bar's one field shape: a flat rounded rectangle with no outline, cream when off, solid ink
+// when on; under the pointer or pressed, cream turns white and ink lifts a little. Returns the
+// field's bounds.
+juce::Rectangle<float> drawFlatBarField(juce::Graphics& g, bool ringsVisible, juce::Component& component, bool on,
+                                        bool highlighted, bool down)
 {
-    return juce::jlimit(0.0f, 1.0f, (std::hypot(dx, dy) - r0) / (r1 - r0));
+    const auto bounds = component.getLocalBounds().toFloat().reduced(1.0f);
+    const auto enabled = component.isEnabled();
+    auto fill = on ? juce::Colour(ink) : juce::Colour(barField);
+    if (enabled && (highlighted || down))
+        fill = on ? fill.brighter(0.25f) : juce::Colours::white;
+    g.setColour(fill.withMultipliedAlpha(enabled ? 1.0f : 0.5f));
+    g.fillRoundedRectangle(bounds, fieldCorner);
+    drawFocusRing(g, ringsVisible, component, bounds, on);
+    return bounds;
 }
 
-// Paints the face over `layer`, whose pixels are `scale` per logical unit; `frame` is where the
-// artwork was drawn, in logical units.
-void paint(juce::Image& layer, juce::Rectangle<float> frame, float scale)
+// A dropdown's chevron, in the right end of its field. Returns what is left for the text, which
+// stays centred and clear of the chevron on both sides.
+juce::Rectangle<float> drawDropdownChevron(juce::Graphics& g, juce::Rectangle<float> field)
 {
-    const auto toX = [frame](float artX) { return frame.getX() + artX / artSize * frame.getWidth(); };
-    const auto toY = [frame](float artY) { return frame.getY() + artY / artSize * frame.getHeight(); };
-    const auto cx = toX(centreX), cy = toY(centreY), cut = toY(cutY);
-    const auto r = radius / artSize * frame.getWidth();
-    const auto clipR = r + 0.8f, clipBottom = cut + 0.8f;
-
-    static constexpr Stop reflection[] { { 0.0f, 1.0f }, { 0.35f, 0.85f }, { 0.7f, 0.35f }, { 1.0f, 0.0f } };
-    static constexpr Stop bloomFalloff[] { { 0.0f, 1.0f }, { 0.5f, 0.4f }, { 1.0f, 0.0f } };
-
-    float reflected[3], hot[3], base[3];
-    for (int c = 0; c < 3; ++c)
-    {
-        base[c] = paper[c] * (1.0f - unlitDarkening);
-        reflected[c] = paper[c] * bulb[c] / 255.0f;
-        hot[c] = std::round(255.0f - (255.0f - bulb[c]) * 0.5f);
-    }
-
-    const auto x0 = juce::jmax(0, static_cast<int>(std::floor((cx - clipR) * scale)));
-    const auto x1 = juce::jmin(layer.getWidth(), static_cast<int>(std::ceil((cx + clipR) * scale)));
-    const auto y0 = juce::jmax(0, static_cast<int>(std::floor((cy - clipR) * scale)));
-    const auto y1 = juce::jmin(layer.getHeight(), static_cast<int>(std::ceil(clipBottom * scale)));
-
-    juce::Image::BitmapData pixels(layer, juce::Image::BitmapData::readWrite);
-    for (int py = y0; py < y1; ++py)
-    {
-        const auto y = (static_cast<float>(py) + 0.5f) / scale;
-        for (int px = x0; px < x1; ++px)
-        {
-            const auto x = (static_cast<float>(px) + 0.5f) / scale;
-            const auto coverage = juce::jlimit(0.0f, 1.0f, (clipR - std::hypot(x - cx, y - cy)) * scale + 0.5f)
-                                * juce::jlimit(0.0f, 1.0f, (clipBottom - y) * scale + 0.5f);
-            if (coverage <= 0.0f)
-                continue;
-
-            const auto reflectionAlpha = alphaAt(reflection, radialT(x - cx, y - (cut + 22.0f), 6.0f, r * 1.55f));
-            const auto hotAlpha = 0.55f * (1.0f - radialT(x - cx, y - (cut + 4.0f), 1.0f, r * 0.45f));
-            const auto bloomAlpha = bloom * alphaAt(bloomFalloff, radialT(x - cx, y - (cut + 10.0f), 4.0f, r * 1.05f));
-
-            juce::uint8 rgb[3];
-            for (int c = 0; c < 3; ++c)
-            {
-                auto v = base[c] + (reflected[c] - base[c]) * reflectionAlpha;
-                v += hotAlpha * hot[c] * (1.0f - v / 255.0f);    // screen
-                v += bloomAlpha * hot[c] * (1.0f - v / 255.0f);  // screen
-                rgb[c] = static_cast<juce::uint8>(juce::jlimit(0.0f, 255.0f, std::round(v)));
-            }
-
-            const auto face = juce::Colour(rgb[0], rgb[1], rgb[2]);
-            pixels.setPixelColour(px, py, pixels.getPixelColour(px, py).interpolatedWith(face, coverage));
-        }
-    }
+    auto textArea = field.reduced(6.0f, 0.0f);
+    const auto c = textArea.removeFromRight(18.0f).getCentre();
+    textArea.removeFromLeft(18.0f);
+    juce::Path chevron;
+    chevron.startNewSubPath(c.x - 4.0f, c.y - 2.0f);
+    chevron.lineTo(c.x, c.y + 2.0f);
+    chevron.lineTo(c.x + 4.0f, c.y - 2.0f);
+    g.setColour(inkAlpha(0.75f));
+    g.strokePath(chevron, juce::PathStrokeType(1.6f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    return textArea;
 }
-} // namespace vuface
+
+void drawFlatBarButton(juce::Graphics& g, bool ringsVisible, juce::Button& button, bool on, bool highlighted, bool down)
+{
+    const auto bounds = drawFlatBarField(g, ringsVisible, button, on, highlighted, down);
+    auto textArea = bounds.reduced(6.0f, 0.0f);
+    if (hasFlag(button, "bqtDropdown"))
+        textArea = drawDropdownChevron(g, bounds);
+
+    g.setColour(on ? juce::Colour(barField) : inkAlpha(button.isEnabled() ? 0.85f : 0.3f));
+    g.setFont(juce::Font(faceFont(15.0f)));
+    g.drawFittedText(button.getButtonText(), textArea.toNearestInt(), juce::Justification::centred, 1, 0.8f);
+}
 } // namespace
+
+namespace
+{
+// Both accessibility actions select through the click callback. JUCE's default toggle
+// action flips a ToggleButton independently of its owner's parameter attachment.
+class SwitchHalf final : public juce::ToggleButton
+{
+public:
+    using juce::ToggleButton::ToggleButton;
+
+    std::unique_ptr<juce::AccessibilityHandler> createAccessibilityHandler() override
+    {
+        class Handler final : public juce::AccessibilityHandler
+        {
+        public:
+            explicit Handler(SwitchHalf& half)
+                : juce::AccessibilityHandler(half, juce::AccessibilityRole::radioButton,
+                    juce::AccessibilityActions()
+                        .addAction(juce::AccessibilityActionType::press, [&half] { if (half.onClick) half.onClick(); })
+                        .addAction(juce::AccessibilityActionType::toggle, [&half] { if (half.onClick) half.onClick(); })),
+                  button(half) {}
+
+            juce::AccessibleState getCurrentState() const override
+            {
+                auto state = juce::AccessibilityHandler::getCurrentState().withCheckable();
+                return button.getToggleState() ? state.withChecked() : state;
+            }
+        private:
+            SwitchHalf& button;
+        };
+        return std::make_unique<Handler>(*this);
+    }
+};
+} // namespace
+
+//==============================================================================
+BqtSwitch::BqtSwitch(const juce::String& leftText, const juce::String& rightText)
+{
+    // Radio groups match among siblings, and the halves are this switch's only children.
+    constexpr int radioGroup = 1;
+    const juce::String texts[] { leftText, rightText };
+    for (size_t index = 0; index < halves.size(); ++index)
+    {
+        auto half = std::make_unique<SwitchHalf>(texts[index]);
+        half->getProperties().set("bqtSwitchHalf", true);
+        half->setRadioGroupId(radioGroup, juce::dontSendNotification);
+        half->setClickingTogglesState(false);
+        half->addMouseListener(this, false);
+        half->onClick = [this, index]
+        {
+            if (static_cast<int>(index) != selected && onSelect)
+                onSelect(static_cast<int>(index));
+            setSelected(selected);
+        };
+        addAndMakeVisible(*half);
+        halves[index] = std::move(half);
+    }
+    halves[0]->setToggleState(true, juce::dontSendNotification);
+}
+
+BqtSwitch::~BqtSwitch()
+{
+    frameClock = {};
+}
+
+void BqtSwitch::setSelected(int index)
+{
+    index = juce::jlimit(0, static_cast<int>(halves.size()) - 1, index);
+    for (size_t i = 0; i < halves.size(); ++i)
+        halves[i]->setToggleState(static_cast<int>(i) == index, juce::dontSendNotification);
+
+    if (selected == index)
+        return;
+    selected = index;
+
+    // Slides only where someone can see it; a hidden or offscreen switch jumps straight there.
+    if (isShowing() && ! getLocalBounds().isEmpty())
+    {
+        slideStart = pill;
+        slideStartedAt = juce::Time::getMillisecondCounterHiRes();
+        if (frameClock.isEmpty())
+            frameClock = juce::VBlankAttachment(this, [this] { animationFrame(); });
+    }
+    else
+    {
+        snapPill();
+    }
+    repaint();
+}
+
+void BqtSwitch::snapPill()
+{
+    frameClock = {};
+    pill = halves[static_cast<size_t>(selected)]->getBounds().toFloat();
+}
+
+// Ease-out: quick to leave, settling into place, 120 ms end to end.
+void BqtSwitch::animationFrame()
+{
+    if (! isShowing())
+    {
+        snapPill();
+        repaint();
+        return;
+    }
+
+    const auto t = static_cast<float>(juce::jlimit(0.0, 1.0, (juce::Time::getMillisecondCounterHiRes() - slideStartedAt) / slideDurationMs));
+    const auto target = halves[static_cast<size_t>(selected)]->getBounds().toFloat();
+    if (t >= 1.0f)
+    {
+        snapPill();
+    }
+    else
+    {
+        const auto remaining = 1.0f - t;
+        const auto eased = 1.0f - remaining * remaining * remaining;
+        pill = { slideStart.getX() + (target.getX() - slideStart.getX()) * eased, target.getY(),
+                 slideStart.getWidth() + (target.getWidth() - slideStart.getWidth()) * eased, target.getHeight() };
+    }
+    repaint();
+}
+
+void BqtSwitch::resized()
+{
+    const auto area = getLocalBounds().reduced(1);
+    const auto width = area.getWidth();
+    for (size_t i = 0; i < halves.size(); ++i)
+    {
+        const auto left = static_cast<int>(i) * width / static_cast<int>(halves.size());
+        const auto right = static_cast<int>(i + 1) * width / static_cast<int>(halves.size());
+        halves[i]->setBounds(area.getX() + left, area.getY(), right - left, area.getHeight());
+    }
+    snapPill();
+}
+
+void BqtSwitch::paint(juce::Graphics& g)
+{
+    g.setColour(isMouseOver(true) || previewHot(*this) ? juce::Colours::white : juce::Colour(barField));
+    g.fillRoundedRectangle(getLocalBounds().toFloat().reduced(1.0f), fieldCorner);
+    g.setColour(juce::Colour(ink));
+    g.fillRoundedRectangle(pill, fieldCorner);
+}
+
+//==============================================================================
+void BqtHardwareLookAndFeel::showMenuUnder(juce::PopupMenu& menu, juce::Component& target, std::function<void(int)> onResult)
+{
+    // A PopupMenu does not take its target's look-and-feel by itself.
+    menu.setLookAndFeel(&target.getLookAndFeel());
+    menu.showMenuAsync(juce::PopupMenu::Options()
+                           .withTargetComponent(&target)
+                           .withMinimumWidth(target.getWidth())
+                           .withStandardItemHeight(menuRowHeight),
+                       [safe = juce::Component::SafePointer<juce::Component>(&target), callback = std::move(onResult)](int result)
+                       {
+                           if (safe != nullptr && callback)
+                               callback(result);
+                       });
+}
+
+juce::PopupMenu::Options BqtHardwareLookAndFeel::getOptionsForComboBoxPopupMenu(juce::ComboBox& box, juce::Label& label)
+{
+    return LookAndFeel_V4::getOptionsForComboBoxPopupMenu(box, label).withStandardItemHeight(menuRowHeight);
+}
 
 void BqtReadoutBubble::setText(juce::String newText)
 {
@@ -123,9 +254,7 @@ void BqtReadoutBubble::paint(juce::Graphics& g)
 {
     const auto bounds = getLocalBounds().toFloat();
     g.setColour(juce::Colour(0xff111111));
-    g.fillRoundedRectangle(bounds.reduced(1.0f), 3.0f);
-    g.setColour(juce::Colour(panelText).withAlpha(0.72f));
-    g.drawRoundedRectangle(bounds.reduced(1.0f), 3.0f, 1.0f);
+    g.fillRoundedRectangle(bounds.reduced(1.0f), fieldCorner); // flat, like a switched-on bar button
     g.setColour(juce::Colour(panelText));
     g.setFont(juce::Font(faceFont(16.5f, true)));
     g.drawText(text, getLocalBounds().reduced(8, 2), juce::Justification::centred);
@@ -139,40 +268,67 @@ BqtHardwareLookAndFeel::BqtHardwareLookAndFeel()
     setColour(juce::ComboBox::textColourId, juce::Colour(ink));
     setColour(juce::ComboBox::backgroundColourId, juce::Colour(cream));
     setColour(juce::ComboBox::outlineColourId, juce::Colour(ink));
-    setColour(juce::PopupMenu::backgroundColourId, juce::Colour(cream));
+    setColour(juce::PopupMenu::backgroundColourId, juce::Colour(menuPanel));
     setColour(juce::PopupMenu::textColourId, juce::Colour(ink));
     setColour(juce::PopupMenu::highlightedBackgroundColourId, juce::Colour(panelPink));
     setColour(juce::PopupMenu::highlightedTextColourId, juce::Colour(ink));
     setColour(juce::PopupMenu::headerTextColourId, juce::Colour(ink).withAlpha(0.6f));
 }
 
-// Drop-down and preset menus use the panel's face font, matching the buttons that open them.
+// Menus: a plain cream panel with a hairline edge, a rounded pink highlight under the pointer, and
+// the current choice shown by weight and a quiet tint, with no marker beside it. Only the drawing
+// changes; keyboard and mouse handling stay JUCE's own.
 juce::Font BqtHardwareLookAndFeel::getPopupMenuFont()
 {
-    return juce::Font(faceFont(15.8f));
+    return juce::Font(faceFont(16.0f, false));
 }
 
-// The current choice gets a lit lamp, like the panel's cream/grit indicators, instead of a tick.
+void BqtHardwareLookAndFeel::drawPopupMenuBackground(juce::Graphics& g, int width, int height)
+{
+    g.fillAll(juce::Colour(menuPanel));
+    g.setColour(inkAlpha(0.25f));
+    g.drawRect(0, 0, width, height, 1);
+}
+
 void BqtHardwareLookAndFeel::drawPopupMenuItem(juce::Graphics& g, const juce::Rectangle<int>& area, bool isSeparator,
                                                bool isActive, bool isHighlighted, bool isTicked, bool hasSubMenu,
-                                               const juce::String& text, const juce::String& shortcutKeyText,
-                                               const juce::Drawable* icon, const juce::Colour* textColour)
+                                               const juce::String& text, const juce::String&,
+                                               const juce::Drawable*, const juce::Colour*)
 {
-    juce::LookAndFeel_V4::drawPopupMenuItem(g, area, isSeparator, isActive, isHighlighted, false, hasSubMenu, text,
-                                            shortcutKeyText, icon, textColour);
-    if (! isTicked || isSeparator)
+    if (isSeparator)
+    {
+        g.setColour(inkAlpha(0.15f));
+        g.fillRect(area.reduced(8, 0).withHeight(1).withY(area.getCentreY()));
         return;
+    }
 
-    // Same left column LookAndFeel_V4 reserves for the tick.
-    const auto row = area.reduced(1).toFloat();
-    const auto column = row.withWidth(row.getHeight() / 1.3f);
-    const auto lamp = juce::Rectangle<float>(9.0f, 9.0f).withCentre(column.getCentre().translated(2.0f, 0.0f));
-    g.setColour(juce::Colours::black.withAlpha(0.25f));
-    g.fillEllipse(lamp.translated(1.0f, 1.0f));
-    g.setColour(juce::Colour(lampOn));
-    g.fillEllipse(lamp);
-    g.setColour(juce::Colour(ink));
-    g.drawEllipse(lamp, 1.0f);
+    auto row = area.reduced(4, 1).toFloat();
+    if (isHighlighted && isActive)
+    {
+        g.setColour(juce::Colour(panelPink));
+        g.fillRoundedRectangle(row, 4.0f);
+    }
+    else if (isTicked)
+    {
+        g.setColour(inkAlpha(0.06f));
+        g.fillRoundedRectangle(row, 4.0f);
+    }
+    row.removeFromLeft(14.0f);
+
+    if (hasSubMenu)
+    {
+        const auto arrow = row.removeFromRight(18.0f);
+        juce::Path chevron;
+        chevron.startNewSubPath(arrow.getCentreX() - 2.0f, arrow.getCentreY() - 4.0f);
+        chevron.lineTo(arrow.getCentreX() + 2.0f, arrow.getCentreY());
+        chevron.lineTo(arrow.getCentreX() - 2.0f, arrow.getCentreY() + 4.0f);
+        g.setColour(inkAlpha(0.7f));
+        g.strokePath(chevron, juce::PathStrokeType(1.5f));
+    }
+
+    g.setColour(inkAlpha(isActive ? 1.0f : 0.4f));
+    g.setFont(juce::Font(faceFont(16.0f, isTicked)));
+    g.drawText(text, row, juce::Justification::centredLeft);
 }
 
 void BqtHardwareLookAndFeel::drawRotarySlider(juce::Graphics& g, int x, int y, int width, int height,
@@ -231,19 +387,20 @@ void BqtHardwareLookAndFeel::drawRotarySlider(juce::Graphics& g, int x, int y, i
                                                        static_cast<float>(width), static_cast<float>(height)).reduced(2.0f);
         const auto side = juce::jmin(fullBounds.getWidth(), fullBounds.getHeight()) * 0.96f;
         const auto mini = juce::Rectangle<float>(side, side).withCentre(fullBounds.getCentre());
-        g.setColour(juce::Colours::black.withAlpha(0.45f));
-        g.fillEllipse(mini.translated(1.0f, 2.0f));
-
-        juce::ColourGradient body(juce::Colour(0xfff7eee6), mini.getCentreX(), mini.getY(),
-                                  juce::Colour(0xffcfc2b9), mini.getCentreX(), mini.getBottom(), false);
-        g.setGradientFill(body);
+        // Flat, like the bar's fields: a cream disc that turns white under the pointer or while
+        // dragged, an ink pointer, and a thin ring once Tab gives it focus.
+        g.setColour(slider.isMouseOverOrDragging() || previewHot(slider) ? juce::Colours::white : juce::Colour(barField));
         g.fillEllipse(mini);
-        g.setColour(juce::Colour(ink).withAlpha(0.55f));
-        g.drawEllipse(mini, 1.1f);
+        if (focusRingsVisible && slider.hasKeyboardFocus(false))
+        {
+            g.setColour(inkAlpha(0.85f));
+            g.drawEllipse(mini.reduced(0.75f), 1.5f);
+        }
 
-        const auto pointerEnd = mini.getCentre().getPointOnCircumference(mini.getWidth() * 0.34f, angle);
+        const auto pointerStart = mini.getCentre().getPointOnCircumference(mini.getWidth() * 0.12f, angle);
+        const auto pointerEnd = mini.getCentre().getPointOnCircumference(mini.getWidth() * 0.38f, angle);
         g.setColour(juce::Colour(ink));
-        g.drawLine({ mini.getCentre(), pointerEnd }, 2.2f);
+        g.drawLine({ pointerStart, pointerEnd }, 2.2f);
         return;
     }
 
@@ -277,6 +434,13 @@ void BqtHardwareLookAndFeel::drawRotarySlider(juce::Graphics& g, int x, int y, i
 void BqtHardwareLookAndFeel::drawComboBox(juce::Graphics& g, int width, int height, bool isButtonDown,
                                           int, int, int, int, juce::ComboBox& box)
 {
+    if (isFlatBar(box))
+    {
+        const auto hot = box.isMouseOver(true) || previewHot(box);
+        drawDropdownChevron(g, drawFlatBarField(g, focusRingsVisible, box, false, hot, isButtonDown));
+        return;
+    }
+
     if (box.getProperties().contains("bqtKnobCombo") && static_cast<bool>(box.getProperties()["bqtKnobCombo"]))
     {
         const auto bounds = juce::Rectangle<float>(0.0f, 0.0f, static_cast<float>(width), static_cast<float>(height)).reduced(5.0f);
@@ -329,8 +493,11 @@ void BqtHardwareLookAndFeel::drawComboBox(juce::Graphics& g, int width, int heig
             g.fillEllipse(led.translated(1.0f, 1.0f));
             g.setColour(on ? juce::Colour(lampOn) : juce::Colour(lampOff));
             g.fillEllipse(led);
-            g.setColour(juce::Colour(ink));
-            g.drawEllipse(led, 1.0f);
+            if (! on) // a lit lamp needs no rim
+            {
+                g.setColour(juce::Colour(ink));
+                g.drawEllipse(led, 1.0f);
+            }
         };
 
         drawRow("cream", 0, selected <= 0);
@@ -378,6 +545,19 @@ void BqtHardwareLookAndFeel::positionComboBoxText(juce::ComboBox& box, juce::Lab
         return;
     }
 
+    if (isFlatBar(box))
+    {
+        // Text centred in the field and kept clear of the chevron on both sides, as on every
+        // dropdown in the bar (see drawDropdownChevron).
+        label.setBounds(25, 1, juce::jmax(0, box.getWidth() - 50), box.getHeight() - 2);
+        label.setBorderSize({});
+        label.setFont(juce::Font(faceFont(15.0f)));
+        label.setColour(juce::Label::textColourId, inkAlpha(box.isEnabled() ? 0.85f : 0.3f));
+        label.setMinimumHorizontalScale(0.8f);
+        label.setJustificationType(juce::Justification::centred);
+        return;
+    }
+
     label.setBounds(7, 1, box.getWidth() - 21, box.getHeight() - 2);
     label.setFont(juce::Font(faceFont(15.8f)));
     label.setJustificationType(juce::Justification::centred);
@@ -386,6 +566,37 @@ void BqtHardwareLookAndFeel::positionComboBoxText(juce::ComboBox& box, juce::Lab
 void BqtHardwareLookAndFeel::drawToggleButton(juce::Graphics& g, juce::ToggleButton& button,
                                               bool shouldDrawButtonAsHighlighted, bool shouldDrawButtonAsDown)
 {
+    if (isFlatBar(button))
+    {
+        drawFlatBarButton(g, focusRingsVisible, button, button.getToggleState(), shouldDrawButtonAsHighlighted, shouldDrawButtonAsDown);
+        return;
+    }
+
+    if (hasFlag(button, "bqtSwitchHalf"))
+    {
+        // The switch paints the field and the sliding pill; a half draws its word in ink, then
+        // again in cream clipped to the pill, so the word changes colour as the pill passes.
+        const auto area = button.getLocalBounds().toFloat();
+        drawFocusRing(g, focusRingsVisible, button, area, button.getToggleState());
+        g.setFont(juce::Font(faceFont(15.0f)));
+        g.setColour(inkAlpha(0.75f));
+        g.drawText(button.getButtonText(), area, juce::Justification::centred);
+        if (auto* owner = dynamic_cast<BqtSwitch*>(button.getParentComponent()))
+        {
+            const auto fill = owner->pillBounds().translated(-static_cast<float>(button.getX()), -static_cast<float>(button.getY()));
+            if (fill.intersects(area))
+            {
+                juce::Graphics::ScopedSaveState save(g);
+                juce::Path clip;
+                clip.addRoundedRectangle(fill, fieldCorner);
+                g.reduceClipRegion(clip);
+                g.setColour(juce::Colour(barField));
+                g.drawText(button.getButtonText(), area, juce::Justification::centred);
+            }
+        }
+        return;
+    }
+
     if (button.getProperties().contains("bqtPushButton") && static_cast<bool>(button.getProperties()["bqtPushButton"]))
     {
         const auto active = button.getToggleState();
@@ -432,7 +643,7 @@ void BqtHardwareLookAndFeel::drawToggleButton(juce::Graphics& g, juce::ToggleBut
     const auto on = button.getToggleState();
     const auto down = shouldDrawButtonAsDown;
 
-    g.setColour(juce::Colour(panelText));
+    g.setColour(juce::Colour(plateInk));
     g.setFont(juce::Font(faceFont(20.0f, true)));
     g.drawText(button.getButtonText().toLowerCase(), labels.toNearestInt(), juce::Justification::centredRight);
 
@@ -468,13 +679,23 @@ void BqtHardwareLookAndFeel::drawToggleButton(juce::Graphics& g, juce::ToggleBut
         g.setColour(juce::Colours::white.withAlpha(0.40f));
         g.fillEllipse(led.reduced(4.0f).translated(-1.5f, -1.5f));
     }
-    g.setColour(juce::Colour(panelText));
-    g.drawEllipse(led, 1.0f);
+    if (! on) // a lit lamp needs no rim
+    {
+        g.setColour(juce::Colour(plateInk));
+        g.drawEllipse(led, 1.0f);
+    }
 }
 
 void BqtHardwareLookAndFeel::drawButtonBackground(juce::Graphics& g, juce::Button& button,
-                                                  const juce::Colour&, bool, bool shouldDrawButtonAsDown)
+                                                  const juce::Colour&, bool shouldDrawButtonAsHighlighted,
+                                                  bool shouldDrawButtonAsDown)
 {
+    if (isFlatBar(button))
+    {
+        drawFlatBarButton(g, focusRingsVisible, button, button.getToggleState(), shouldDrawButtonAsHighlighted, shouldDrawButtonAsDown);
+        return;
+    }
+
     if (button.getProperties().contains("bqtPushButton") && static_cast<bool>(button.getProperties()["bqtPushButton"]))
     {
         auto bounds = button.getLocalBounds().toFloat().reduced(1.0f, 2.0f);
@@ -523,7 +744,7 @@ void BqtHardwareLookAndFeel::drawButtonBackground(juce::Graphics& g, juce::Butto
         const auto y = 8.0f + static_cast<float>(row) * 24.0f;
         const auto led = juce::Rectangle<float>(13.0f, 13.0f).withCentre({ controls.getX() + 8.0f, y + 8.0f });
 
-        g.setColour(juce::Colour(panelText));
+        g.setColour(juce::Colour(plateInk));
         g.setFont(juce::Font(faceFont(20.0f, true)));
         g.drawText(text, labels.withY(y - 4.0f).withHeight(24.0f).toNearestInt(), juce::Justification::centredRight);
 
@@ -544,8 +765,11 @@ void BqtHardwareLookAndFeel::drawButtonBackground(juce::Graphics& g, juce::Butto
             g.setColour(juce::Colours::white.withAlpha(0.40f));
             g.fillEllipse(led.reduced(4.0f).translated(-1.5f, -1.5f));
         }
-        g.setColour(juce::Colour(panelText));
-        g.drawEllipse(led, 1.0f);
+        if (! on) // a lit lamp needs no rim
+        {
+            g.setColour(juce::Colour(plateInk));
+            g.drawEllipse(led, 1.0f);
+        }
     };
 
     const auto rail = juce::Rectangle<float>(35.0f, 3.0f).withCentre({ controls.getX() + 25.5f, controls.getCentreY() });
@@ -593,238 +817,8 @@ void BqtHardwareLookAndFeel::drawTooltip(juce::Graphics& g, const juce::String& 
     const auto bounds = juce::Rectangle<float>(0.0f, 0.0f, static_cast<float>(width), static_cast<float>(height));
     g.fillAll(juce::Colours::transparentBlack);
     g.setColour(juce::Colour(0xff111111));
-    g.fillRoundedRectangle(bounds.reduced(1.0f), 3.0f);
-    g.setColour(juce::Colour(panelText).withAlpha(0.72f));
-    g.drawRoundedRectangle(bounds.reduced(1.0f), 3.0f, 1.0f);
+    g.fillRoundedRectangle(bounds.reduced(1.0f), fieldCorner); // flat, like a switched-on bar button
     g.setColour(juce::Colour(panelText));
     g.setFont(juce::Font(faceFont(16.5f, true)));
     g.drawText(text, juce::Rectangle<int>(width, height).reduced(8, 2), juce::Justification::centred);
-}
-
-BqtVuMeter::BqtVuMeter(BqtAudioProcessor& p, int sideIndex)
-    : audioProcessor(p), side(sideIndex)
-{
-}
-
-void BqtVuMeter::paint(juce::Graphics& g)
-{
-    const auto layerScale = juce::jlimit(1.0f, 4.0f,
-                                         juce::jmax(renderScale * 2.0f,
-                                                    juce::Component::getApproximateScaleFactorForComponent(this)));
-    const auto desiredLayerWidth = static_cast<int>(std::ceil(static_cast<float>(getWidth()) * layerScale));
-    const auto desiredLayerHeight = static_cast<int>(std::ceil(static_cast<float>(getHeight()) * layerScale));
-
-    if (staticLayerWidth != desiredLayerWidth || staticLayerHeight != desiredLayerHeight
-        || ! juce::approximatelyEqual(staticLayerScale, layerScale) || ! staticLayer.isValid())
-        rebuildStaticLayer();
-
-    if (staticLayer.isValid())
-    {
-        g.setImageResamplingQuality(juce::Graphics::highResamplingQuality);
-        g.drawImage(staticLayer, 0, 0, getWidth(), getHeight(),
-                    0, 0, staticLayer.getWidth(), staticLayer.getHeight());
-    }
-
-    const auto bounds = getLocalBounds().toFloat();
-    auto frameBounds = bounds.reduced(1.0f);
-
-    const auto inner = frameBounds.withTrimmedLeft(frameBounds.getWidth() * 0.27f)
-                                 .withTrimmedRight(frameBounds.getWidth() * 0.27f)
-                                 .withTrimmedTop(frameBounds.getHeight() * 0.22f)
-                                 .withTrimmedBottom(frameBounds.getHeight() * 0.35f);
-
-    auto polar = [](juce::Point<float> centre, float radius, float degrees)
-    {
-        const auto radians = juce::degreesToRadians(degrees);
-        return juce::Point<float>(centre.x + std::cos(radians) * radius,
-                                  centre.y - std::sin(radians) * radius);
-    };
-
-    const auto centre = juce::Point<float>(inner.getCentreX(), inner.getY() + inner.getHeight() * 0.87f);
-    const auto needlePivot = juce::Point<float>(inner.getCentreX(), inner.getY() + inner.getHeight() * 0.88f);
-    const auto radius = inner.getWidth() * 0.62f;
-    const auto start = 137.0f;
-    const auto end = 43.0f;
-
-    const auto meterBlack = juce::Colour(0xff1f1a17);
-
-    const auto needleAngle = start + juce::jlimit(0.0f, 1.0f, displayedLevel) * (end - start);
-    const auto needleEnd = polar(centre, radius + 7.0f, needleAngle);
-    g.setColour(meterBlack);
-    g.drawLine({ needlePivot, needleEnd }, 2.6f);
-    g.setColour(meterBlack.darker(0.35f));
-    g.fillEllipse(juce::Rectangle<float>(6.5f, 6.5f).withCentre(needlePivot));
-}
-
-void BqtVuMeter::setRenderScale(float newScale)
-{
-    newScale = juce::jlimit(1.0f, 3.0f, newScale);
-
-    if (juce::approximatelyEqual(renderScale, newScale))
-        return;
-
-    renderScale = newScale;
-    staticLayer = {};
-    repaint();
-}
-
-void BqtVuMeter::rebuildStaticLayer()
-{
-    const auto logicalWidth = getWidth();
-    const auto logicalHeight = getHeight();
-    const auto layerScale = juce::jlimit(1.0f, 4.0f,
-                                         juce::jmax(renderScale * 2.0f,
-                                                    juce::Component::getApproximateScaleFactorForComponent(this)));
-    staticLayerWidth = static_cast<int>(std::ceil(static_cast<float>(logicalWidth) * layerScale));
-    staticLayerHeight = static_cast<int>(std::ceil(static_cast<float>(logicalHeight) * layerScale));
-    staticLayerScale = layerScale;
-
-    if (staticLayerWidth <= 0 || staticLayerHeight <= 0 || logicalWidth <= 0 || logicalHeight <= 0)
-    {
-        staticLayer = {};
-        return;
-    }
-
-    staticLayer = juce::Image(juce::Image::ARGB, staticLayerWidth, staticLayerHeight, true);
-
-    const auto bounds = juce::Rectangle<float>(0.0f, 0.0f, static_cast<float>(logicalWidth),
-                                               static_cast<float>(logicalHeight));
-    auto frameBounds = bounds.reduced(1.0f);
-
-    const auto inner = frameBounds.withTrimmedLeft(frameBounds.getWidth() * 0.27f)
-                                 .withTrimmedRight(frameBounds.getWidth() * 0.27f)
-                                 .withTrimmedTop(frameBounds.getHeight() * 0.22f)
-                                 .withTrimmedBottom(frameBounds.getHeight() * 0.35f);
-
-    static auto frame = []
-    {
-        const auto source = juce::ImageCache::getFromMemory(BinaryData::vuframe_png, BinaryData::vuframe_pngSize);
-        return source.rescaled(1000, 1000, juce::Graphics::highResamplingQuality);
-    }();
-    const auto frameArea = frameBounds.toNearestInt();
-    if (frame.isValid())
-    {
-        juce::Graphics frameGraphics(staticLayer);
-        frameGraphics.addTransform(juce::AffineTransform::scale(layerScale));
-        frameGraphics.drawImageWithin(frame, frameArea.getX(), frameArea.getY(), frameArea.getWidth(), frameArea.getHeight(),
-                                      juce::RectanglePlacement::stretchToFit, false);
-    }
-    vuface::paint(staticLayer, frameArea.toFloat(), layerScale);
-
-    juce::Graphics g(staticLayer);
-    g.addTransform(juce::AffineTransform::scale(layerScale));
-
-    auto polar = [](juce::Point<float> centre, float radius, float degrees)
-    {
-        const auto radians = juce::degreesToRadians(degrees);
-        return juce::Point<float>(centre.x + std::cos(radians) * radius,
-                                  centre.y - std::sin(radians) * radius);
-    };
-
-    const auto centre = juce::Point<float>(inner.getCentreX(), inner.getY() + inner.getHeight() * 0.87f);
-    const auto radius = inner.getWidth() * 0.62f;
-    const auto start = 137.0f;
-    const auto end = 43.0f;
-
-    const auto meterBlack = juce::Colour(0xff1f1a17);
-    const auto meterRed = juce::Colour(0xffd22b2b);
-
-    g.setColour(meterBlack.withAlpha(0.78f));
-    juce::Path arc;
-    for (int i = 0; i <= 40; ++i)
-    {
-        const auto p = static_cast<float>(i) / 40.0f;
-        const auto point = polar(centre, radius, start + (end - start) * p);
-        i == 0 ? arc.startNewSubPath(point) : arc.lineTo(point);
-    }
-    g.strokePath(arc, juce::PathStrokeType(2.2f));
-
-    const auto redStart = vuDbToScaleFraction(0.0f);
-    juce::Path redArc;
-    for (int i = 0; i <= 18; ++i)
-    {
-        const auto p = redStart + (1.0f - redStart) * (static_cast<float>(i) / 18.0f);
-        const auto point = polar(centre, radius - 3.0f, start + (end - start) * p);
-        i == 0 ? redArc.startNewSubPath(point) : redArc.lineTo(point);
-    }
-    g.setColour(meterRed.withAlpha(0.92f));
-    g.strokePath(redArc, juce::PathStrokeType(3.4f));
-
-    const std::array<float, 7> majorDbs { -20.0f, -10.0f, -7.0f, -5.0f, -3.0f, 0.0f, 3.0f };
-    // Plain numbers; the scale carries one minus sign at its left end and one plus at its right.
-    const std::array<const char*, 7> majorLabels { "20", "10", "7", "5", "3", "0", "3" };
-    const auto labelFont = juce::Font(vuFont(11.07f, false));
-    for (size_t i = 0; i < majorDbs.size(); ++i)
-    {
-        const auto frac = vuDbToScaleFraction(majorDbs[i]);
-        const auto angle = start + (end - start) * frac;
-        const auto red = majorDbs[i] >= 0.0f;
-        g.setColour(red ? meterRed.withAlpha(0.98f)
-                        : meterBlack.withAlpha(0.95f));
-        g.drawLine({ polar(centre, radius - 7.0f, angle), polar(centre, radius + 3.0f, angle) },
-                   majorDbs[i] == 0.0f ? 2.6f : 1.9f);
-        // Centre the number on its tick, with the near edge of its ink box a fixed gap past the
-        // tick end; the box's extent along the tick direction depends on the angle.
-        juce::GlyphArrangement glyphs;
-        glyphs.addLineOfText(labelFont, majorLabels[i], 0.0f, 0.0f);
-        const auto inkBox = glyphs.getBoundingBox(0, -1, true);
-        const auto radians = juce::degreesToRadians(angle);
-        const auto extent = std::abs(inkBox.getWidth() * 0.5f * std::cos(radians))
-                          + std::abs(inkBox.getHeight() * 0.5f * std::sin(radians));
-        const auto labelCentre = polar(centre, radius + 3.0f + 2.5f + extent, angle);
-        glyphs.draw(g, juce::AffineTransform::translation(labelCentre - inkBox.getCentre()));
-    }
-
-    const auto drawEndSign = [&](const juce::String& sign, juce::Colour colour, float angle)
-    {
-        juce::GlyphArrangement glyphs;
-        glyphs.addLineOfText(juce::Font(vuFont(11.07f * 1.25f, true)), sign, 0.0f, 0.0f);
-        g.setColour(colour);
-        glyphs.draw(g, juce::AffineTransform::translation(polar(centre, radius - 2.0f, angle)
-                                                         - glyphs.getBoundingBox(0, -1, true).getCentre()));
-    };
-    drawEndSign(juce::String::charToString(static_cast<juce::juce_wchar>(0x2212)), meterBlack.withAlpha(0.95f), start + 7.0f);
-    drawEndSign("+", meterRed.withAlpha(0.98f), end - 7.0f);
-
-    for (int db = -20; db <= 3; ++db)
-    {
-        if (db == -20 || db == -10 || db == -7 || db == -5 || db == -3 || db == 0 || db == 3)
-            continue;
-        if (db < -10 && db % 5 != 0)
-            continue;
-
-        const auto angle = start + (end - start) * vuDbToScaleFraction(static_cast<float>(db));
-        const auto red = db >= 0;
-        g.setColour(red ? meterRed.withAlpha(0.72f)
-                        : meterBlack.withAlpha(0.58f));
-        g.drawLine({ polar(centre, radius - 4.0f, angle), polar(centre, radius + 2.5f, angle) }, 1.2f);
-    }
-
-    g.setColour(meterBlack.withAlpha(0.98f));
-    g.setFont(juce::Font(vuFont(19.0f * 0.98f, true)));
-    g.drawText("vu", inner.withTrimmedTop(inner.getHeight() * 0.38f).withHeight(22.0f).toNearestInt(),
-               juce::Justification::centred);
-}
-
-bool BqtVuMeter::updateLevel(double secondsElapsed)
-{
-    const auto raw = audioProcessor.getMeterLevel(side);
-    const auto db = juce::Decibels::gainToDecibels(raw, -60.0f);
-    targetLevel = vuDbToScaleFraction(db + 18.0f);
-    // Time-based smoothing. This was a fixed 0.18 per tick, which meant the needle's speed was a
-    // function of how punctually the timer fired rather than of elapsed time: a late or dropped
-    // frame still advanced only 18% of the remaining distance, so jitter turned into visibly
-    // uneven, steppy motion instead of degrading gracefully. Now a late frame covers exactly the
-    // distance it should have.
-    constexpr auto needleTimeConstantSeconds = 0.09;
-    const auto clampedElapsed = juce::jlimit(0.0, 0.25, secondsElapsed);
-    const auto alpha = static_cast<float>(1.0 - std::exp(-clampedElapsed / needleTimeConstantSeconds));
-
-    const auto previousLevel = displayedLevel;
-    displayedLevel += (targetLevel - displayedLevel) * alpha;
-
-    if (std::abs(targetLevel - displayedLevel) < 0.0005f)
-        displayedLevel = targetLevel;
-
-    return std::abs(displayedLevel - previousLevel) >= 0.0001f;
 }

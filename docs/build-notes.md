@@ -192,6 +192,6 @@ Implemented in the current build:
 - Realtime/render oversampling up to 8x around the full active processing chain.
 - Oversampling latency reporting with global-bypass delay matching.
 - Global bypass uses a short dry/wet crossfade to avoid clicky hard switching.
-- Top-bar controls for input, mode, link, oversampling, auto gain, bypass, and fixed UI size.
+- Top-bar controls for input, mode, link, oversampling, auto gain and bypass; the editor resizes freely from a corner grip.
 - Preset strip with factory presets, previous/next navigation, and user preset saving.
 - 500-series-inspired UI using local PNG assets and procedural faceplate rendering.

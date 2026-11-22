@@ -3,7 +3,9 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 
 #include "BqtEditorLogic.h"
+#include "BqtEditorSize.h"
 #include "BqtEditorWidgets.h"
+#include "BqtVuMeter.h"
 #include "BqtPresetManager.h"
 #include "PluginProcessor.h"
 
@@ -51,18 +53,20 @@ private:
         std::unique_ptr<SliderAttachment> outputTrimAttachment;
     };
 
+    // Covers the whole editor while open, without dimming it: a click anywhere (on the card or
+    // beside it) or Escape closes it. Read as a dialog.
     class AboutPanel final : public juce::Component
     {
     public:
         AboutPanel();
         void paint(juce::Graphics& g) override;
-        void resized() override;
+        void mouseDown(const juce::MouseEvent& event) override;
         void mouseUp(const juce::MouseEvent& event) override;
+        bool keyPressed(const juce::KeyPress& key) override;
+        std::unique_ptr<juce::AccessibilityHandler> createAccessibilityHandler() override;
+        juce::Rectangle<int> cardBounds() const;
 
         std::function<void()> onClose;
-
-    private:
-        juce::Rectangle<int> closeBounds;
     };
 
     class RackComponent final : public juce::Component
@@ -85,7 +89,7 @@ private:
         bool bypassed = false;
 
         // The faceplate is static (only its size/scale changes), but it is expensive to draw
-        // (procedural grain). Cache it to an offscreen image and only rebuild on a size/scale
+        // (panel artwork and lettering). Cache it to an offscreen image and only rebuild on a size/scale
         // change, so repaints (undo/redo, bypass toggles) just blit instead of redrawing.
         juce::Image faceplateCache;
         int faceplateCacheWidth = 0;
@@ -147,6 +151,8 @@ private:
     void updatePresetButtonText();
     void showAboutPanel();
     void hideAboutPanel();
+    bool barHelpBlocked() const;
+    void setFocusRingsVisible(bool shouldShow);
 
     BqtHardwareLookAndFeel hardwareLookAndFeel;
     BqtAudioProcessor& audioProcessor;
@@ -157,11 +163,13 @@ private:
     juce::TextButton presetNext;
     juce::TextButton presetSave;
     juce::TextButton aboutButton;
-    juce::ComboBox eqMode;
-    juce::ComboBox satMode;
+    BqtSwitch eqMode { "l/r", "m/s" };
+    BqtSwitch satMode { "l/r", "m/s" };
     juce::ComboBox osRealtime;
     juce::ComboBox osRender;
     juce::Label inputTrimLabel;
+    juce::Label eqCaption;
+    juce::Label satCaption;
     juce::Slider inputTrim;
     juce::ToggleButton autoGain;
     juce::ToggleButton eqLink;
@@ -170,14 +178,14 @@ private:
     // One button for both sides' sat type (see toggleSatTypeBothSides).
     juce::TextButton satTypeButton;
     juce::ToggleButton bypass;
-    juce::ComboBox sizeSelect;
     std::array<SideControls, 2> sideControls;
     BqtVuMeter meterA;
     BqtVuMeter meterB;
     AboutPanel aboutPanel;
 
-    std::unique_ptr<ComboBoxAttachment> eqModeAttachment;
-    std::unique_ptr<ComboBoxAttachment> satModeAttachment;
+    // The mode switches only show their parameter; a click writes it as one host gesture.
+    std::unique_ptr<juce::ParameterAttachment> eqModeAttachment;
+    std::unique_ptr<juce::ParameterAttachment> satModeAttachment;
     std::unique_ptr<ComboBoxAttachment> osRealtimeAttachment;
     std::unique_ptr<ComboBoxAttachment> osRenderAttachment;
     std::unique_ptr<SliderAttachment> inputTrimAttachment;
@@ -215,6 +223,14 @@ private:
     juce::String hoveredHelpText;
     juce::uint32 helpHoverStartMs = 0;
     bool helpVisible = false;
+    // A press on a bar control hides its hover help until the pointer moves or a menu closes.
+    bool helpClickLatched = false;
+    bool helpLatchSawBlock = false;
+    juce::Point<float> helpLatchPosition;
+    // The first bar row, in base editor pixels: its hover help sits at the window's top edge.
+    juce::Rectangle<int> presetBarBounds;
+    juce::Component::SafePointer<juce::Component> focusBeforeAbout;
+    std::vector<juce::Component::SafePointer<juce::Component>> hiddenFromAccessibility;
     static constexpr juce::uint32 hoverHelpDelayMs = 700;
     static constexpr juce::uint32 hoverValueDelayMs = 300;
     double inputTrimCompensationStart = 0.0;

@@ -12,7 +12,7 @@ if (NOT CMAKE_OSX_DEPLOYMENT_TARGET)
     set(CMAKE_OSX_DEPLOYMENT_TARGET "10.13" CACHE STRING "Minimum macOS deployment target")
 endif()
 
-project(BQST VERSION 1.2.0 LANGUAGES C CXX)
+project(BQST VERSION 1.3.0 LANGUAGES C CXX)
 
 # Single source of truth for the version and bundle identifier. Everything downstream -- the
 # plugin bundles, the generated packaging templates, and the shell/PowerShell packaging scripts
@@ -43,6 +43,17 @@ add_subdirectory(external/JUCE)
 
 set(BQST_PLUGIN_FORMATS VST3 Standalone)
 
+# VU needles presented in a Core Animation layer on macOS so the system moves them at the display's
+# own rate (src/BqtVuNeedleLayer.h). OFF paints the needles with the rest of the editor, as other
+# platforms always do.
+option(BQST_VU_NATIVE_NEEDLE "Present the VU needles in a Core Animation layer on macOS" ON)
+set(BQST_VU_NEEDLE_SOURCES src/BqtVuNeedleLayer.cpp src/BqtVuNeedleLayer.h)
+if (APPLE)
+    list(APPEND BQST_VU_NEEDLE_SOURCES src/BqtVuNeedleLayer_mac.mm)
+    set_source_files_properties(src/BqtVuNeedleLayer_mac.mm PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
+endif()
+set(BQST_VU_NEEDLE_DEFINITION BQST_VU_NATIVE_NEEDLE=$<AND:$<BOOL:${BQST_VU_NATIVE_NEEDLE}>,$<BOOL:${APPLE}>>)
+
 if (APPLE)
     list(APPEND BQST_PLUGIN_FORMATS AU)
 endif()
@@ -51,7 +62,6 @@ juce_add_binary_data(BqtAssets
     SOURCES
         assets/gui/knob-large-skirted.png
         assets/gui/knob-small-pointer.png
-        assets/gui/vu-frame.png
         assets/fonts/Chillax-Regular.otf
         assets/fonts/Chillax-Semibold.otf
         assets/fonts/DMSans-Medium.ttf
@@ -81,6 +91,9 @@ target_sources(BQST
         src/BqtProcessorDsp.cpp
         src/BqtEditorWidgets.cpp
         src/BqtEditorWidgets.h
+        src/BqtVuMeter.cpp
+        src/BqtVuMeter.h
+        ${BQST_VU_NEEDLE_SOURCES}
         src/BqtEditorStyle.h
         src/BqtCreamModel.h
         src/BqtCreamParams.h
@@ -99,6 +112,7 @@ target_sources(BQST
 target_compile_definitions(BQST
     PUBLIC
         BQST_GRIT_LAB=$<BOOL:${BQST_GRIT_LAB}>
+        ${BQST_VU_NEEDLE_DEFINITION}
         JUCE_WEB_BROWSER=0
         JUCE_USE_CURL=0
         JUCE_VST3_CAN_REPLACE_VST2=0
@@ -167,6 +181,7 @@ if (BQST_BUILD_TESTS)
     target_sources(BqstChainTests
         PRIVATE
             tests/chain_tests.cpp
+            tests/grit_precision_tests.cpp
             src/PluginProcessor.cpp
             src/BqtParameterLayout.cpp
             src/BqtProcessorDsp.cpp
@@ -205,4 +220,37 @@ if (BQST_BUILD_TESTS)
                                JUCE_USE_CURL=0 JUCE_STANDALONE_APPLICATION=1 JucePlugin_Name="BQST")
     target_link_libraries(BqstGoldenRender PRIVATE juce::juce_audio_processors juce::juce_audio_utils
                           juce::juce_dsp PUBLIC juce::juce_recommended_config_flags)
+
+    # Offscreen editor picture (not a CTest): BqstEditorSnapshot <width> <out.png> [pixelScale].
+    # Builds the real editor sources and paints them into an image, with no window on screen.
+    juce_add_console_app(BqstEditorSnapshot PRODUCT_NAME "BqstEditorSnapshot")
+    target_sources(BqstEditorSnapshot PRIVATE tests/editor_snapshot.cpp src/PluginProcessor.cpp
+                   src/BqtParameterLayout.cpp src/BqtProcessorDsp.cpp src/BqtPresetManager.cpp
+                   src/BqtEditorWidgets.cpp src/BqtVuMeter.cpp src/BqtEditorInteraction.cpp
+                   src/BqtEditorLayout.cpp src/BqtEditorPresets.cpp src/PluginEditor.cpp ${BQST_VU_NEEDLE_SOURCES})
+    target_compile_definitions(BqstEditorSnapshot PRIVATE BQST_GRIT_LAB=$<BOOL:${BQST_GRIT_LAB}> ${BQST_VU_NEEDLE_DEFINITION} JUCE_WEB_BROWSER=0
+                               JUCE_USE_CURL=0 JUCE_STANDALONE_APPLICATION=1 JucePlugin_Name="BQST"
+                               JucePlugin_VersionString="${BQST_VERSION}")
+    target_link_libraries(BqstEditorSnapshot PRIVATE BqtAssets juce::juce_audio_processors juce::juce_audio_utils
+                          juce::juce_dsp PUBLIC juce::juce_recommended_config_flags)
+
+    # Native VU needle checks (macOS): layer geometry against the painted needle at several editor
+    # sizes, fallback selection, attach and detach. Hosts the editor in a window that is never
+    # shown, so nothing appears on screen and nothing takes focus.
+    if (APPLE)
+        juce_add_console_app(BqstVuNeedleTests PRODUCT_NAME "BqstVuNeedleTests")
+        target_sources(BqstVuNeedleTests PRIVATE tests/vu_needle_tests.mm src/PluginProcessor.cpp
+                       src/BqtParameterLayout.cpp src/BqtProcessorDsp.cpp src/BqtPresetManager.cpp
+                       src/BqtEditorWidgets.cpp src/BqtVuMeter.cpp src/BqtEditorInteraction.cpp
+                       src/BqtEditorLayout.cpp src/BqtEditorPresets.cpp src/PluginEditor.cpp ${BQST_VU_NEEDLE_SOURCES})
+        set_source_files_properties(tests/vu_needle_tests.mm PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
+        target_compile_definitions(BqstVuNeedleTests PRIVATE BQST_GRIT_LAB=$<BOOL:${BQST_GRIT_LAB}> ${BQST_VU_NEEDLE_DEFINITION}
+                                   JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_STANDALONE_APPLICATION=1 JucePlugin_Name="BQST"
+                                   JucePlugin_VersionString="${BQST_VERSION}")
+        target_link_libraries(BqstVuNeedleTests PRIVATE BqtAssets juce::juce_audio_processors juce::juce_audio_utils
+                              juce::juce_dsp PUBLIC juce::juce_recommended_config_flags)
+        add_test(NAME BqstVuNeedleTests COMMAND BqstVuNeedleTests)
+        set_tests_properties(BqstVuNeedleTests PROPERTIES
+            ENVIRONMENT "BQST_TEST_PRESET_DIR=${CMAKE_CURRENT_BINARY_DIR}/test-presets")
+    endif()
 endif()

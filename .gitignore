@@ -19,3 +19,7 @@ AGENTS.local.md
 # Cream model tooling: a separate private checkout (rohanz/bqst-research), never part of this repo
 tools/cream_model/
 tools/__pycache__/
+
+/bqst.f32
+/build-native/
+/build-precision/

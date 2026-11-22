@@ -69,7 +69,11 @@ Unit tests live in `tests/dsp_tests.cpp` (pure `BqtDsp.h` helpers, no JUCE) and
 `tests/cream_model_tests.cpp` (the Cream model against its Python fixture), all gated by
 `BQST_BUILD_TESTS` and registered with CTest. `BqstGoldenRender` (not a CTest) renders
 fixed scenarios to raw float32 for bit-exact refactor checks: render before, refactor,
-render after, `cmp`. Run `scripts/check.sh` before handing off or releasing.
+render after, `cmp`. Of its nine scenarios, 4, 8 and 9 use Grit; the other six are Cream/EQ
+only. The double-precision Grit change re-recorded only scenarios 4, 8 and 9 (native arm64
+Release, Apple clang 21: full render SHA-256
+`d051d231c304aa1af95c3dda89e3cd1fcbb1a753ea9fc33e90ba4b272c626517`; the hash is
+toolchain-specific). Run `scripts/check.sh` before handing off or releasing.
 
 ## Public macOS Release Signing
 
@@ -390,6 +394,24 @@ The captured limiting has not been identified as transformer versus amplifier/in
 limiting; do not call it a component-level transformer simulation.
 
 Legacy Grit is transformer-inspired: firmer, more forward, more edge/bite than Cream.
+
+The legacy path lives once, in `src/BqtLegacyGrit.h` (`LegacyGrit<Sample>`: the six tone filters,
+the shaper controls and the DC blocker). BQST runs it in `double` (the public
+`BqtAudioProcessor::LegacyGrit` alias in `src/PluginProcessor.h`), and Legacy/Hybrid Grit stay in
+double end to end: coefficient design, filter state, shaper, Grit's own Vintage shelf
+(`gritVintage`) and the captured branch's Vintage, DC blocker and the Hybrid sum, down to the
+final float wet sample. Cream and Captured-only Grit keep the float `vintage` filter. This was an
+approved sound change for every project, with no legacy mode: in float the tone filters lost
+low-frequency gain as the processing rate rose (about 0.1 dB at 4x, up to about 0.6 dB at 20 Hz
+at 8x), had a rounding floor, and at 176.4/192 kHz with 8x a pole became marginal or unstable
+(a residual that never decays at 192 kHz x8; non-finite output on x86_64). Do not move it back
+to float. `tests/grit_precision_tests.cpp` (in `BqstChainTests`) asserts the guarantees on the
+real processor: every pole inside the unit circle and design LF gain within 1e-6 dB at
+44.1-192 kHz x Off-8x, 30 s programme plus 5 s silence finite and settling at 176.4/192 kHz x8,
+and a 20-200 Hz level spread across oversampling below 0.05 dB for Legacy and Hybrid.
+`tests/grit_equivalence/run.py` compares the real processor before (last float source) and
+after the change: Captured cases must stay byte-identical and Legacy/Hybrid finite; `--levels`
+and `--cpu` print the before/after level table and Grit CPU cost.
 
 Grit tone filters:
 

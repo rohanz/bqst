@@ -9,6 +9,7 @@
 #include <juce_dsp/juce_dsp.h>
 
 #include "BqtDsp.h"
+#include "BqtLegacyGrit.h"
 
 // Set by the BqstChainTests target, which links the processor without the editor or its binary
 // assets so DSP behaviour can be asserted headlessly.
@@ -64,22 +65,26 @@ public:
 
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
+    // Legacy and Hybrid Grit run in double from coefficient design to the Hybrid sum: in float
+    // the low tone filters lost accuracy (and stability) at high oversampled rates.
+    using LegacyGrit = bqt::LegacyGrit<double>;
+
 private:
     using Filter = juce::dsp::IIR::Filter<float>;
+    using GritFilter = juce::dsp::IIR::Filter<LegacyGrit::Value>;
     using Coefficients = juce::dsp::IIR::Coefficients<float>;
 
     struct SideFilters
     {
         Filter lowShelf;
         Filter highShelf;
+        // Vintage for Cream and Captured Grit.
         Filter vintage;
-        Filter hybridCapturedVintage;
-        Filter saturationLowGuardPre;
-        Filter saturationLowGuardPost;
-        Filter transformerLowDrive;
-        Filter transformerLowRestore;
-        Filter transformerWeight;
-        Filter transformerTop;
+        // The same Vintage shelf inside the Legacy/Hybrid Grit path, and on Hybrid's captured
+        // branch, in Grit's precision.
+        GritFilter gritVintage;
+        GritFilter hybridCapturedVintage;
+        LegacyGrit legacy;
 
         // Every filter the saturation stage uses. Keep this the single list: prepare, reset on
         // structural change and reset on oversampling change all go through it.
@@ -87,13 +92,9 @@ private:
         void forEachSaturationFilter(Fn&& fn)
         {
             fn(vintage);
+            fn(gritVintage);
             fn(hybridCapturedVintage);
-            fn(saturationLowGuardPre);
-            fn(saturationLowGuardPost);
-            fn(transformerLowDrive);
-            fn(transformerLowRestore);
-            fn(transformerWeight);
-            fn(transformerTop);
+            legacy.forEachFilter(fn);
         }
 
         template <typename Fn>
@@ -189,9 +190,6 @@ private:
     std::array<juce::SmoothedValue<float>, 2> autoGainBlend;
     std::array<std::atomic<float>, 2> meterLevels {};
     std::array<float, 2> meterRms {};
-    // One-pole DC blocker state for the wet saturation path, per side.
-    std::array<float, 2> dcBlockPreviousInput {};
-    std::array<float, 2> dcBlockPreviousOutput {};
     double currentSampleRate = 44100.0;
     // The block size prepareToPlay sized every internal buffer and oversampler from. processBlock
     // splits anything larger into chunks of this size, which makes those sizes provable ceilings

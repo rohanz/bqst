@@ -15,6 +15,7 @@ namespace bqt
 class GritLabModel
 {
 public:
+    struct DriveControls { double colour = 0.0, push = 1.0; };
     void prepare(double sampleRate)
     {
         for (size_t i = 0; i < loss.size(); ++i)
@@ -34,7 +35,7 @@ public:
     void setReferenceKnob(double db)
     {
         db = std::clamp(db, 0.0, 18.0);
-        colour = std::clamp(db / 3.0, 0.0, 1.0);
+        controls.colour = std::clamp(db / 3.0, 0.0, 1.0);
         double makeup = 0.0;
         for (size_t i = 1; i < gritlab::knobDb.size(); ++i)
         {
@@ -42,18 +43,24 @@ public:
                 / (gritlab::knobDb[i] - gritlab::knobDb[i - 1]), 0.0, 1.0);
             makeup += fraction * (gritlab::makeupDb[i] - gritlab::makeupDb[i - 1]);
         }
-        push = std::pow(10.0, makeup / 20.0);
+        controls.push = std::pow(10.0, makeup / 20.0);
     }
 
     template <size_t N>
     static double lookup(const std::array<double, N>& table, double db)
     {
+        if (! std::isfinite(db))
+            return table[0];
         const auto position = std::clamp(db, 0.0, 18.0) * (N - 1) / 18.0;
         const auto i = std::min(static_cast<size_t>(position), N - 2);
         return table[i] + (table[i + 1] - table[i]) * (position - static_cast<double>(i));
     }
 
     void setKnob(double db) { setReferenceKnob(lookup(gritlab::referenceKnob, db)); }
+    const DriveControls& driveControls() const noexcept { return controls; }
+    void setDriveControls(const DriveControls& value) noexcept { controls = value; }
+    void copyDriveFrom(const GritLabModel& source) { setDriveControls(source.driveControls()); }
+
     static double autoGain(double db)
     {
         return std::pow(10.0, lookup(gritlab::autoGainDb, db) / 20.0);
@@ -62,7 +69,9 @@ public:
     double process(double input)
     {
         // Even at zero colour the state can run warm; the return is bit-exact bypass.
-        const auto x = input * push;
+        const auto x = input * controls.push;
+        if (! std::isfinite(x))
+            return 0.0;
         const auto magnitude = std::abs(x);
         const auto position = std::sqrt(std::min(magnitude, gritlab::tableMaximum)
                                         / gritlab::tableMaximum) * (gritlab::tableSize - 1);
@@ -95,7 +104,7 @@ public:
                                           1.0 / gritlab::outputKnee);
         y = std::copysign(gritlab::outputThreshold * std::min(ratio, 1.0) / denominator, y);
         y -= dc.process(y);
-        return input + (y / push - input) * colour;
+        return input + (y / controls.push - input) * controls.colour;
     }
 
 private:
@@ -119,6 +128,6 @@ private:
     std::array<Lowpass, gritlab::poles.size()> loss;
     std::array<Lowpass, gritlab::coreFrequencies.size()> core;
     Lowpass dc;
-    double colour = 0.0, push = 1.0;
+    DriveControls controls;
 };
 } // namespace bqt

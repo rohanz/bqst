@@ -5,39 +5,42 @@
 # Uses a native-arch build for speed (the release build is universal; see
 # scripts/build-macos-release.sh). Override defaults with env vars:
 #   BUILD_DIR=...    build directory (default: build)
+#   JOBS=...         parallel build jobs (default: CPU count)
 #   STRICTNESS=...   pluginval strictness level (default: 10)
 #   PLUGINVAL=...    path to the pluginval binary (default: the installed app)
 set -eu
 
-ROOT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+ROOT_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 BUILD_DIR="${BUILD_DIR:-$ROOT_DIR/build}"
 STRICTNESS="${STRICTNESS:-10}"
 PLUGINVAL="${PLUGINVAL:-/Applications/pluginval.app/Contents/MacOS/pluginval}"
 ARCH=$(uname -m)
-JOBS=$(sysctl -n hw.ncpu 2>/dev/null || echo 4)
+JOBS=${JOBS:-$(sysctl -n hw.ncpu 2>/dev/null || echo 4)}
 
 info() { echo "==> $*"; }
 
 info "Configuring ($ARCH) in $BUILD_DIR"
-cmake -S "$ROOT_DIR" -B "$BUILD_DIR" -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="$ARCH" >/dev/null
+cmake -S "$ROOT_DIR" -B "$BUILD_DIR" -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="$ARCH" -DBQST_BUILD_TESTS=ON >/dev/null
 
 info "Building all plugin formats + unit tests"
 TARGETS="BQST_VST3 BQST_Standalone BqstDspTests BqstChainTests BqstCreamTests BqstGritLabTests"
 if [ "$(uname)" = "Darwin" ]; then
     # An AU-only compile break used to survive every pre-release check.
-    TARGETS="$TARGETS BQST_AU"
+    # The needle layer tests exist only on macOS.
+    TARGETS="$TARGETS BQST_AU BqstVuNeedleTests"
 fi
 # shellcheck disable=SC2086
 cmake --build "$BUILD_DIR" --target $TARGETS -j "$JOBS"
 
 info "Running unit tests"
-ctest --test-dir "$BUILD_DIR" --output-on-failure
+ctest --test-dir "$BUILD_DIR" --output-on-failure --no-tests=error
 
 PRODUCT_NAME="BQST"
 if grep -q '^BQST_GRIT_LAB:BOOL=ON$' "$BUILD_DIR/CMakeCache.txt"; then
     PRODUCT_NAME="BQST Grit Lab"
 fi
-VST3=$(find "$BUILD_DIR" -name "$PRODUCT_NAME.vst3" -type d | head -1)
+# Only the freshly built artefact: a search of the whole build tree once picked a stale snapshot.
+VST3=$(find "$BUILD_DIR/BQST_artefacts" -name "$PRODUCT_NAME.vst3" -type d 2>/dev/null | head -1)
 
 # pluginval is a release gate, so a missing binary must fail rather than quietly pass. Set
 # SKIP_PLUGINVAL=1 to opt out deliberately; the final message then says so.
@@ -48,7 +51,7 @@ if [ -x "$PLUGINVAL" ] && [ -n "$VST3" ]; then
 elif [ "${SKIP_PLUGINVAL:-0}" = "1" ]; then
     info "All checks passed EXCEPT pluginval, which was skipped via SKIP_PLUGINVAL=1."
 else
-    echo "ERROR: pluginval not found at '$PLUGINVAL'${VST3:+}" >&2
+    [ -x "$PLUGINVAL" ] || echo "ERROR: pluginval not found or not executable at '$PLUGINVAL'" >&2
     [ -n "$VST3" ] || echo "ERROR: no built BQST.vst3 found under '$BUILD_DIR'" >&2
     echo "Set PLUGINVAL=/path/to/pluginval, or SKIP_PLUGINVAL=1 to bypass deliberately." >&2
     exit 1

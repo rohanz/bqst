@@ -18,7 +18,6 @@ constexpr auto saturationDriveScale = 0.40f;
 // drive range, reaching full strength at 6 dB of the 18 dB range. bqt::CreamModel uses the same
 // ramp internally for its net tilt and DC blocker.
 constexpr auto colorationRampScale = 3.0f;
-constexpr auto dcBlockerHz = 5.0f;
 // Control-rate subdivision for the expensive per-sample recomputations (shelf coefficient
 // redesign and the autogain pow). Smoothers still advance every sample, so ramp timing is
 // unchanged; only the derived values are refreshed every N samples. At 48 kHz this is ~3 kHz,
@@ -113,7 +112,12 @@ void BqtAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
 
     const juce::dsp::ProcessSpec spec { sampleRate, static_cast<juce::uint32>(samplesPerBlock), 1 };
     for (auto& side : filters)
-        side.forEachFilter([&spec](Filter& filter) { filter.prepare(spec); filter.reset(); });
+        side.forEachFilter(
+            [&spec](auto& filter)
+            {
+                filter.prepare(spec);
+                filter.reset();
+            });
 
     for (auto& dryBuffer : dryBuffers)
         dryBuffer.setSize(1, samplesPerBlock * 8, false, false, true);
@@ -226,17 +230,18 @@ void BqtAudioProcessor::updateSaturationToneFilters()
         *filters[sideIndex].vintage.coefficients = ArrayCoeffs::makeHighShelf(
             currentSampleRate, static_cast<float>(bqt::cream::vintageHz), static_cast<float>(bqt::cream::vintageQ),
             dbToGain(vintageEnabled != 0 ? static_cast<float>(bqt::cream::vintageDb) : 0.0f));
-        *filters[sideIndex].hybridCapturedVintage.coefficients = ArrayCoeffs::makeHighShelf(
-            currentSampleRate, static_cast<float>(bqt::cream::vintageHz), static_cast<float>(bqt::cream::vintageQ),
-            dbToGain(vintageEnabled != 0 ? static_cast<float>(bqt::cream::vintageDb) : 0.0f));
+        // The same shelf for the Legacy/Hybrid Grit path, designed in Grit's precision.
+        using GritValue = LegacyGrit::Value;
+        const auto gritVintage = juce::dsp::IIR::ArrayCoefficients<GritValue>::makeHighShelf(
+            currentSampleRate, static_cast<GritValue>(bqt::cream::vintageHz),
+            static_cast<GritValue>(bqt::cream::vintageQ),
+            juce::Decibels::decibelsToGain(vintageEnabled != 0 ? static_cast<GritValue>(bqt::cream::vintageDb)
+                                                               : GritValue(0)));
+        *filters[sideIndex].gritVintage.coefficients = gritVintage;
+        *filters[sideIndex].hybridCapturedVintage.coefficients = gritVintage;
         creamModels[sideIndex].prepare(currentSampleRate);
         gritLabModels[sideIndex].prepare(currentSampleRate);
-        *filters[sideIndex].saturationLowGuardPre.coefficients = ArrayCoeffs::makeLowShelf(currentSampleRate, 95.0f, 0.55f, dbToGain(-2.2f));
-        *filters[sideIndex].saturationLowGuardPost.coefficients = ArrayCoeffs::makeLowShelf(currentSampleRate, 95.0f, 0.55f, dbToGain(2.2f));
-        *filters[sideIndex].transformerLowDrive.coefficients = ArrayCoeffs::makeLowShelf(currentSampleRate, 165.0f, 0.62f, dbToGain(1.10f));
-        *filters[sideIndex].transformerLowRestore.coefficients = ArrayCoeffs::makeLowShelf(currentSampleRate, 165.0f, 0.62f, dbToGain(-0.70f));
-        *filters[sideIndex].transformerWeight.coefficients = ArrayCoeffs::makePeakFilter(currentSampleRate, 245.0f, 0.72f, dbToGain(0.55f));
-        *filters[sideIndex].transformerTop.coefficients = ArrayCoeffs::makeHighShelf(currentSampleRate, 7800.0f, 0.50f, dbToGain(-0.75f));
+        filters[sideIndex].legacy.configure(currentSampleRate, false);
     }
 }
 
@@ -245,13 +250,17 @@ void BqtAudioProcessor::resetSaturationState()
     for (auto& model : gritLabModels)
         model.reset();
     for (auto& side : filters)
-        side.forEachSaturationFilter([](Filter& filter) { filter.reset(); });
+        side.forEachSaturationFilter(
+            [](auto& filter)
+            {
+                filter.reset();
+            });
 
     for (auto& model : creamModels)
         model.reset();
 
-    dcBlockPreviousInput = {};
-    dcBlockPreviousOutput = {};
+    for (auto& side : filters)
+        side.legacy.resetDC();
 }
 
 BqtAudioProcessor::StructuralConfig BqtAudioProcessor::readStructuralConfig() const
@@ -439,10 +448,6 @@ void BqtAudioProcessor::processSide(float* samples, int numSamples, int sideInde
         // place the instant Drive leaves 0.0. The filters still process every sample, so their
         // state stays warm and the blend can rise without a transient. Cream ramps its own tone
         // shaping and DC blocker inside bqt::CreamModel.
-        const auto dcBlockCoefficient = std::exp(-2.0f * juce::MathConstants<float>::pi
-                                                 * dcBlockerHz / static_cast<float>(currentSampleRate));
-        auto& previousInput = dcBlockPreviousInput[smoothIndex];
-        auto& previousOutput = dcBlockPreviousOutput[smoothIndex];
         auto autoGain = 1.0f;
         auto capturedAlignment = 1.0f;
         auto capturedColor = 0.0f;
@@ -503,32 +508,30 @@ void BqtAudioProcessor::processSide(float* samples, int numSamples, int sideInde
                 }
                 else
                 {
-                    auto capturedValue = 0.0f;
+                    // Legacy and Hybrid stay in Grit's precision until the wet sample is final.
+                    using GritValue = LegacyGrit::Value;
+                    const auto input = static_cast<GritValue>(value);
+                    const auto gritDrive = static_cast<GritValue>(drive);
+                    const auto gritColor = std::min(GritValue(1), gritDrive * GritValue(colorationRampScale));
+                    auto capturedValue = GritValue(0);
                     if (isHybrid)
                     {
-                        capturedValue = static_cast<float>(gritLabModels[smoothIndex].process(value));
+                        capturedValue = static_cast<GritValue>(gritLabModels[smoothIndex].process(input));
                         capturedValue += (sideFilters.hybridCapturedVintage.processSample(capturedValue)
-                                          - capturedValue) * capturedColor;
+                                          - capturedValue) * static_cast<GritValue>(capturedColor);
                     }
-                    value = colored(sideFilters.saturationLowGuardPre, value);
-                    value = colored(sideFilters.transformerLowDrive, value);
-                    value = colored(sideFilters.transformerWeight, value);
-                    value *= driveGainValue;
-                    value = bqt::transformerSaturate(value, drive);
-                    value = colored(sideFilters.transformerLowRestore, value);
-                    value = colored(sideFilters.transformerTop, value);
-                    value = colored(sideFilters.saturationLowGuardPost, value);
-                    value = colored(sideFilters.vintage, value);
-
-                    // Grit's curve is asymmetric and only subtracts a constant tanh(bias), so it leaves
-                    // a signal-dependent DC offset. Blended by the colour factor so drive -> 0 stays
-                    // exactly transparent; there is negligible DC to remove at low drive anyway.
-                    const auto blocked = value - previousInput + dcBlockCoefficient * previousOutput;
-                    previousInput = value;
-                    previousOutput = blocked;
-                    value += (blocked - value) * color;
+                    sideFilters.legacy.setDrive(gritDrive);
+                    auto gritValue = sideFilters.legacy.process(
+                        input, gritDrive, static_cast<GritValue>(driveGainValue),
+                        [&](GritValue sampleValue)
+                        {
+                            return sampleValue
+                                 + (sideFilters.gritVintage.processSample(sampleValue) - sampleValue) * gritColor;
+                        });
                     if (isHybrid)
-                        value = bqt::GritHybrid::blend(value, capturedValue, capturedAlignment);
+                        gritValue = bqt::GritHybrid::blend(gritValue, capturedValue,
+                                                           static_cast<GritValue>(capturedAlignment));
+                    value = static_cast<float>(gritValue);
                 }
             }
 

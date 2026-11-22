@@ -32,8 +32,10 @@ struct GritHybrid
         return static_cast<float>(GritLabModel::autoGain(capturedKnob(db)))
              / saturationAutoGain(static_cast<float>(db / 18.0), SaturationType::transformer);
     }
-    static float blend(float legacy, float captured, float alignment)
-    { return (1.0f - capturedMix) * legacy + capturedMix * captured * alignment; }
+    template <typename T> static T blend(T legacy, T captured, T alignment)
+    {
+        return (T(1) - T(capturedMix)) * legacy + T(capturedMix) * captured * alignment;
+    }
     static float autoGain(float db)
     {
         return static_cast<float>(std::pow(10.0,

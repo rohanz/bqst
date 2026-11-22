@@ -7,6 +7,11 @@
 namespace
 {
 using namespace bqst::ui;
+
+// The 104 px header holds two rounded strips: presets/bypass/about (48 px, 32 px controls), a
+// 12 px gap, then the global controls (44 px, 30 px controls).
+constexpr int presetBarHeight = 48;
+constexpr int headerRowGap = 12;
 } // namespace
 
 void BqtAudioProcessorEditor::paint(juce::Graphics& g)
@@ -24,22 +29,26 @@ void BqtAudioProcessorEditor::paint(juce::Graphics& g)
     rackArea.removeFromTop(10.0f);
     auto rack = getRackFaceBounds(rackArea);
     auto header = rack.withY(headerSlot.getY()).withHeight(headerSlot.getHeight());
-    auto presetBar = header.removeFromTop(48.0f);
-    auto top = header.removeFromTop(56.0f);
+    auto presetBar = header.removeFromTop(static_cast<float>(presetBarHeight));
+    header.removeFromTop(static_cast<float>(headerRowGap));
+    auto top = header;
 
-    g.setColour(juce::Colour(0xff1b1b1b));
-    g.fillRoundedRectangle(presetBar.getUnion(top), 5.0f);
-    g.setColour(juce::Colour(panelText));
-    g.setFont(juce::Font(faceFont(27.0f, true)));
-    g.drawText("bqst",
-               presetBar.withTrimmedLeft(14.0f).withTrimmedTop(5.0f).withHeight(34.0f).toNearestInt(),
-               juce::Justification::centredLeft);
+    // Two soft tinted strips, one per row, each a step deeper than the plate below.
+    g.setColour(juce::Colour(barTint));
+    g.fillRoundedRectangle(presetBar, barCorner);
+    g.fillRoundedRectangle(top, barCorner);
+    g.setColour(juce::Colour(ink));
+    g.setFont(juce::Font(faceFont(26.0f, true)));
+    g.drawText("bqst", presetBar.withTrimmedLeft(18.0f).toNearestInt(), juce::Justification::centredLeft);
 }
 
 void BqtAudioProcessorEditor::RackComponent::paint(juce::Graphics& g)
 {
+    // Cache at the target's real pixel density (editor scale x display or snapshot scale) so the
+    // plate stays sharp at any editor size.
     const auto layerScale = juce::jlimit(1.0f, 4.0f,
-                                         juce::Component::getApproximateScaleFactorForComponent(this));
+                                         juce::jmax(juce::Component::getApproximateScaleFactorForComponent(this),
+                                                    g.getInternalContext().getPhysicalPixelScaleFactor()));
     const auto desiredWidth = static_cast<int>(std::ceil(static_cast<float>(getWidth()) * layerScale));
     const auto desiredHeight = static_cast<int>(std::ceil(static_cast<float>(getHeight()) * layerScale));
 
@@ -73,46 +82,26 @@ void BqtAudioProcessorEditor::paintRack(juce::Graphics& g)
 
     auto drawPlate = [&g](juce::Rectangle<float> plate, const juce::String& title)
     {
-        juce::ColourGradient plateGradient(juce::Colour(panelPink).brighter(0.04f), plate.getX(), plate.getY(),
-                                           juce::Colour(panelPinkDark).brighter(0.02f), plate.getX(), plate.getBottom(), false);
+        // One clean painted pink: a barely-there top-to-bottom shift, no grain or brush lines.
+        const auto pink = juce::Colour(panelPink);
+        juce::ColourGradient plateGradient(pink, plate.getX(), plate.getY(),
+                                           pink.interpolatedWith(juce::Colour(panelPinkDark), 0.35f),
+                                           plate.getX(), plate.getBottom(), false);
         g.setGradientFill(plateGradient);
         g.fillRect(plate);
 
-        juce::Random grainRandom(0xB071500);
-        for (int i = 0; i < 1600; ++i)
-        {
-            const auto x = plate.getX() + grainRandom.nextFloat() * plate.getWidth();
-            const auto y = plate.getY() + grainRandom.nextFloat() * plate.getHeight();
-            const auto size = 0.25f + grainRandom.nextFloat() * 0.85f;
-            const auto bright = grainRandom.nextBool();
-            const auto alpha = 0.013f + grainRandom.nextFloat() * 0.034f;
-            g.setColour(bright ? juce::Colours::white.withAlpha(alpha)
-                               : juce::Colours::black.withAlpha(alpha * 0.72f));
-            g.fillEllipse(x, y, size, size);
-        }
-
-        for (int i = 0; i < 230; ++i)
-        {
-            const auto y = plate.getY() + grainRandom.nextFloat() * plate.getHeight();
-            const auto x = plate.getX() + grainRandom.nextFloat() * plate.getWidth() * 0.10f;
-            const auto width = plate.getWidth() * (0.35f + grainRandom.nextFloat() * 0.72f);
-            const auto alpha = 0.014f + grainRandom.nextFloat() * 0.024f;
-            g.setColour((i % 3 == 0 ? juce::Colours::white : juce::Colours::black).withAlpha(alpha));
-            g.drawLine(x, y, juce::jmin(plate.getRight(), x + width), y + grainRandom.nextFloat() * 0.25f, 0.45f);
-        }
-
-        juce::ColourGradient satin(juce::Colours::white.withAlpha(0.10f), plate.getX(), plate.getY(),
-                                   juce::Colours::black.withAlpha(0.07f), plate.getRight(), plate.getBottom(), false);
+        // A single soft satin highlight across the upper part of the plate.
+        juce::ColourGradient satin(juce::Colours::white.withAlpha(0.13f), plate.getCentreX(), plate.getY() + plate.getHeight() * 0.18f,
+                                   juce::Colours::white.withAlpha(0.0f), plate.getCentreX() + plate.getWidth() * 0.95f,
+                                   plate.getY() + plate.getHeight() * 0.18f, true);
+        satin.addColour(0.45, juce::Colours::white.withAlpha(0.05f));
         g.setGradientFill(satin);
         g.fillRect(plate);
-
-        g.setColour(juce::Colours::black.withAlpha(0.08f));
-        g.drawRect(plate.reduced(4.0f), 1.0f);
 
         g.setColour(juce::Colour(ink));
         g.drawRect(plate, 3.0f);
 
-        const auto screwColour = juce::Colour(0xff545454);
+        const auto screwColour = juce::Colour(0xff7d7d7d);
         const auto screwSize = 14.0f;
         const auto screwInsetY = plate.getHeight() * (screwInsetYInches / panelHeightInches);
         const auto screwX1 = plate.getX() + plate.getWidth() * 0.25f;
@@ -125,11 +114,16 @@ void BqtAudioProcessorEditor::paintRack(juce::Graphics& g)
                                   juce::Point<float>(screwX1, screwY2),
                                   juce::Point<float>(screwX2, screwY2) })
         {
+            // Rack screws: a flat grey cross-head. Two greys, like the meter's screws.
             const auto screw = juce::Rectangle<float>(screwSize, screwSize).withCentre(screwCentre);
-            g.setColour(juce::Colours::black.withAlpha(0.22f));
-            g.fillEllipse(screw.translated(1.0f, 1.5f));
             g.setColour(screwColour);
             g.fillEllipse(screw);
+            juce::Path cross;
+            const auto arm = screwSize * 0.62f, thick = screwSize * 0.17f;
+            cross.addRoundedRectangle(-arm * 0.5f, -thick * 0.5f, arm, thick, thick * 0.3f);
+            cross.addRoundedRectangle(-thick * 0.5f, -arm * 0.5f, thick, arm, thick * 0.3f);
+            g.setColour(screwColour.darker(0.25f));
+            g.fillPath(cross, juce::AffineTransform::rotation(juce::degreesToRadians(20.0f)).translated(screwCentre));
         }
 
         const auto brand = plate.withTrimmedLeft(8.0f).withTrimmedTop(6.0f).withWidth(102.0f).withHeight(78.0f);
@@ -155,7 +149,7 @@ void BqtAudioProcessorEditor::paintRack(juce::Graphics& g)
         const auto start = juce::degreesToRadians(220.0f);
         const auto end = juce::degreesToRadians(500.0f);
 
-        g.setColour(juce::Colour(panelText));
+        g.setColour(juce::Colour(plateInk));
         g.drawEllipse(juce::Rectangle<float>(radius * 2.0f, radius * 2.0f).withCentre(centre), 1.2f);
 
         for (int i = 0; i <= 20; ++i)
@@ -204,7 +198,7 @@ void BqtAudioProcessorEditor::paintRack(juce::Graphics& g)
         const auto labelGap = -5.0f;
         const auto font = juce::Font(faceFont(16.0f, true));
         g.setFont(font);
-        g.setColour(juce::Colour(panelText));
+        g.setColour(juce::Colour(plateInk));
 
         for (int i = 0; i < count; ++i)
         {
@@ -288,58 +282,79 @@ void BqtAudioProcessorEditor::paintRack(juce::Graphics& g)
 BqtAudioProcessorEditor::AboutPanel::AboutPanel()
 {
     setMouseCursor(juce::MouseCursor::NormalCursor);
+    setWantsKeyboardFocus(true);
+    setTitle("about");
+    setDescription("bqst. Baxandall EQ and saturation. Concept, programming, DSP, UI and product design: "
+                   "Rohan Kulshrestha. Version " JucePlugin_VersionString ", EBR Audio Tech.");
 }
 
+juce::Rectangle<int> BqtAudioProcessorEditor::AboutPanel::cardBounds() const
+{
+    return juce::Rectangle<int>(420, 230).withCentre(getLocalBounds().getCentre());
+}
+
+// A flat cream card with a hairline edge over the undimmed editor; every line in the face font's
+// semibold, set apart by size and ink strength.
 void BqtAudioProcessorEditor::AboutPanel::paint(juce::Graphics& g)
 {
-    const auto bounds = getLocalBounds().toFloat();
-    g.setColour(juce::Colours::black.withAlpha(0.32f));
-    g.fillRect(bounds);
+    const auto card = cardBounds();
+    g.setColour(juce::Colour(menuPanel));
+    g.fillRoundedRectangle(card.toFloat(), 10.0f);
+    g.setColour(juce::Colour(ink).withAlpha(0.25f));
+    g.drawRoundedRectangle(card.toFloat().reduced(0.5f), 10.0f, 1.0f);
 
-    auto card = bounds.withSizeKeepingCentre(390.0f, 270.0f);
-    g.setColour(juce::Colour(0xfff2f0ee));
-    g.fillRoundedRectangle(card, 6.0f);
-    g.setColour(juce::Colours::black.withAlpha(0.20f));
-    g.drawRoundedRectangle(card, 6.0f, 1.0f);
+    auto line = [&g](const juce::String& text, juce::Rectangle<int> area, float height, float alpha,
+                     juce::Justification justification = juce::Justification::centredLeft)
+    {
+        g.setColour(juce::Colour(ink).withAlpha(alpha));
+        g.setFont(juce::Font(faceFont(height, true)));
+        g.drawText(text, area, justification);
+    };
 
-    g.setColour(juce::Colour(ink).withAlpha(0.72f));
-    const auto closeCross = closeBounds.toFloat();
-    g.drawLine(closeCross.getX() + 10.0f, closeCross.getY() + 10.0f,
-               closeCross.getRight() - 10.0f, closeCross.getBottom() - 10.0f, 1.2f);
-    g.drawLine(closeCross.getRight() - 10.0f, closeCross.getY() + 10.0f,
-               closeCross.getX() + 10.0f, closeCross.getBottom() - 10.0f, 1.2f);
-
-    auto content = card.reduced(28.0f, 26.0f);
-    g.setColour(juce::Colour(ink));
-    g.setFont(juce::Font(faceFont(30.0f, true)));
-    g.drawText("bqst", content.removeFromTop(40.0f).toNearestInt(), juce::Justification::centredLeft);
-
-    g.setFont(juce::Font(faceFont(14.0f, false)));
-    g.drawText("Baxandall EQ and Saturation", content.removeFromTop(24.0f).toNearestInt(), juce::Justification::centredLeft);
-    content.removeFromTop(24.0f);
-
-    auto row = content.removeFromTop(72.0f);
-    g.setFont(juce::Font(faceFont(14.0f, true)));
-    g.drawFittedText("Concept, programming,\nDSP design, UI design,\nand product design",
-                     row.removeFromLeft(170.0f).toNearestInt(), juce::Justification::topLeft, 4);
-    g.setFont(juce::Font(faceFont(14.0f, false)));
-    g.drawText("Rohan Kulshrestha", row.toNearestInt(), juce::Justification::topLeft);
-
-    auto footer = card.reduced(28.0f, 22.0f).removeFromBottom(32.0f);
-    g.setFont(juce::Font(faceFont(14.0f, false)));
-    g.drawText("Version " JucePlugin_VersionString, footer.toNearestInt(), juce::Justification::centredLeft);
+    auto area = card.reduced(28, 22);
+    line("bqst", area.removeFromTop(40), 32.0f, 1.0f);
+    line("Baxandall EQ and saturation", area.removeFromTop(26), 17.0f, 0.75f);
+    area.removeFromTop(16);
+    line("Concept, programming, DSP, UI and product design", area.removeFromTop(22), 15.0f, 0.6f);
+    line("Rohan Kulshrestha", area.removeFromTop(26), 17.0f, 1.0f);
+    area.removeFromTop(16);
+    line("Version " JucePlugin_VersionString ", EBR Audio Tech", area.removeFromTop(22), 15.0f, 0.6f);
+    line("click anywhere to close", area.removeFromBottom(20), 13.0f, 0.45f, juce::Justification::centredRight);
 }
 
-void BqtAudioProcessorEditor::AboutPanel::resized()
+// Beside the card a press closes it at once; on the card, the release does.
+void BqtAudioProcessorEditor::AboutPanel::mouseDown(const juce::MouseEvent& event)
 {
-    const auto card = getLocalBounds().toFloat().withSizeKeepingCentre(390.0f, 270.0f).toNearestInt();
-    closeBounds = { card.getRight() - 46, card.getY() + 14, 34, 34 };
+    if (! cardBounds().contains(event.getPosition()) && onClose)
+        onClose();
 }
 
 void BqtAudioProcessorEditor::AboutPanel::mouseUp(const juce::MouseEvent& event)
 {
-    if (closeBounds.contains(event.getPosition()) && onClose)
+    if (cardBounds().contains(event.getMouseDownPosition()) && onClose)
         onClose();
+}
+
+// Escape closes; Tab and undo/redo do nothing while it is open; anything else (the host's
+// transport keys) passes through.
+bool BqtAudioProcessorEditor::AboutPanel::keyPressed(const juce::KeyPress& key)
+{
+    if (key == juce::KeyPress::escapeKey)
+    {
+        if (onClose)
+            onClose();
+        return true;
+    }
+
+    const auto mods = key.getModifiers();
+    return key.getKeyCode() == juce::KeyPress::tabKey
+        || ((mods.isCommandDown() || mods.isCtrlDown())
+            && juce::CharacterFunctions::toLowerCase(static_cast<juce::juce_wchar>(key.getKeyCode())) == 'z');
+}
+
+std::unique_ptr<juce::AccessibilityHandler> BqtAudioProcessorEditor::AboutPanel::createAccessibilityHandler()
+{
+    return std::make_unique<juce::AccessibilityHandler>(*this, juce::AccessibilityRole::dialogWindow);
 }
 
 void BqtAudioProcessorEditor::RackComponent::setBypassed(bool shouldBeBypassed)
@@ -365,6 +380,7 @@ void BqtAudioProcessorEditor::RackComponent::paintOverChildren(juce::Graphics& g
 
 void BqtAudioProcessorEditor::resized()
 {
+    bqt::editor::storeWidth(audioProcessor.state().state, getWidth());
     const auto uiScale = static_cast<float>(getWidth()) / static_cast<float>(baseEditorWidth);
 
     auto applyUiScale = [uiScale](juce::Component& component)
@@ -377,11 +393,12 @@ void BqtAudioProcessorEditor::resized()
                              static_cast<juce::Component*>(&presetNext), static_cast<juce::Component*>(&presetSave),
                              static_cast<juce::Component*>(&aboutButton),
                              static_cast<juce::Component*>(&inputTrimLabel), static_cast<juce::Component*>(&inputTrim),
+                             static_cast<juce::Component*>(&eqCaption), static_cast<juce::Component*>(&satCaption),
                              static_cast<juce::Component*>(&eqMode), static_cast<juce::Component*>(&satMode),
                              static_cast<juce::Component*>(&osRealtime), static_cast<juce::Component*>(&osRender),
                              static_cast<juce::Component*>(&autoGain), static_cast<juce::Component*>(&eqLink),
                              static_cast<juce::Component*>(&satLink),
-                             static_cast<juce::Component*>(&bypass), static_cast<juce::Component*>(&sizeSelect),
+                             static_cast<juce::Component*>(&bypass),
                              static_cast<juce::Component*>(&readoutBubble), static_cast<juce::Component*>(&aboutPanel) })
         applyUiScale(*component);
 
@@ -392,69 +409,55 @@ void BqtAudioProcessorEditor::resized()
     auto header = getRackFaceBounds(rackArea.toFloat()).toNearestInt()
                       .withY(headerSlot.getY())
                       .withHeight(headerSlot.getHeight());
-    auto presetBar = header.removeFromTop(48).reduced(8, 7);
-    auto top = header.removeFromTop(56).reduced(8, 9);
-    constexpr int topControlHeight = 36;
+    presetBarBounds = header.removeFromTop(presetBarHeight);
+    header.removeFromTop(headerRowGap);
+    constexpr int pairGap = 4; // between the parts of one group
 
-    constexpr int topGap = 4;
-    auto topSlot = [](juce::Rectangle<int> area) { return area.withSizeKeepingCentre(area.getWidth(), topControlHeight); };
+    // Row 1 (32 px controls): wordmark and presets from the left, bypass and about in the
+    // top-right corner.
+    auto presetRow = presetBarBounds.reduced(10, 8);
+    presetRow.removeFromLeft(118); // wordmark
+    auto placeLeft = [&](juce::Component& control, int width, int gapAfter)
+    {
+        control.setBounds(presetRow.removeFromLeft(width));
+        presetRow.removeFromLeft(gapAfter);
+    };
+    placeLeft(presetPrevious, 30, pairGap);
+    placeLeft(presetMenuButton, 200, pairGap);
+    placeLeft(presetNext, 30, pairGap);
+    placeLeft(presetSave, 56, 0);
+    aboutButton.setBounds(presetRow.removeFromRight(68));
+    presetRow.removeFromRight(8);
+    bypass.setBounds(presetRow.removeFromRight(80));
 
-    sizeSelect.setBounds(topSlot(presetBar.removeFromRight(82)));
-    constexpr int presetPreviousWidth = 38;
-    constexpr int presetMenuWidth = 320;
-    constexpr int presetNextWidth = 38;
-    constexpr int presetSaveWidth = 70;
-    constexpr int aboutWidth = 86;
-    auto presetButtonBounds = juce::Rectangle<int>(presetMenuWidth, presetBar.getHeight())
-                                  .withCentre({ baseEditorWidth / 2, presetBar.getCentreY() });
-    presetMenuButton.setBounds(topSlot(presetButtonBounds));
-    aboutButton.setBounds(topSlot({ presetButtonBounds.getX() - (topGap * 2) - presetPreviousWidth - aboutWidth,
-                                    presetBar.getY(),
-                                    aboutWidth,
-                                    presetBar.getHeight() }));
-    presetPrevious.setBounds(topSlot({ presetButtonBounds.getX() - topGap - presetPreviousWidth,
-                                       presetBar.getY(),
-                                       presetPreviousWidth,
-                                       presetBar.getHeight() }));
-    presetNext.setBounds(topSlot({ presetButtonBounds.getRight() + topGap,
-                                   presetBar.getY(),
-                                   presetNextWidth,
-                                   presetBar.getHeight() }));
-    presetSave.setBounds(topSlot({ presetNext.getRight() + topGap,
-                                   presetBar.getY(),
-                                   presetSaveWidth,
-                                   presetBar.getHeight() }));
-
-    constexpr int inputLabelWidth = 47;
-    constexpr int inputControlWidth = 48;
-    constexpr int numTopButtons = 8;
-    int topButtonWidths[] = { 80, 70, 80, 70, 112, 112, 78, 70 };
-    int preferredTopWidth = inputLabelWidth + inputControlWidth + (numTopButtons * topGap);
-    for (const auto width : topButtonWidths)
-        preferredTopWidth += width;
-
-    auto extraTopWidth = juce::jmax(0, top.getWidth() - preferredTopWidth);
-    for (auto i = 0; i < numTopButtons; ++i)
-        topButtonWidths[i] += extraTopWidth / numTopButtons + (i < extraTopWidth % numTopButtons ? 1 : 0);
-
-    inputTrimLabel.setBounds(topSlot(top.removeFromLeft(inputLabelWidth)));
-    inputTrim.setBounds(topSlot(top.removeFromLeft(inputControlWidth)));
-    top.removeFromLeft(topGap);
-    eqMode.setBounds(topSlot(top.removeFromLeft(topButtonWidths[0])));
-    top.removeFromLeft(topGap);
-    eqLink.setBounds(topSlot(top.removeFromLeft(topButtonWidths[1])));
-    top.removeFromLeft(topGap);
-    satMode.setBounds(topSlot(top.removeFromLeft(topButtonWidths[2])));
-    top.removeFromLeft(topGap);
-    satLink.setBounds(topSlot(top.removeFromLeft(topButtonWidths[3])));
-    top.removeFromLeft(topGap);
-    osRealtime.setBounds(topSlot(top.removeFromLeft(topButtonWidths[4])));
-    top.removeFromLeft(topGap);
-    osRender.setBounds(topSlot(top.removeFromLeft(topButtonWidths[5])));
-    top.removeFromLeft(topGap);
-    autoGain.setBounds(topSlot(top.removeFromLeft(topButtonWidths[6])));
-    top.removeFromLeft(topGap);
-    bypass.setBounds(topSlot(top.removeFromLeft(topButtonWidths[7])));
+    // Row 2 (30 px controls): input | eq mode + link | sat mode + link | oversampling | autogain.
+    // Each group keeps its own widths; what is left is shared equally between the groups.
+    auto globalRow = header.reduced(10, 7);
+    struct Part { juce::Component* control; int width; };
+    const std::vector<std::vector<Part>> groups {
+        { { &inputTrimLabel, 38 }, { &inputTrim, 30 } },
+        { { &eqCaption, 20 }, { &eqMode, 96 }, { &eqLink, 56 } },
+        { { &satCaption, 26 }, { &satMode, 96 }, { &satLink, 56 } },
+        { { &osRealtime, 110 }, { &osRender, 104 } },
+        { { &autoGain, 84 } },
+    };
+    auto usedWidth = 0;
+    for (const auto& group : groups)
+        for (size_t i = 0; i < group.size(); ++i)
+            usedWidth += group[i].width + (i > 0 ? pairGap : 0);
+    const auto gaps = static_cast<int>(groups.size()) - 1;
+    const auto spare = juce::jmax(0, globalRow.getWidth() - usedWidth);
+    for (size_t g = 0; g < groups.size(); ++g)
+    {
+        for (size_t i = 0; i < groups[g].size(); ++i)
+        {
+            if (i > 0)
+                globalRow.removeFromLeft(pairGap);
+            groups[g][i].control->setBounds(globalRow.removeFromLeft(groups[g][i].width));
+        }
+        if (static_cast<int>(g) < gaps)
+            globalRow.removeFromLeft(spare / gaps + (static_cast<int>(g) < spare % gaps ? 1 : 0));
+    }
 
     bounds.removeFromTop(10);
     auto rackFloat = getRackFaceBounds(bounds.toFloat());
@@ -526,16 +529,58 @@ void BqtAudioProcessorEditor::resized()
     aboutPanel.toFront(false);
 }
 
+// About is modal for this editor only (a real modal state would also block every other open
+// BQST): it appears at once, takes the keyboard focus, and the controls underneath leave the
+// accessibility tree until it closes.
 void BqtAudioProcessorEditor::showAboutPanel()
 {
+    if (aboutPanel.isVisible())
+        return;
+
     hideReadout();
     hideTopBarHelp();
+    auto* focused = juce::Component::getCurrentlyFocusedComponent();
+    focusBeforeAbout = focused != nullptr && (focused == this || isParentOf(focused)) ? focused : nullptr;
+    hiddenFromAccessibility.clear();
+    for (auto* child : getChildren())
+        if (child != &aboutPanel && child->isAccessible())
+        {
+            hiddenFromAccessibility.emplace_back(child);
+            child->setAccessible(false);
+        }
+
     aboutPanel.setVisible(true);
-    aboutPanel.toFront(true);
-    aboutPanel.grabKeyboardFocus();
+    aboutPanel.toFront(false);
+    if (aboutPanel.isShowing())
+        aboutPanel.grabKeyboardFocus();
 }
 
 void BqtAudioProcessorEditor::hideAboutPanel()
 {
+    if (! aboutPanel.isVisible())
+        return;
+
+    const auto hadFocus = aboutPanel.hasKeyboardFocus(true);
     aboutPanel.setVisible(false);
+    for (auto& child : hiddenFromAccessibility)
+        if (child != nullptr)
+            child->setAccessible(true);
+    hiddenFromAccessibility.clear();
+
+    // Focus goes back where it was; if it came from outside the editor, it is let go.
+    if (auto* previous = focusBeforeAbout.getComponent(); previous != nullptr && previous->isShowing())
+        previous->grabKeyboardFocus();
+    else if (hadFocus)
+        giveAwayKeyboardFocus();
+    focusBeforeAbout = nullptr;
+}
+
+void BqtAudioProcessorEditor::setFocusRingsVisible(bool shouldShow)
+{
+    if (hardwareLookAndFeel.areFocusRingsVisible() == shouldShow)
+        return;
+
+    hardwareLookAndFeel.setFocusRingsVisible(shouldShow);
+    if (auto* focused = juce::Component::getCurrentlyFocusedComponent(); focused != nullptr && isParentOf(focused))
+        focused->repaint();
 }

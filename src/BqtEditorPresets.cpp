@@ -23,8 +23,8 @@ void BqtAudioProcessorEditor::showPresetMenu()
     if (presets.isEmpty())
         return;
 
+    // Factory presets at the top level (their categories as submenus), then a "user" section.
     juce::PopupMenu menu;
-    juce::PopupMenu factoryMenu;
     juce::PopupMenu userMenu;
     juce::StringArray factoryCategories;
     juce::StringArray userCategories;
@@ -59,21 +59,23 @@ void BqtAudioProcessorEditor::showPresetMenu()
         }
     };
 
-    addCategoryMenus(factoryMenu, factoryCategories, true);
+    addCategoryMenus(menu, factoryCategories, true);
     addCategoryMenus(userMenu, userCategories, false);
 
-    menu.addSubMenu("Factory", factoryMenu);
     if (userMenu.getNumItems() > 0)
-        menu.addSubMenu("User", userMenu);
-    else
-        menu.addItem(-1, "No user presets", false);
+    {
+        menu.addSeparator();
+        menu.addSectionHeader("user");
+        for (juce::PopupMenu::MenuItemIterator item(userMenu); item.next();)
+            menu.addItem(item.getItem());
+    }
 
-    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&presetMenuButton),
-                       [this](int result)
-                       {
-                           if (result > 0)
-                               loadPreset(result - 1);
-                       });
+    // Opens like every other menu in the editor: under the field, at least as wide, 26 px rows.
+    BqtHardwareLookAndFeel::showMenuUnder(menu, presetMenuButton, [this](int result)
+    {
+        if (result > 0)
+            loadPreset(result - 1);
+    });
 }
 
 bool BqtAudioProcessorEditor::loadPreset(int index)
@@ -171,12 +173,15 @@ void BqtAudioProcessorEditor::saveUserPreset()
 void BqtAudioProcessorEditor::updatePresetButtonText()
 {
     const auto& presets = presetManager.getPresets();
-    if (presets.isEmpty())
+    const auto name = presets.isEmpty() ? juce::String("No Presets")
+        : presets.getReference(juce::jlimit(0, presets.size() - 1, selectedPresetIndex)).name;
+    presetMenuButton.setButtonText(name);
+    // Hovering the field reads out the full name, which a long one may not fit.
+    presetMenuButton.getProperties().set("bqtHelpText", name);
+    if (hoveredHelpComponent == &presetMenuButton && hoveredHelpText != name)
     {
-        presetMenuButton.setButtonText("No Presets");
-        return;
+        hoveredHelpText = name;
+        if (helpVisible)
+            showReadout(presetMenuButton, name);
     }
-
-    const auto& preset = presets.getReference(juce::jlimit(0, presets.size() - 1, selectedPresetIndex));
-    presetMenuButton.setButtonText(preset.name);
 }

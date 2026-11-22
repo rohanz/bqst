@@ -16,19 +16,26 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
     undoableParameterIds = bqt::editor::undoableParameterIds(audioProcessor);
     setWantsKeyboardFocus(true);
     addKeyListener(this);
-    setSize(baseEditorWidth, baseEditorHeight);
+    const auto savedWidth = bqt::editor::restoredWidth(audioProcessor.state().state);
 
     addAndMakeVisible(rackComponent);
-    configureCombo(eqMode);
-    configureCombo(satMode);
+    addAndMakeVisible(eqMode);
+    addAndMakeVisible(satMode);
     configureCombo(osRealtime);
     configureCombo(osRender);
-    configureCombo(sizeSelect);
-    configureLabel(inputTrimLabel, "input", juce::Justification::centredLeft);
-    inputTrimLabel.setColour(juce::Label::textColourId, juce::Colour(panelText));
-    inputTrimLabel.setFont(faceFont(19.5f));
+    // Bar captions: quiet ink, smaller than the controls' own words.
+    for (auto [label, text] : { std::pair { &inputTrimLabel, "input" }, std::pair { &eqCaption, "eq" },
+                                std::pair { &satCaption, "sat" } })
+    {
+        configureLabel(*label, text, juce::Justification::centredLeft);
+        label->setColour(juce::Label::textColourId, juce::Colour(ink).withAlpha(0.6f));
+        label->setFont(faceFont(15.0f));
+        label->setBorderSize({});
+        label->setInterceptsMouseClicks(false, false);
+    }
     configureSlider(inputTrim);
     inputTrim.getProperties().set("bqtTopInputKnob", true);
+    inputTrim.setRepaintsOnMouseActivity(true);
     inputTrim.textFromValueFunction = [](double value) { return juce::String(value, 1) + " dB"; };
     inputTrim.setDoubleClickReturnValue(true, 0.0);
     addAndMakeVisible(presetPrevious);
@@ -41,7 +48,6 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
     addAndMakeVisible(satLink);
     rackComponent.addAndMakeVisible(vintage);
     addAndMakeVisible(bypass);
-    addAndMakeVisible(sizeSelect);
     rackComponent.addAndMakeVisible(meterA);
     rackComponent.addAndMakeVisible(meterB);
     meterA.setInterceptsMouseClicks(false, false);
@@ -58,28 +64,30 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
     presetSave.setButtonText("save");
     aboutButton.setButtonText("about");
     autoGain.setButtonText("autogain");
-    eqLink.setButtonText("eq link");
-    satLink.setButtonText("sat link");
+    // The "eq" and "sat" captions name each group, so the link buttons say only "link".
+    eqLink.setButtonText("link");
+    satLink.setButtonText("link");
+    eqLink.setTitle("eq link");
+    satLink.setTitle("sat link");
+    eqMode.setTitle("eq mode");
+    satMode.setTitle("sat mode");
+    eqMode.getHalf(0).setTitle("EQ left/right");
+    eqMode.getHalf(1).setTitle("EQ mid/side");
+    satMode.getHalf(0).setTitle("Saturation left/right");
+    satMode.getHalf(1).setTitle("Saturation mid/side");
     vintage.setButtonText("vint.");
     bypass.setButtonText("bypass");
-    eqMode.addItemList(juce::StringArray { "eq l/r", "eq m/s" }, 1);
-    satMode.addItemList(juce::StringArray { "sat l/r", "sat m/s" }, 1);
     osRealtime.addItemList(juce::StringArray { "realtime off", "realtime 2x", "realtime 4x", "realtime 8x" }, 1);
     osRender.addItemList(juce::StringArray { "render off", "render 2x", "render 4x", "render 8x" }, 1);
-    sizeSelect.addItemList(juce::StringArray { "75%", "100%", "125%", "150%" }, 1);
-    // Both the view size and the selected preset are session state, restored from the APVTS tree
-    // so reopening the editor does not silently reset the size or claim "Default" while the DSP
-    // is still on a loaded preset.
-    sizeSelect.setSelectedId(audioProcessor.state().state.getProperty("editorScale", 2),
-                             juce::dontSendNotification);
     selectedPresetKey = audioProcessor.state().state.getProperty("selectedPresetKey", juce::String()).toString();
     refreshPresetMenu();
 
     setTopBarHelp(presetPrevious, "Loads the previous preset.");
-    setTopBarHelp(presetMenuButton, "Loads factory and user presets.");
+    // The preset field's hover shows the current preset's name (see updatePresetButtonText).
+    setTopBarHelp(presetMenuButton, presetMenuButton.getButtonText());
     setTopBarHelp(presetNext, "Loads the next preset.");
     setTopBarHelp(presetSave, "Saves the current settings as a user preset.");
-    setTopBarHelp(aboutButton, "Shows plugin version, credits, and install details.");
+    setTopBarHelp(aboutButton, "Version and credits.");
     setTopBarHelp(inputTrim, "Adjusts level before the EQ and saturation. Control-drag compensates output trim.");
     setTopBarHelp(eqMode, "Chooses whether the EQ controls process left/right or mid/side.");
     setTopBarHelp(eqLink, "Links the two EQ sides: R/S follows L/M. Turn off to edit one side.");
@@ -89,7 +97,6 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
     setTopBarHelp(osRender, "Sets oversampling used for offline export or render.");
     setTopBarHelp(autoGain, "Compensates saturation drive level so changes are easier to compare.");
     setTopBarHelp(bypass, "Bypasses the whole plugin.");
-    setTopBarHelp(sizeSelect, "Scales the plugin window to 75%, 100%, 125% or 150%.");
     setTopBarHelp(vintage, "Gently rounds the top end after saturation.");
 
     for (auto* button : { &autoGain, &eqLink, &satLink, &bypass })
@@ -98,6 +105,19 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
         button->getProperties().set("bqtPushButton", true);
     aboutButton.getProperties().set("bqtPushButton", true);
 
+    for (auto* control : { static_cast<juce::Component*>(&presetPrevious), static_cast<juce::Component*>(&presetMenuButton),
+                           static_cast<juce::Component*>(&presetNext), static_cast<juce::Component*>(&presetSave),
+                           static_cast<juce::Component*>(&aboutButton), static_cast<juce::Component*>(&bypass),
+                           static_cast<juce::Component*>(&autoGain), static_cast<juce::Component*>(&eqLink),
+                           static_cast<juce::Component*>(&satLink), static_cast<juce::Component*>(&eqMode),
+                           static_cast<juce::Component*>(&satMode), static_cast<juce::Component*>(&osRealtime),
+                           static_cast<juce::Component*>(&osRender) })
+        control->getProperties().set("bqtFlatBar", true);
+    presetMenuButton.getProperties().set("bqtDropdown", true);
+    // Action buttons never latch; only the parameter toggles show an on state.
+    for (auto* button : { &presetPrevious, &presetMenuButton, &presetNext, &presetSave, &aboutButton })
+        button->setClickingTogglesState(false);
+
     presetPrevious.onClick = [this] { selectRelativePreset(-1); };
     presetMenuButton.onClick = [this] { showPresetMenu(); };
     presetNext.onClick = [this] { selectRelativePreset(1); };
@@ -105,31 +125,23 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
     aboutButton.onClick = [this] { showAboutPanel(); };
     aboutPanel.onClose = [this] { hideAboutPanel(); };
 
-    sizeSelect.onChange = [this]
+    setResizable(true, true);
+    setResizeLimits(bqt::editor::minimumWidth, bqt::editor::heightForWidth(bqt::editor::minimumWidth),
+                    bqt::editor::maximumWidth, bqt::editor::heightForWidth(bqt::editor::maximumWidth));
+    getConstrainer()->setFixedAspectRatio(static_cast<double>(baseEditorWidth) / baseEditorHeight);
+    setSize(savedWidth, bqt::editor::heightForWidth(savedWidth));
+
+    auto bindSwitch = [this](BqtSwitch& modeSwitch, const juce::String& parameterId)
     {
-        const auto nextScale = [this]
-        {
-            switch (sizeSelect.getSelectedId())
-            {
-                case 1: return 0.75f;
-                case 3: return 1.25f;
-                case 4: return 1.50f;
-                default: return 1.0f;
-            }
-        }();
-
-        audioProcessor.state().state.setProperty("editorScale", sizeSelect.getSelectedId(), nullptr);
-        setSize(static_cast<int>(std::round(static_cast<float>(baseEditorWidth) * nextScale)),
-                static_cast<int>(std::round(static_cast<float>(baseEditorHeight) * nextScale)));
+        auto attachment = std::make_unique<juce::ParameterAttachment>(
+            *audioProcessor.state().getParameter(parameterId),
+            [&modeSwitch](float index) { modeSwitch.setSelected(juce::roundToInt(index)); });
+        attachment->sendInitialUpdate();
+        modeSwitch.onSelect = [raw = attachment.get()](int index) { raw->setValueAsCompleteGesture(static_cast<float>(index)); };
+        return attachment;
     };
-
-    // The restored view size was set with dontSendNotification (the handler did not exist yet),
-    // so apply it now that it does.
-    if (sizeSelect.getSelectedId() != 2 && sizeSelect.onChange != nullptr)
-        sizeSelect.onChange();
-
-    eqModeAttachment = std::make_unique<ComboBoxAttachment>(audioProcessor.state(), "eqMode", eqMode);
-    satModeAttachment = std::make_unique<ComboBoxAttachment>(audioProcessor.state(), "satMode", satMode);
+    eqModeAttachment = bindSwitch(eqMode, "eqMode");
+    satModeAttachment = bindSwitch(satMode, "satMode");
     osRealtimeAttachment = std::make_unique<ComboBoxAttachment>(audioProcessor.state(), "osRealtime", osRealtime);
     osRenderAttachment = std::make_unique<ComboBoxAttachment>(audioProcessor.state(), "osRender", osRender);
     inputTrimAttachment = std::make_unique<SliderAttachment>(audioProcessor.state(), "inputTrim", inputTrim);
@@ -233,15 +245,20 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
         // over (the meters, every frame) can be drawn before then; flipping the state mid-frame
         // drew the meters dimmed one frame ahead of the rest of the rack.
         rackComponent.setBypassed(bypassLookPending);
+        const auto bypassed = rackComponent.isBypassed();
 
-        if (rackComponent.isBypassed())
-            return;
+        // Each meter marks only the strip its needle swept.
+        if (! bypassed)
+        {
+            meterA.updateLevel(elapsed);
+            meterB.updateLevel(elapsed);
+        }
 
-        if (meterA.updateLevel(elapsed))
-            meterA.repaint();
-
-        if (meterB.updateLevel(elapsed))
-            meterB.repaint();
+        // On macOS the needles may be presented in a native layer that the system moves at the
+        // display's own rate (see BqtVuNeedleLayer.h). The bypassed look is painted over the
+        // rack, which a native layer would hide, so the needles are painted while bypassed.
+        meterA.syncNeedlePresentation(! bypassed, elapsed);
+        meterB.syncNeedlePresentation(! bypassed, elapsed);
     });
 
     startTimerHz(60);
@@ -255,7 +272,6 @@ BqtAudioProcessorEditor::~BqtAudioProcessorEditor()
 
     inputTrim.removeListener(this);
     inputTrim.removeMouseListener(this);
-    sizeSelect.removeMouseListener(this);
 
     for (auto& controls : sideControls)
     {
@@ -283,7 +299,7 @@ BqtAudioProcessorEditor::~BqtAudioProcessorEditor()
                              static_cast<juce::Component*>(&osRealtime), static_cast<juce::Component*>(&osRender),
                              static_cast<juce::Component*>(&autoGain), static_cast<juce::Component*>(&eqLink),
                              static_cast<juce::Component*>(&satLink), static_cast<juce::Component*>(&bypass),
-                             static_cast<juce::Component*>(&vintage), static_cast<juce::Component*>(&sizeSelect) })
+                             static_cast<juce::Component*>(&vintage) })
         component->removeMouseListener(this);
 
     setLookAndFeel(nullptr);
@@ -306,7 +322,7 @@ void BqtAudioProcessorEditor::configureCombo(juce::ComboBox& combo)
 {
     // No JUCE tooltip: combos use the custom top-bar help system (setTopBarHelp), so a tooltip
     // here would show a second, redundant hint on hover.
-    combo.setColour(juce::ComboBox::textColourId, juce::Colour(ink));
+    combo.setColour(juce::ComboBox::textColourId, juce::Colour(ink).withAlpha(0.85f));
     addAndMakeVisible(combo);
 }
 

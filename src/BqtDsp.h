@@ -1,5 +1,7 @@
 #pragma once
 
+#include "BqtGritTone.h"
+
 #include <array>
 #include <cmath>
 #include <string>
@@ -127,21 +129,46 @@ inline std::array<float, 6> makeMatchedShelf(double sampleRate, double centreHz,
              1.0f, static_cast<float>(a1), static_cast<float>(a2) };
 }
 
-inline float transformerSaturate(float sample, float drive01)
+template <typename T> struct TransformerControlsT
 {
-    if (drive01 <= 0.0f)
-        return sample;
+    T drive = T(1.0), bias = T(0.0), biasCorrection = T(0.0), rounding = T(0.0), blend = T(0.0);
+    bool bypass = true;
+};
 
+template <typename T> inline TransformerControlsT<T> makeTransformerControlsFor(T drive01)
+{
+    if (drive01 <= T(0.0))
+        return {};
     const auto push = drive01 * drive01;
     const auto maxPush = push * drive01;
-    const auto drive = 0.92f + drive01 * 1.55f + push * 0.82f + maxPush * 1.15f;
-    const auto bias = 0.018f * drive01 + push * 0.010f + maxPush * 0.018f;
-    const auto biased = sample * drive + bias;
-    const auto shaped = std::tanh(biased * 0.86f) / std::tanh(0.86f) - std::tanh(bias * 0.86f) / std::tanh(0.86f);
-    const auto rounded = shaped - (0.025f * drive01 + 0.014f * push + 0.020f * maxPush) * shaped * shaped * shaped;
-    const auto blend = drive01 * 0.43f + push * 0.12f + maxPush * 0.14f;
+    const auto drive = T(0.92) + drive01 * T(1.55) + push * T(0.82) + maxPush * T(1.15);
+    const auto bias = T(0.018) * drive01 + push * T(0.010) + maxPush * T(0.018);
+    const auto biasCorrection = std::tanh(bias * T(0.86)) / std::tanh(T(0.86));
+    const auto rounding = T(0.025) * drive01 + T(0.014) * push + T(0.020) * maxPush;
+    const auto blend = drive01 * T(0.43) + push * T(0.12) + maxPush * T(0.14);
+    return { drive, bias, biasCorrection, rounding, blend, false };
+}
 
-    return sample * (1.0f - blend) + rounded * blend;
+template <typename T> inline T transformerSaturate(T sample, const TransformerControlsT<T>& controls)
+{
+    if (controls.bypass)
+        return sample;
+    const auto biased = sample * controls.drive + controls.bias;
+    const auto shaped = std::tanh(biased * T(0.86)) / std::tanh(T(0.86)) - controls.biasCorrection;
+    const auto rounded = shaped - controls.rounding * shaped * shaped * shaped;
+    return sample * (T(1.0) - controls.blend) + rounded * controls.blend;
+}
+
+using TransformerControls = TransformerControlsT<float>;
+inline TransformerControls makeTransformerControls(float drive01)
+{
+    return makeTransformerControlsFor(drive01);
+}
+
+// Preserve the original API and arithmetic; multichannel callers may cache/share the controls.
+inline float transformerSaturate(float sample, float drive01)
+{
+    return transformerSaturate(sample, makeTransformerControls(drive01));
 }
 
 inline float saturationAutoGain(float drive01, SaturationType type)

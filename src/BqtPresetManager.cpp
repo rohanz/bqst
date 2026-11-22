@@ -229,6 +229,7 @@ bool BqtPresetManager::saveUserPreset(const juce::File& file) const
         // Session-only UI state must not travel inside a preset.
         xml->removeAttribute("selectedPresetKey");
         xml->removeAttribute("editorScale");
+        xml->removeAttribute("editorWidth");
 
         for (int i = xml->getNumChildElements(); --i >= 0;)
         {

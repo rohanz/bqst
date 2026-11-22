@@ -1,5 +1,32 @@
 # Changelog
 
+## 1.3.0
+
+Interface:
+
+- Refreshed look. The module keeps its 500-series layout with a cleaner, flat faceplate, a
+  redrawn VU meter and a rebuilt top bar with flat buttons, menus and tooltips.
+- The window now resizes freely: drag the grip in the bottom-right corner. This replaces the
+  fixed 75% to 150% Size menu. Projects saved with a fixed size open at the matching size.
+- The VU needles move more smoothly on macOS.
+
+Sound changes:
+
+- Grit's low end is now consistent across oversampling settings. Grit's internal filters run at
+  higher numerical precision, which removes a bass level error that grew with the oversampling
+  factor. In our test sweep (48 kHz, sine tones at 20 to 200 Hz, Drive 6, 12 and 18 dB, Vintage
+  off) Grit's level now agrees across Off, 2x, 4x and 8x to within about 0.003 dB, where 1.2.0
+  differed by up to about 0.9 dB.
+- This also fixes unstable Grit at 176.4 or 192 kHz with 8x oversampling, where the output could
+  carry a residual that never died away or, on Intel Macs, become invalid.
+- Projects that use Grit (Hybrid or Legacy) can sound slightly different from 1.2.0, mostly in
+  the deep bass and mostly at 8x. In the same test sweep, Hybrid Grit at 8x changed by up to
+  about +0.6 dB at 20 Hz, +0.3 dB at 50 Hz and -0.15 dB at 100 to 200 Hz; at 4x by up to about
+  +0.15 dB at 20 Hz; with oversampling Off or at 2x by 0.03 dB or less. Legacy Grit changes a
+  little more (up to about +0.85 dB at 20 Hz at 8x). Other sample rates and levels give similar
+  but not identical figures. The tone settings, Drive, Autogain and presets are unchanged.
+- Cream (with or without Vintage), Captured Grit and the EQ sound exactly as before.
+
 ## 1.2.0
 
 Sound and behaviour changes:

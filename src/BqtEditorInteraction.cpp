@@ -31,6 +31,13 @@ void BqtAudioProcessorEditor::timerCallback()
 
 bool BqtAudioProcessorEditor::keyPressed(const juce::KeyPress& key)
 {
+    // Tab arrives here before JUCE moves the focus; from now on the focused control shows it.
+    if (key.getKeyCode() == juce::KeyPress::tabKey)
+    {
+        setFocusRingsVisible(true);
+        return false;
+    }
+
     const auto keyCode = juce::CharacterFunctions::toLowerCase(static_cast<juce::juce_wchar>(key.getKeyCode()));
     const auto modifiers = key.getModifiers();
     const auto wantsUndo = keyCode == 'z' && (modifiers.isCommandDown() || modifiers.isCtrlDown());
@@ -50,9 +57,28 @@ bool BqtAudioProcessorEditor::keyPressed(const juce::KeyPress& key, juce::Compon
     return keyPressed(key);
 }
 
-void BqtAudioProcessorEditor::mouseDown(const juce::MouseEvent&)
+void BqtAudioProcessorEditor::mouseDown(const juce::MouseEvent& event)
 {
+    setFocusRingsVisible(false);
+
+    // A press on a bar control hides its hover help at once, so it never sits under a menu that is
+    // opening; it comes back after a 1 px move, or once that menu has closed. A knob press shows
+    // its value instead, as before.
+    if (dynamic_cast<juce::Slider*>(event.originalComponent) == nullptr && hoveredHelpComponent != nullptr)
+    {
+        hideTopBarHelp();
+        helpClickLatched = true;
+        helpLatchSawBlock = false;
+        helpLatchPosition = event.getScreenPosition().toFloat();
+    }
+
     beginUndoableEdit();
+}
+
+// No hover help over an open menu or About.
+bool BqtAudioProcessorEditor::barHelpBlocked() const
+{
+    return juce::Component::getCurrentlyModalComponent() != nullptr || aboutPanel.isVisible();
 }
 
 void BqtAudioProcessorEditor::mouseUp(const juce::MouseEvent&)
@@ -488,6 +514,29 @@ void BqtAudioProcessorEditor::hideDragValueReadout()
 
 void BqtAudioProcessorEditor::syncHoverTargetsFromMouse()
 {
+    if (barHelpBlocked())
+    {
+        helpLatchSawBlock = helpLatchSawBlock || helpClickLatched;
+        if (hoveredHelpComponent != nullptr)
+            hideTopBarHelp();
+        if (hoveredReadoutSlider != nullptr)
+            hideHoverValueReadout();
+        return;
+    }
+
+    if (helpClickLatched)
+    {
+        const auto pointer = juce::Desktop::getInstance().getMainMouseSource().getScreenPosition();
+        if (pointer.getDistanceFrom(helpLatchPosition) < 1.0f && ! helpLatchSawBlock)
+        {
+            hoveredHelpComponent = nullptr;
+            return;
+        }
+        helpClickLatched = false;
+        helpLatchSawBlock = false;
+        hoveredHelpComponent = nullptr;
+    }
+
     if (activeReadoutSlider != nullptr || juce::ModifierKeys::currentModifiers.isAnyMouseButtonDown())
         return;
 
@@ -528,7 +577,8 @@ void BqtAudioProcessorEditor::syncHoverTargetsFromMouse()
 
     if (helpComponent != nullptr && helpComponent != this)
     {
-        if (hoveredHelpComponent != helpComponent)
+        if (hoveredHelpComponent != helpComponent
+            || hoveredHelpText != helpComponent->getProperties()["bqtHelpText"].toString())
         {
             hideHoverValueReadout();
             hoveredHelpComponent = helpComponent;
@@ -653,12 +703,22 @@ void BqtAudioProcessorEditor::showReadout(juce::Component& target, const juce::S
     if (uiScale > 0.0f)
         editorTargetBounds = editorTargetBounds / uiScale;
 
+    // On the rack the bubble overlaps the top of its knob. Over the bar it sits clear above its
+    // control, and for the first row (with no room above) along the window's top edge.
+    constexpr float barBubbleCentreOffset = 19.0f;
+    constexpr float rackBubbleCentreOffset = 8.0f;
+    constexpr int bubbleTopInset = 4;
+    constexpr float barBubbleBelowGap = 4.0f;
+    constexpr float rackBubbleBelowGap = 8.0f;
+    const auto onBar = ! rackComponent.isParentOf(&target);
     auto bounds = juce::Rectangle<int>(width, height)
                       .withCentre({ static_cast<int>(std::round(editorTargetBounds.getCentreX())),
-                                    static_cast<int>(std::round(editorTargetBounds.getY() - 8.0f)) });
+                                    static_cast<int>(std::round(editorTargetBounds.getY() - (onBar ? barBubbleCentreOffset : rackBubbleCentreOffset))) });
 
-    if (bounds.getY() < 4)
-        bounds.setY(static_cast<int>(std::round(editorTargetBounds.getBottom() + 8.0f)));
+    if (onBar && presetBarBounds.contains(editorTargetBounds.toNearestInt()))
+        bounds.setY(bubbleTopInset);
+    else if (bounds.getY() < bubbleTopInset)
+        bounds.setY(static_cast<int>(std::round(editorTargetBounds.getBottom() + (onBar ? barBubbleBelowGap : rackBubbleBelowGap))));
 
     readoutBubble.setText(text);
     readoutBubble.setBounds(bounds.constrainedWithin({ 0, 0, baseEditorWidth, baseEditorHeight }));

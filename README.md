@@ -37,7 +37,7 @@ https://ko-fi.com/rohanjk
 - Realtime and render oversampling up to 8x.
 - VU-style output meters calibrated around `0 VU = -18 dBFS`.
 - Factory presets, user preset saving, and previous/next preset navigation.
-- Fixed hardware-inspired UI with 75%, 100%, 125%, and 150% view sizes.
+- Hardware-inspired UI that resizes freely by dragging the corner.
 
 ## Formats
 

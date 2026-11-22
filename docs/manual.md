@@ -30,7 +30,7 @@ Input Trim -> EQ -> Saturation -> Mix -> Output Trim
 
 **Bypass** bypasses the whole plugin with a short fade and dimmed faceplate.
 
-**Size** switches the fixed UI scale between 75%, 100%, 125%, and 150%.
+**Resizing:** drag the grip in the bottom-right corner to make the window any size between small and large. The size is remembered with the project.
 
 ## Presets
 

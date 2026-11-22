@@ -4,6 +4,7 @@
 
 #include "BinaryData.h"
 #include "BqtParameterIds.h"
+#include "BqtEditorSize.h"
 
 #include <cmath>
 
@@ -13,15 +14,23 @@ constexpr auto panelPink = 0xffffadcb;
 constexpr auto panelPinkDark = 0xfff095bd;
 constexpr auto ink = 0xff111111;
 constexpr auto cream = 0xfffff4ed;
-constexpr auto panelText = 0xfffff1df;
+constexpr auto panelText = 0xfffff1df;   // light text on dark fills (readout bubble, tooltips)
+// Everything printed on the pink plate: one soft near-black, like a single screen-print run.
+constexpr auto plateInk = ink;
+// Top bar: a soft tinted panel a step deeper than the plate, holding flat cream buttons.
+constexpr auto barTint = 0xfff9a2c4;
+constexpr auto barField = 0xfffbf1ea;
+constexpr auto menuPanel = 0xfff7ece4;
+constexpr auto barCorner = 8.0f;
+constexpr auto fieldCorner = 5.0f;
 constexpr auto lampOn = 0xfffaf7f2;
-constexpr auto lampOff = 0xff6d6d6d;
+constexpr auto lampOff = 0xff8f8f8f;
 constexpr auto totalSlots = 4.0f;
 constexpr auto slotWidthInches = 1.5f;
 constexpr auto panelHeightInches = 5.25f;
 constexpr auto screwInsetYInches = (5.25f - 4.938f) * 0.5f;
-constexpr auto baseEditorWidth = 865;
-constexpr auto baseEditorHeight = 874;
+constexpr auto baseEditorWidth = bqt::editor::designWidth;
+constexpr auto baseEditorHeight = bqt::editor::designHeight;
 constexpr auto outerEditorMargin = 14;
 
 inline const juce::StringArray lowFreqLabels = bqt::lowShelfFrequencyLabels();
@@ -73,7 +82,7 @@ inline void drawPanelText(juce::Graphics& g, const juce::String& text, juce::Rec
                           juce::Justification justification, float height, bool bold = true)
 {
     g.setFont(juce::Font(faceFont(height, bold)));
-    g.setColour(juce::Colour(panelText));
+    g.setColour(juce::Colour(plateInk));
     g.drawText(text, bounds.toNearestInt(), justification);
 }
 
