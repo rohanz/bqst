@@ -10,15 +10,18 @@ using namespace bqst::ui;
 
 namespace
 {
-// VU scale position (0 = left stop, 1 = right stop) of a VU reading: -20..0 VU takes the first 82%
-// of the arc, 0..+3 VU the red remainder.
-float vuDbToScaleFraction(float db)
+// Deflection of a needle reading in VU (0 VU = 1).
+float vuToDeflection(float vu) { return juce::Decibels::decibelsToGain(vu, -100.0f); }
+} // namespace
+
+float bqst::vu::vuDeflectionToScaleFraction(float deflection)
 {
-    const auto clamped = juce::jlimit(-20.0f, 3.0f, db);
-    if (clamped <= 0.0f)
-        return ((clamped + 20.0f) / 20.0f) * 0.82f;
-    return 0.82f + (clamped / 3.0f) * 0.18f;
+    static const auto fullScale = std::pow(10.0f, 3.0f / 20.0f); // +3 VU
+    return juce::jlimit(0.0f, 1.0f, deflection / fullScale);
 }
+
+namespace
+{
 
 namespace cleanvu
 {
@@ -100,6 +103,9 @@ constexpr float needleWidth = 2.6f;
 constexpr float pivotDotDiameter = 6.5f;
 constexpr float needleRepaintPadding = 6.0f;
 
+// Where the end signs sit: degrees from each end of the arc and depth inside it.
+constexpr float endSignMinusOffset = 1.0f, endSignPlusOffset = -5.0f, endSignInset = 14.0f;
+
 struct DialGeometry
 {
     explicit DialGeometry(juce::Rectangle<float> bounds)
@@ -130,6 +136,13 @@ BqtVuMeter::~BqtVuMeter()
     nativeNeedle.detach();
 }
 
+void BqtVuMeter::setNeedleClock(bqst::vu::NeedleClock* clock)
+{
+    dropNativeNeedle();
+    needleClock = clock;
+    nativeNeedle.setClock(clock);
+}
+
 void BqtVuMeter::paint(juce::Graphics& g)
 {
     // The target's real pixel density (editor scale x display or snapshot scale) keeps the face
@@ -158,6 +171,7 @@ void BqtVuMeter::paint(juce::Graphics& g)
     if (needleIsNative)
         return;
 
+    lastPaintedLevel = displayedLevel;
     const auto needle = needleLine(displayedLevel);
     g.setColour(needleColour);
     g.drawLine(needle, needleWidth);
@@ -169,12 +183,8 @@ void BqtVuMeter::paint(juce::Graphics& g)
 juce::Line<float> BqtVuMeter::needleLine(float level) const
 {
     const DialGeometry dial(getLocalBounds().toFloat());
-    const auto centre = dial.centre;
-    const auto pivot = dial.pivot;
-    const auto radius = dial.radius + DialGeometry::needleExtension;
-    const auto start = DialGeometry::start, end = DialGeometry::end;
-    const auto radians = juce::degreesToRadians(start + juce::jlimit(0.0f, 1.0f, level) * (end - start));
-    return { pivot, { centre.x + std::cos(radians) * radius, centre.y - std::sin(radians) * radius } };
+    return { dial.pivot, bqst::vu::needleTip(dial.centre, dial.radius + DialGeometry::needleExtension,
+                                             DialGeometry::start, DialGeometry::end, level) };
 }
 
 // Only the strip the needle left and the strip it moved to need redrawing, not the whole meter.
@@ -220,14 +230,15 @@ juce::Rectangle<int> BqtVuMeter::paintedArea() const
         .getIntersection(getLocalBounds());
 }
 
-// Shows the needle at the current reading in the native layer; false if the layer cannot be used
-// here and now (then nothing of it is on screen).
-bool BqtVuMeter::presentNeedle(double animateSeconds)
+// Shows the needle in the native layer, moved from here on by the editor's needle clock; false if
+// the layer cannot be used here and now (then nothing of it is on screen).
+bool BqtVuMeter::presentNeedle()
 {
     using namespace bqst::vu;
 
     auto* peer = getPeer();
     NeedleConditions conditions;
+    conditions.hasClock = needleClock != nullptr;
     conditions.editorAllows = editorAllowsNativeNeedle;
     conditions.showing = isShowing();
     conditions.hasHostView = peer != nullptr && peer->getNativeHandle() != nullptr;
@@ -246,25 +257,32 @@ bool BqtVuMeter::presentNeedle(double animateSeconds)
     auto& top = peer->getComponent();
     const auto desktopScale = top.getDesktopScaleFactor();
     const auto toView = [&](juce::Point<float> p) { return top.getLocalPoint(this, p) * desktopScale; };
+    const auto origin = toView({ 0.0f, 0.0f });
+    const auto xAxis = toView({ 1.0f, 0.0f });
+    const auto yAxis = toView({ 0.0f, 1.0f });
 
-    const auto line = needleLine(displayedLevel);
-    const auto unit = toView(line.getStart()).getDistanceFrom(toView(line.getStart() + juce::Point<float>(1.0f, 0.0f)));
+    const DialGeometry dial(getLocalBounds().toFloat());
+    NeedleGeometry geometry;
+    geometry.clip = juce::Rectangle<float>(origin, toView({ static_cast<float>(getWidth()), static_cast<float>(getHeight()) }));
+    geometry.meterToView = juce::AffineTransform(xAxis.x - origin.x, yAxis.x - origin.x, origin.x,
+                                                 xAxis.y - origin.y, yAxis.y - origin.y, origin.y);
+    geometry.pivot = dial.pivot;
+    geometry.centre = dial.centre;
+    geometry.radius = dial.radius + DialGeometry::needleExtension;
+    geometry.startDegrees = DialGeometry::start;
+    geometry.endDegrees = DialGeometry::end;
+    const auto unit = origin.getDistanceFrom(xAxis);
+    geometry.lineWidth = needleWidth * unit;
+    geometry.dotDiameter = pivotDotDiameter * unit;
+    geometry.needleColour = needleColour;
+    geometry.dotColour = needleColour.darker(0.35f);
 
-    NeedlePicture picture;
-    picture.clip = juce::Rectangle<float>(toView({ 0.0f, 0.0f }),
-                                          toView({ static_cast<float>(getWidth()), static_cast<float>(getHeight()) }));
-    picture.pivot = toView(line.getStart());
-    picture.tip = toView(line.getEnd());
-    picture.lineWidth = needleWidth * unit;
-    picture.dotDiameter = pivotDotDiameter * unit;
-    picture.needleColour = needleColour;
-    picture.dotColour = needleColour.darker(0.35f);
-
-    if (! nativeNeedle.present(peer->getNativeHandle(), picture, animateSeconds))
-        return false;
-
-    nativeShownLevel = displayedLevel;
-    return true;
+    // Read on the clock thread at every refresh: the audio-side movement, lock-free.
+    auto reading = [&processor = audioProcessor, meterSide = side]
+    {
+        return bqst::vu::vuDeflectionToScaleFraction(processor.getMeterLevel(meterSide));
+    };
+    return nativeNeedle.present(peer->getNativeHandle(), geometry, displayedLevel, std::move(reading));
 }
 
 void BqtVuMeter::showPaintedNeedle()
@@ -281,14 +299,11 @@ void BqtVuMeter::showPaintedNeedle()
     repaintNeedleAt(displayedLevel);
 }
 
-void BqtVuMeter::syncNeedlePresentation(bool editorAllowsNative, double secondsElapsed)
+void BqtVuMeter::syncNeedlePresentation(bool editorAllowsNative)
 {
     editorAllowsNativeNeedle = editorAllowsNative;
-    typicalUpdateInterval += (juce::jlimit(1.0 / 240.0, 0.1, secondsElapsed) - typicalUpdateInterval) * 0.2;
-
-    const auto moved = ! juce::approximatelyEqual(nativeShownLevel, displayedLevel);
-    const auto animateSeconds = needleIsNative && moved ? bqst::vu::needleAnimationSeconds(typicalUpdateInterval) : 0.0;
-    if (! presentNeedle(animateSeconds))
+    // The audio-side movement already supplies the physical response; the clock applies it.
+    if (! presentNeedle())
     {
         showPaintedNeedle();
         return;
@@ -304,7 +319,7 @@ void BqtVuMeter::syncNeedlePresentation(bool editorAllowsNative, double secondsE
 
 void BqtVuMeter::syncNeedleGeometry()
 {
-    if (needleIsNative && ! presentNeedle(0.0))
+    if (needleIsNative && ! presentNeedle())
         showPaintedNeedle();
 }
 
@@ -313,21 +328,8 @@ void BqtVuMeter::dropNativeNeedle()
     const auto wasNative = needleIsNative;
     nativeNeedle.detach();
     needleIsNative = false;
-    nativeShownLevel = -1.0f;
     if (wasNative)
         repaintNeedleAt(displayedLevel);
-}
-
-void BqtVuMeter::setRenderScale(float newScale)
-{
-    newScale = juce::jlimit(1.0f, 3.0f, newScale);
-
-    if (juce::approximatelyEqual(renderScale, newScale))
-        return;
-
-    renderScale = newScale;
-    staticLayer = {};
-    repaint();
 }
 
 void BqtVuMeter::rebuildStaticLayer(float layerScale)
@@ -382,34 +384,41 @@ void BqtVuMeter::rebuildStaticLayer(float layerScale)
     }
     g.strokePath(arc, juce::PathStrokeType(2.2f));
 
-    const auto redStart = vuDbToScaleFraction(0.0f);
+    // The scale is linear in amplitude, as on a moving-coil VU: the marks crowd towards the left.
+    const auto angleOf = [start, end](float vu)
+    {
+        return start + (end - start) * bqst::vu::vuDeflectionToScaleFraction(vuToDeflection(vu));
+    };
+
     juce::Path redArc;
     for (int i = 0; i <= 18; ++i)
     {
-        const auto p = redStart + (1.0f - redStart) * (static_cast<float>(i) / 18.0f);
-        const auto point = polar(centre, radius - 3.0f, start + (end - start) * p);
+        const auto angle = angleOf(0.0f) + (end - angleOf(0.0f)) * (static_cast<float>(i) / 18.0f);
+        const auto point = polar(centre, radius - 3.0f, angle);
         i == 0 ? redArc.startNewSubPath(point) : redArc.lineTo(point);
     }
     g.setColour(meterRed.withAlpha(0.92f));
     g.strokePath(redArc, juce::PathStrokeType(3.4f));
 
-    const std::array<float, 7> majorDbs { -20.0f, -10.0f, -7.0f, -5.0f, -3.0f, 0.0f, 3.0f };
-    // Plain numbers; the scale carries one minus sign at its left end and one plus at its right.
-    const std::array<const char*, 7> majorLabels { "20", "10", "7", "5", "3", "0", "3" };
+    // Numbered marks of the classic scale. Plain numbers; the scale carries one minus sign at its
+    // left end and one plus at its right.
+    struct Mark { float vu; const char* label; };
+    const std::array<Mark, 11> majors { { { -20.0f, "20" }, { -10.0f, "10" }, { -7.0f, "7" }, { -5.0f, "5" },
+                                          { -3.0f, "3" }, { -2.0f, "2" }, { -1.0f, "1" }, { 0.0f, "0" },
+                                          { 1.0f, "1" }, { 2.0f, "2" }, { 3.0f, "3" } } };
     const auto labelFont = juce::Font(vuFont(11.07f, false));
-    for (size_t i = 0; i < majorDbs.size(); ++i)
+    for (const auto& mark : majors)
     {
-        const auto frac = vuDbToScaleFraction(majorDbs[i]);
-        const auto angle = start + (end - start) * frac;
-        const auto red = majorDbs[i] >= 0.0f;
+        const auto angle = angleOf(mark.vu);
+        const auto red = mark.vu >= 0.0f;
         g.setColour(red ? meterRed.withAlpha(0.98f)
                         : meterBlack.withAlpha(0.95f));
         g.drawLine({ polar(centre, radius - 7.0f, angle), polar(centre, radius + 3.0f, angle) },
-                   majorDbs[i] == 0.0f ? 2.6f : 1.9f);
+                   mark.vu == 0.0f ? 2.6f : 1.9f);
         // Centre the number on its tick, with the near edge of its ink box a fixed gap past the
         // tick end; the box's extent along the tick direction depends on the angle.
         juce::GlyphArrangement glyphs;
-        glyphs.addLineOfText(labelFont, majorLabels[i], 0.0f, 0.0f);
+        glyphs.addLineOfText(labelFont, mark.label, 0.0f, 0.0f);
         const auto inkBox = glyphs.getBoundingBox(0, -1, true);
         const auto radians = juce::degreesToRadians(angle);
         const auto extent = std::abs(inkBox.getWidth() * 0.5f * std::cos(radians))
@@ -418,30 +427,27 @@ void BqtVuMeter::rebuildStaticLayer(float layerScale)
         glyphs.draw(g, juce::AffineTransform::translation(labelCentre - inkBox.getCentre()));
     }
 
-    const auto drawEndSign = [&](const juce::String& sign, juce::Colour colour, float angle)
+    // One unnumbered mark halves the wide -20..-10 span; everywhere else the numbered marks are
+    // already as close as the smallest editor size can separate.
+    {
+        const auto angle = angleOf(-15.0f);
+        g.setColour(meterBlack.withAlpha(0.58f));
+        g.drawLine({ polar(centre, radius - 4.0f, angle), polar(centre, radius + 2.5f, angle) }, 1.2f);
+    }
+
+    const auto drawEndSign = [&](const juce::String& sign, juce::Colour colour, float angle, float inset)
     {
         juce::GlyphArrangement glyphs;
         glyphs.addLineOfText(juce::Font(vuFont(11.07f * 1.25f, true)), sign, 0.0f, 0.0f);
         g.setColour(colour);
-        glyphs.draw(g, juce::AffineTransform::translation(polar(centre, radius - 2.0f, angle)
+        glyphs.draw(g, juce::AffineTransform::translation(polar(centre, radius - inset, angle)
                                                          - glyphs.getBoundingBox(0, -1, true).getCentre()));
     };
-    drawEndSign(juce::String::charToString(static_cast<juce::juce_wchar>(0x2212)), meterBlack.withAlpha(0.95f), start + 7.0f);
-    drawEndSign("+", meterRed.withAlpha(0.98f), end - 7.0f);
-
-    for (int db = -20; db <= 3; ++db)
-    {
-        if (db == -20 || db == -10 || db == -7 || db == -5 || db == -3 || db == 0 || db == 3)
-            continue;
-        if (db < -10 && db % 5 != 0)
-            continue;
-
-        const auto angle = start + (end - start) * vuDbToScaleFraction(static_cast<float>(db));
-        const auto red = db >= 0;
-        g.setColour(red ? meterRed.withAlpha(0.72f)
-                        : meterBlack.withAlpha(0.58f));
-        g.drawLine({ polar(centre, radius - 4.0f, angle), polar(centre, radius + 2.5f, angle) }, 1.2f);
-    }
+    // Inside the arc: the minus at the rest stop, left of the crowded low end; the plus under the
+    // red band, between the +2 and +3 marks.
+    drawEndSign(juce::String::charToString(static_cast<juce::juce_wchar>(0x2212)), meterBlack.withAlpha(0.95f),
+                start + endSignMinusOffset, endSignInset);
+    drawEndSign("+", meterRed.withAlpha(0.98f), end + endSignPlusOffset, endSignInset);
 
     g.setColour(meterBlack.withAlpha(0.98f));
     g.setFont(juce::Font(vuFont(19.0f * 0.98f, true)));
@@ -449,29 +455,15 @@ void BqtVuMeter::rebuildStaticLayer(float layerScale)
                juce::Justification::centred);
 }
 
-bool BqtVuMeter::updateLevel(double secondsElapsed)
+bool BqtVuMeter::updateLevel()
 {
     const auto raw = audioProcessor.getMeterLevel(side);
-    const auto db = juce::Decibels::gainToDecibels(raw, -60.0f);
-    targetLevel = vuDbToScaleFraction(db + 18.0f);
-    // Time-based smoothing. This was a fixed 0.18 per tick, which meant the needle's speed was a
-    // function of how punctually the timer fired rather than of elapsed time: a late or dropped
-    // frame still advanced only 18% of the remaining distance, so jitter turned into visibly
-    // uneven, steppy motion instead of degrading gracefully. Now a late frame covers exactly the
-    // distance it should have.
-    constexpr auto needleTimeConstantSeconds = 0.09;
-    const auto clampedElapsed = juce::jlimit(0.0, 0.25, secondsElapsed);
-    const auto alpha = static_cast<float>(1.0 - std::exp(-clampedElapsed / needleTimeConstantSeconds));
-
-    const auto previousLevel = displayedLevel;
-    displayedLevel += (targetLevel - displayedLevel) * alpha;
-
-    if (std::abs(targetLevel - displayedLevel) < 0.0005f)
-        displayedLevel = targetLevel;
+    const auto previousLevel = lastPaintedLevel;
+    displayedLevel = bqst::vu::vuDeflectionToScaleFraction(raw);
 
     if (std::abs(displayedLevel - previousLevel) < 0.0001f)
         return false;
-    // The native layer is moved in syncNeedlePresentation instead.
+    // The native layer is moved by the needle clock instead.
     if (! needleIsNative)
         repaintNeedle(previousLevel);
     return true;

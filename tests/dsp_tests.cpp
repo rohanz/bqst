@@ -8,6 +8,7 @@
 // and runs in milliseconds without linking JUCE.
 
 #include "../src/BqtDsp.h"
+#include "meter_tests.h"
 
 #include <cmath>
 #include <complex>
@@ -50,6 +51,7 @@ constexpr double testGainsDb[] { -6.0, -3.0, -1.0, 1.0, 3.0, 6.0 };
 
 int main()
 {
+    testMetering(check);
     // Grit autogain: exactly unity at zero drive, finite, in (0, 1], monotonically non-increasing.
     {
         const auto grit = bqt::SaturationType::transformer;

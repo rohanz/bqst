@@ -507,8 +507,6 @@ void BqtAudioProcessorEditor::resized()
     const auto rightMeterRight = screwX2 + previousVuSize * 0.5f + 13.0f;
     meterA.setBounds(static_cast<int>(std::round(leftMeterX)), meterTop, vuSize, vuSize);
     meterB.setBounds(static_cast<int>(std::round(rightMeterRight - vuSize)), meterTop, vuSize, vuSize);
-    meterA.setRenderScale(uiScale);
-    meterB.setRenderScale(uiScale);
 
     vintage.setBounds(leftDriveX - 72, satPanel.getY() + 201, 144, 44);
     satTypeButton.setBounds(rightDriveX - 72, satPanel.getY() + 195, 144, 56);

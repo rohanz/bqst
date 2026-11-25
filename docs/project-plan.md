@@ -203,7 +203,7 @@ VU meters:
 - Located on the saturation module.
 - Meter saturation module output level per side.
 - Calibrated to 0 VU = -18 dBFS.
-- Use 300 ms VU-style smoothing.
+- Use sample-time moving-coil ballistics reaching 99% in 300 ms.
 - Later versions may add switchable input/output/gain-reduction-style metering if useful.
 
 These modes are inspired by broad analog behaviors, not claims of exact hardware emulation.

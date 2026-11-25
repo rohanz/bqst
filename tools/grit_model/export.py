@@ -1,4 +1,4 @@
-"""Export bounded, odd lookup tables for the experimental LA500A capture fit.
+"""Export bounded, odd lookup tables for the experimental hardware capture fit.
 Run with Python + NumPy: python tools/grit_model/export.py
 No captured audio is required to regenerate the shipped constants.
 """

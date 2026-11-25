@@ -7,11 +7,24 @@
 
 namespace bqst::vu
 {
+struct NeedleClock::Impl
+{
+    bqt::FrameLogNeedle stats;
+};
+
+NeedleClock::NeedleClock() : impl(std::make_unique<Impl>()) {}
+NeedleClock::~NeedleClock() = default;
+void NeedleClock::follow(void*) {}
+void NeedleClock::stop() {}
+bqt::FrameLogNeedle& NeedleClock::frameLogStats() { return impl->stats; }
+NeedleClock::Probe NeedleClock::probe() const { return {}; }
+
 struct NativeNeedle::Impl {};
 
 NativeNeedle::NativeNeedle() = default;
 NativeNeedle::~NativeNeedle() = default;
-bool NativeNeedle::present(void*, const NeedlePicture&, double) { return false; }
+void NativeNeedle::setClock(NeedleClock*) {}
+bool NativeNeedle::present(void*, const NeedleGeometry&, float, NeedleReading) { return false; }
 void NativeNeedle::hide() {}
 void NativeNeedle::detach() {}
 NativeNeedle::Probe NativeNeedle::probe() const { return {}; }

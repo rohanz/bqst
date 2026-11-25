@@ -175,7 +175,7 @@ Implemented in the current build:
 - Cream uses a smooth asymmetric nonlinear curve with drive-scaled harmonic weighting.
 - Cream includes body focus, treble shaping, and low-end guarding around saturation.
 - Grit uses transformer-inspired low/low-mid weighting, partial low restore, and post-saturation top rounding.
-- Grit is one model: 75% original Grit + 25% captured LA500A whole-path model.
+- Grit is one model: 75% original Grit + 25% captured hardware whole-path model.
   Older Grit model choices in states and presets are ignored.
 - Saturation Drive from 0 dB to +18 dB, with reduced internal drive scaling for gentler onset.
 - Vintage adds optional top rounding after saturation.
@@ -188,7 +188,7 @@ Implemented in the current build:
 - Drive at 0 skips saturation and saturation autogain.
 - Per-side output trim.
 - Per-side VU-style saturation output meters in the editor.
-- VU meter calibration: 0 VU = -18 dBFS with 300 ms smoothing.
+- VU meter calibration: 0 VU = -18 dBFS with sample-time moving-coil ballistics reaching 99% in 300 ms.
 - Realtime/render oversampling up to 8x around the full active processing chain.
 - Oversampling latency reporting with global-bypass delay matching.
 - Global bypass uses a short dry/wet crossfade to avoid clicky hard switching.
@@ -220,3 +220,64 @@ The chain tests also load state versions 0–3 with each old revision value, no 
 out-of-range values and NaN; rendered output must match fresh current Grit byte for
 byte, with Vintage off/on. Old preset revision values are covered separately.
 State and preset writers now emit v3; old revisions are discarded/ignored.
+
+## Frame log
+
+Quit the host, then start its executable from Terminal with a writable log path:
+
+```sh
+BQST_FRAME_LOG="$HOME/Desktop/bqst-frames.log" "/Applications/Your Host.app/Contents/MacOS/Your Host"
+```
+
+The variable is read when each BQST editor opens. An unset/empty value disables
+logging; an invalid path leaves it disabled. Output appends, so use a fresh path
+for each capture and open one BQST editor for an unambiguous trace. No parameters,
+presets or saved state are changed. Close the editor to stop logging.
+
+A background writer flushes one line per second even when the host message thread
+is stalled. `interval_ms` is the actual reporting interval. `frames` counts completed
+display-refresh callbacks, `gap_max_ms` and `gap_p95_ms` describe callback entry gaps
+(nearest-rank 95th percentile), and `gaps_gt25`/`gaps_gt50` count gaps strictly above
+25/50 ms. Gaps cross reporting boundaries; a stall appears in the gap statistics
+when the next callback completes. A zero-frame interval itself indicates no
+completed display callback, including when the editor is hidden.
+
+`callback_ms`/`callback_max_ms` are total/maximum time inside display callbacks;
+`timers`, `timer_ms` and `timer_max_ms` are the count and total/maximum time inside
+the 60 Hz editor timer. Times are wall-clock milliseconds, including any OS
+preemption. `audio_blocks_per_s` is the processor's block count divided by the
+actual interval; `samples_per_block` is its mean host block size (zero if idle).
+Audio counters are sampled atomically and are approximate at interval boundaries.
+`native_frames`, `painted_frames` and `mixed_frames` count callbacks ending with
+both needles native, both painted, or one of each. `dropped` counts diagnostic
+events discarded if the bounded queue fills while disk I/O is slow; such intervals
+are incomplete. Disk writing never runs in either editor callback or audio processing.
+
+On macOS a native needle is not moved by those display callbacks: the editor's needle
+clock (a display link bound to the screen the editor's window is on, running on its
+own thread) moves it at every refresh of that screen, however often the host lets the
+message thread run (`src/BqtVuNeedleLayer.h`). These fields show its real rate next
+to the callback rate above:
+
+- `refresh_hz`: the clock's display link refresh rate (the screen's current rate);
+  0 until the clock has ticked once.
+- `screen_max_fps`: the maximum refresh rate macOS reports for that screen (macOS 12+;
+  0 if unknown). A 60 here means the screen itself is limited to 60 Hz (for example a
+  ProMotion panel set to a fixed 60 Hz, or an external display).
+- `needle_presents_per_s`: needle positions the clock committed to the system
+  compositor per second of the actual interval (one commit moves both needles). It
+  should equal `refresh_hz` whenever a needle is native, even in an interval with
+  `frames=0`; it is 0 while both needles are painted (bypassed look, About card, menu
+  over the meters), because the clock stops then.
+- `needle_gap_max_ms`: the longest time between two consecutive commits in the
+  interval, while the clock was running (a refresh skipped because the message thread
+  was changing a needle at that instant shows up here).
+- `needle_cpu_ms`: CPU time the clock thread spent inside its ticks during the
+  interval (path, Core Animation commit). At 60 Hz it measured about 3 ms per second
+  on an M-series Mac, so about 6 ms per second (0.6% of one core) at 120 Hz.
+
+A commit is what this process controls. That the window server then shows each one on
+screen is proven by `BqstVuNeedleTests`, which captures its own window with
+ScreenCaptureKit while the message thread is stalled or throttled to 30 events per
+second (it needs Screen Recording permission for the terminal running it, and says
+SKIP without it).

@@ -1,8 +1,8 @@
-# Grit / LA500A capture model
+# Grit capture model
 
 BQST has one Grit model: the independent-path blend formerly called Hybrid.
-It combines original Grit with a model of the full engaged LA500A path, not a physically
-identified output transformer or an endorsed JLM emulation. The separate Lab audition
+It combines original Grit with a model of the full engaged path of a hardware unit, not a physically
+identified output transformer or an endorsed emulation. The separate Lab audition
 build and host model selector have been removed.
 
 ## Independent paths (current)
@@ -102,7 +102,7 @@ No allocation, locks, string lookups or dynamic coefficient objects on the audio
 
 ## Evidence and limits
 
-Captures: 2026-10-08, Apollo Twin X line I/O, 48 kHz / 24 bit; LA500A minimum makeup
+Captures: 2026-10-08, Apollo Twin X line I/O, 48 kHz / 24 bit; unit at minimum makeup
 plus 9, noon and 3 o’clock makeup settings, with compression intended to be inactive. Relay-bypass captures provide the converter/cable baseline. Left/right
 recorded channels were identical. The minimum-makeup takes had no full-scale samples.
 For the new tone captures, exclude only the two confirmed digitally clipped 3 o’clock

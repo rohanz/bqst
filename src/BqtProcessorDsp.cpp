@@ -7,9 +7,6 @@
 namespace
 {
 constexpr auto numOversamplingFactors = 3;
-constexpr auto vuRiseTo99Seconds = 0.3f;
-constexpr auto vuTimeConstantSeconds = vuRiseTo99Seconds / 4.605170186f;
-constexpr auto vuSineAverageToRms = 1.110720735f;
 constexpr auto parameterSmoothingSeconds = 0.02;
 using bqt::baxShelfQ;
 // Grit's pre-drive gain (dB of gain per dB of Drive). Cream maps Drive through its own taper.
@@ -182,7 +179,8 @@ void BqtAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
     // prepareToPlay runs on the message thread, so set the host latency directly here.
     currentLatencySamples.store(computeLatencySamples());
     setLatencySamples(currentLatencySamples.load());
-    meterRms = {};
+    for (auto& meter : meterCapture)
+        meter.prepare(sampleRate, samplesPerBlock / sampleRate);
     resetSaturationState();
 }
 
@@ -553,28 +551,13 @@ void BqtAudioProcessor::applyLatencyDelay(float* samples, int numSamples, int si
 
 void BqtAudioProcessor::updateMeter(int sideIndex, const float* samples, int numSamples)
 {
-    // A zero-length block would divide by zero here. The resulting NaN is not transient: it
-    // latches into meterRms permanently, because the release/attack blend leaves 0 * NaN = NaN.
-    if (numSamples <= 0)
-        return;
-
-    auto rectifiedSum = 0.0f;
-    for (int sample = 0; sample < numSamples; ++sample)
-        rectifiedSum += std::abs(samples[sample]);
-
-    const auto blockAverage = (rectifiedSum / static_cast<float>(numSamples)) * vuSineAverageToRms;
-    const auto blockSeconds = static_cast<float>(numSamples / currentSampleRate);
-    const auto release = std::exp(-blockSeconds / vuTimeConstantSeconds);
-    const auto attack = 1.0f - release;
-
-    const auto index = static_cast<size_t>(sideIndex);
-    meterRms[index] = meterRms[index] * release + blockAverage * attack;
-    meterLevels[index].store(meterRms[index]);
+    meterCapture[static_cast<size_t>(sideIndex)].push(
+        samples, numSamples, currentSampleRate, juce::Time::getMillisecondCounterHiRes() * 0.001);
 }
 
 float BqtAudioProcessor::getMeterLevel(int sideIndex) const
 {
-    return meterLevels[static_cast<size_t>(juce::jlimit(0, 1, sideIndex))].load();
+    return meterCapture[static_cast<size_t>(juce::jlimit(0, 1, sideIndex))].level(juce::Time::getMillisecondCounterHiRes() * 0.001);
 }
 
 // Runs at the host sample rate, before any upsampling. The shelves are linear, so oversampling
@@ -727,6 +710,7 @@ void BqtAudioProcessor::timerCallback()
 
 void BqtAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
 {
+    frameLogAudio.record(static_cast<unsigned>(buffer.getNumSamples()));
     juce::ScopedNoDenormals noDenormals;
 
     // Supported layout is stereo-in/stereo-out, but never index channel 1 blindly: clear
@@ -747,6 +731,9 @@ void BqtAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
     auto* left = buffer.getWritePointer(0);
     auto* right = buffer.getWritePointer(1);
     const auto totalSamples = buffer.getNumSamples();
+    const auto meterTime = juce::Time::getMillisecondCounterHiRes() * 0.001;
+    for (auto& meter : meterCapture)
+        meter.beginCallback(meterTime, totalSamples / getSampleRate(), isNonRealtime());
 
     for (int offset = 0; offset < totalSamples;)
         offset += processSubBlock(left + offset, right + offset, juce::jmin(preparedBlockSize, totalSamples - offset));
@@ -788,6 +775,8 @@ int BqtAudioProcessor::processSubBlock(float* left, float* right, int numSamples
 
     if (fullyBypassed)
     {
+        updateMeter(0, dryLeft, numSamples);
+        updateMeter(1, dryRight, numSamples);
         juce::FloatVectorOperations::copy(left, dryLeft, numSamples);
         juce::FloatVectorOperations::copy(right, dryRight, numSamples);
         return numSamples;

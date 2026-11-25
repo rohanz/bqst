@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.3.2
+
+Interface:
+
+- The VU needles move like a real VU movement: a needle with mass and damping that reaches
+  its reading in 300 ms with a slight overshoot. They no longer trail the music, and their
+  motion no longer depends on the host's buffer size or the display's frame rate.
+- On macOS the needles are moved by a clock of their own at the screen's refresh rate, so
+  they stay smooth even when the host is slow to update plugin windows.
+- The meter face carries a true VU scale, where needle angle follows signal voltage, so the
+  marks bunch up on the left as on a hardware meter. 0 VU is still -18 dBFS.
+- While bypassed, the needles keep reading the signal passing through.
+- Developers: an optional frame log (`BQST_FRAME_LOG`, see `docs/build-notes.md`) records how
+  evenly a host refreshes the meters.
+
+The sound is unchanged.
+
 ## 1.3.1
 
 Interface:
@@ -49,11 +66,11 @@ Sound changes:
 Sound and behaviour changes:
 
 - New Grit. New instances use Hybrid Grit: 75% of the original Grit, at its original Drive
-  mapping, blended with 25% of a new model fitted to captures of the whole engaged LA500A
+  mapping, blended with 25% of a new model fitted to captures of a hardware unit's whole
   signal path. The captured branch has its own Drive mapping, filter state and Vintage, and is
   level-aligned before the blend. Hybrid has its own static Autogain table, measured offline;
   it is source dependent and does not promise an exact loudness match.
-- New host parameter **Grit Model** (Legacy, Captured, Hybrid). Captured is the fitted LA500A
+- New host parameter **Grit Model** (Legacy, Captured, Hybrid). Captured is the fitted hardware
   path on its own, with a calibrated Drive taper and its own static Autogain.
 - Existing sessions and user presets saved before 1.2.0 keep the original (Legacy) Grit, so
   they sound the same. Factory presets and new instances use Hybrid. Saved state and the user

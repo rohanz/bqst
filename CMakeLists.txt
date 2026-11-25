@@ -12,7 +12,7 @@ if (NOT CMAKE_OSX_DEPLOYMENT_TARGET)
     set(CMAKE_OSX_DEPLOYMENT_TARGET "10.13" CACHE STRING "Minimum macOS deployment target")
 endif()
 
-project(BQST VERSION 1.3.1 LANGUAGES C CXX)
+project(BQST VERSION 1.3.2 LANGUAGES C CXX)
 
 # Single source of truth for the version and bundle identifier. Everything downstream -- the
 # plugin bundles, the generated packaging templates, and the shell/PowerShell packaging scripts
@@ -36,9 +36,9 @@ add_subdirectory(external/JUCE)
 
 set(BQST_PLUGIN_FORMATS VST3 Standalone)
 
-# VU needles presented in a Core Animation layer on macOS so the system moves them at the display's
-# own rate (src/BqtVuNeedleLayer.h). OFF paints the needles with the rest of the editor, as other
-# platforms always do.
+# VU needles presented in a Core Animation layer on macOS, moved by a display-link clock of their own
+# at the display's refresh rate, off the host's message thread (src/BqtVuNeedleLayer.h). OFF paints
+# the needles with the rest of the editor, as other platforms always do.
 option(BQST_VU_NATIVE_NEEDLE "Present the VU needles in a Core Animation layer on macOS" ON)
 set(BQST_VU_NEEDLE_SOURCES src/BqtVuNeedleLayer.cpp src/BqtVuNeedleLayer.h)
 if (APPLE)
@@ -150,11 +150,19 @@ endif()
 if (BQST_BUILD_TESTS)
     enable_testing()
 
+    find_package(Threads REQUIRED)
+    add_executable(BqstFrameLogTests tests/frame_log_tests.cpp)
+    set_target_properties(BqstFrameLogTests PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+    target_link_libraries(BqstFrameLogTests PRIVATE Threads::Threads juce::juce_recommended_warning_flags)
+    add_test(NAME BqstFrameLogTests COMMAND BqstFrameLogTests)
+
     # Pure DSP tests: no JUCE link, just the header-only helpers in src/BqtDsp.h.
     add_executable(BqstDspTests tests/dsp_tests.cpp)
     set_target_properties(BqstDspTests PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
     target_link_libraries(BqstDspTests PRIVATE juce::juce_recommended_warning_flags)
 
+    # check.sh explicitly builds BqstDspTests; keep this headless diagnostic in that gate.
+    add_dependencies(BqstDspTests BqstFrameLogTests)
     add_test(NAME BqstDspTests COMMAND BqstDspTests)
 
     add_executable(BqstCreamTests tests/cream_model_tests.cpp)
@@ -226,8 +234,10 @@ if (BQST_BUILD_TESTS)
                           juce::juce_dsp PUBLIC juce::juce_recommended_config_flags)
 
     # Native VU needle checks (macOS): layer geometry against the painted needle at several editor
-    # sizes, fallback selection, attach and detach. Hosts the editor in a window that is never
-    # shown, so nothing appears on screen and nothing takes focus.
+    # sizes, fallback selection, attach and detach, the needle clock, and teardown with the clock
+    # running. Hosts the editor in a window that is never shown, except for the presentation proof:
+    # a small floating window (never activated, never focused, ignores the mouse) captured with
+    # ScreenCaptureKit while the message thread is stalled; skipped without Screen Recording access.
     if (APPLE)
         juce_add_console_app(BqstVuNeedleTests PRODUCT_NAME "BqstVuNeedleTests")
         target_sources(BqstVuNeedleTests PRIVATE tests/vu_needle_tests.mm src/PluginProcessor.cpp
@@ -239,7 +249,8 @@ if (BQST_BUILD_TESTS)
                                    JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_STANDALONE_APPLICATION=1 JucePlugin_Name="BQST"
                                    JucePlugin_VersionString="${BQST_VERSION}")
         target_link_libraries(BqstVuNeedleTests PRIVATE BqtAssets juce::juce_audio_processors juce::juce_audio_utils
-                              juce::juce_dsp PUBLIC juce::juce_recommended_config_flags)
+                              juce::juce_dsp "-framework ScreenCaptureKit" "-framework CoreMedia"
+                              PUBLIC juce::juce_recommended_config_flags)
         add_test(NAME BqstVuNeedleTests COMMAND BqstVuNeedleTests)
         set_tests_properties(BqstVuNeedleTests PROPERTIES
             ENVIRONMENT "BQST_TEST_PRESET_DIR=${CMAKE_CURRENT_BINARY_DIR}/test-presets")

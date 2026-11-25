@@ -910,6 +910,52 @@ int main()
               "a zero-length block does not latch NaN into the meters");
     }
 
+    // Meter integration: real processBlock uses the same physical movement at all block sizes.
+    {
+        float reference = 0.0f;
+        for (const int size : { 32, 512, 2048 })
+        {
+            auto processor = std::make_unique<BqtAudioProcessor>();
+            setParam(*processor, "osRealtime", 0.0f);
+            processor->setPlayConfigDetails(2, 2, sampleRate, size);
+            processor->prepareToPlay(sampleRate, 32); // larger host blocks are split internally
+            juce::AudioBuffer<float> audio(2, size);
+            juce::MidiBuffer midi;
+            for (int offset = 0; offset < 48000;)
+            {
+                const auto count = std::min(size, 48000 - offset);
+                audio.setSize(2, count, false, false, true);
+                for (int i = 0; i < count; ++i)
+                    for (int ch = 0; ch < 2; ++ch)
+                        audio.setSample(ch, i, static_cast<float>(0.5 * std::sin(
+                            2.0 * juce::MathConstants<double>::pi * 1000.0 * (offset + i) / sampleRate)));
+                processor->processBlock(audio, midi);
+                offset += count;
+            }
+            const auto reading = processor->getMeterLevel(0);
+            if (size == 32)
+                reference = reading;
+            check(reading == reference, "processor meter reading is independent of host block size");
+            check(std::abs(reading - 0.5f / std::sqrt(2.0f) * bqt::MeterCapture::zeroVuGain) < 0.005f,
+                  "processor movement retains sine calibration relative to 0 VU");
+            processor->setNonRealtime(true);
+            processor->processBlock(audio, midi);
+            const auto offlineReading = processor->getMeterLevel(0);
+            juce::Thread::sleep(120);
+            check(processor->getMeterLevel(0) == offlineReading,
+                  "non-realtime processor does not release its meter between render callbacks");
+            processor->setNonRealtime(false);
+            // Full bypass continues driving the movement from the passthrough signal.
+            setParam(*processor, "bypass", 1.0f);
+            render(*processor, 1000.0, 0.125f, 1.0);
+            check(std::abs(processor->getMeterLevel(0) - 0.125f / std::sqrt(2.0f)
+                           * bqt::MeterCapture::zeroVuGain) < 0.005f,
+                  "fully bypassed signal continues driving the VU movement");
+            processor->prepareToPlay(sampleRate, size);
+            check(processor->getMeterLevel(0) == 0.0f, "processor prepare resets its published meters");
+        }
+    }
+
     // 8. Flipping a discrete switch mid-signal must not produce a step discontinuity. Each of
     //    these used to jump coefficients or reroute channels with live filter state.
     {

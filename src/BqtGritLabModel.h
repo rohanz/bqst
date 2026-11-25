@@ -7,7 +7,7 @@
 
 namespace bqt
 {
-// Empirical parallel Hammerstein model fitted to one LA500A's engaged/bypass captures.
+// Empirical parallel Hammerstein model fitted to one hardware unit's engaged/bypass captures.
 // Not a circuit simulation. Seven filtered odd shapers model the level-dependent loss;
 // four bounded flux-like paths model low-frequency curvature. All memory is per channel.
 // Drive uses the generated perceptual taper; setReferenceKnob retains measured landmarks.

@@ -189,7 +189,7 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
     satTypeButton.setButtonText("sat type");
     satTypeButton.addMouseListener(this, true);
     satTypeButton.getProperties().set("bqtCreamHelp", "Combination of op-amps, transistors and diodes for a smooth, thick saturation.");
-    satTypeButton.getProperties().set("bqtGritHelp", "Transformer-inspired saturation with firmer edge and bite, blended with a captured LA500A path.");
+    satTypeButton.getProperties().set("bqtGritHelp", "Transformer-inspired saturation with firmer edge and bite.");
     satTypeButton.onClick = [this] { toggleSatTypeBothSides(satTypeButton); };
     rackComponent.addAndMakeVisible(satTypeButton);
 
@@ -235,15 +235,21 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
     linkSides(LinkGroup::sat, &SideControls::mix);
     linkSides(LinkGroup::sat, &SideControls::outputTrim);
 
-    // Meter animation runs on the display refresh, not the message timer, and advances by real
-    // elapsed time so a late frame still covers the right distance.
-    lastMeterTickSeconds = juce::Time::getMillisecondCounterHiRes() * 0.001;
+    const auto logPath = juce::SystemStats::getEnvironmentVariable("BQST_FRAME_LOG", {});
+    if (logPath.isNotEmpty())
+    {
+        auto log = std::make_unique<bqt::FrameLog>(logPath.toStdString(), audioProcessor.frameLogAudio, true,
+                                                   bqt::FrameLog::nowMs(), &needleClock.frameLogStats());
+        if (log->enabled()) frameLog = std::move(log);
+    }
+
+    meterA.setNeedleClock(&needleClock);
+    meterB.setNeedleClock(&needleClock);
+
+    // Display callbacks present the sample-time movement published by the processor.
     meterVBlank = juce::VBlankAttachment(this, [this]
     {
-        const auto now = juce::Time::getMillisecondCounterHiRes() * 0.001;
-        const auto elapsed = now - lastMeterTickSeconds;
-        lastMeterTickSeconds = now;
-
+        bqt::FrameLog::Scope frameTiming(frameLog.get(), true);
         // Apply a bypass change here rather than when the parameter changes. On macOS, JUCE hands
         // the frame's repaint areas to the OS right after this callback, but areas already handed
         // over (the meters, every frame) can be drawn before then; flipping the state mid-frame
@@ -252,17 +258,20 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
         const auto bypassed = rackComponent.isBypassed();
 
         // Each meter marks only the strip its needle swept.
-        if (! bypassed)
-        {
-            meterA.updateLevel(elapsed);
-            meterB.updateLevel(elapsed);
-        }
+        meterA.updateLevel();
+        meterB.updateLevel();
 
-        // On macOS the needles may be presented in a native layer that the system moves at the
-        // display's own rate (see BqtVuNeedleLayer.h). The bypassed look is painted over the
-        // rack, which a native layer would hide, so the needles are painted while bypassed.
-        meterA.syncNeedlePresentation(! bypassed, elapsed);
-        meterB.syncNeedlePresentation(! bypassed, elapsed);
+        // On macOS the needles may be presented in a native layer that the needle clock moves at
+        // the display's own rate, however often this callback runs (see BqtVuNeedleLayer.h). The
+        // bypassed look is painted over the rack, which a native layer would hide, so the needles
+        // are painted while bypassed.
+        meterA.syncNeedlePresentation(! bypassed);
+        meterB.syncNeedlePresentation(! bypassed);
+        if (frameLog)
+        {
+            frameTiming.nativeA = meterA.isNeedleNative();
+            frameTiming.nativeB = meterB.isNeedleNative();
+        }
     });
 
     startTimerHz(60);
@@ -270,6 +279,8 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
 
 BqtAudioProcessorEditor::~BqtAudioProcessorEditor()
 {
+    // Before anything the clock thread reads (the meters' layers, the frame log's counters) goes.
+    needleClock.stop();
     stopTimer();
     endLinkedMirrorGestures();
     removeKeyListener(this);

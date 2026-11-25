@@ -88,7 +88,7 @@ Grit should:
 - be capable of heavier pushed settings
 
 Grit is one model: 75% of the original curve at its original Drive
-mapping plus 25% of a model fitted to captures of an LA500A's whole engaged path. The captured
+mapping plus 25% of a model fitted to captures of a hardware unit's whole signal path. The captured
 share adds the measured tone and limiting of that hardware without replacing the original Grit
 character. Since 1.3.1 all sessions use this model, including older projects that used
 Legacy or Captured Grit. Cream, EQ and projects already using this blend are unchanged.

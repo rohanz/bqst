@@ -5,6 +5,11 @@
 //   BqstEditorSnapshot tips <out.png> [pixelScale]
 //   BqstEditorSnapshot bar <out.png> [pixelScale]     (each bar control: resting, hover, pressed, on)
 //   BqstEditorSnapshot <width> <out.png> <pixelScale> about
+//   BqstEditorSnapshot vu <out.png> [pixelScale] [width=<editorWidth>] [vu=<reading>]
+//
+// Options after pixelScale, in any order: "about" opens the About panel; "width=<n>" sets the
+// editor width for the vu mode (default 865); "vu=<reading>" puts both needles at a reading in VU
+// (for example vu=-7) instead of at rest, in any mode that shows the meters.
 //
 // "menu" draws two open dropdown menus instead (the realtime oversampling choices with a row
 // under the pointer, and the preset menu's top level) through the editor's own look-and-feel,
@@ -26,6 +31,7 @@
 #include <algorithm>
 #include <functional>
 #include <iostream>
+#include <optional>
 
 namespace
 {
@@ -237,6 +243,14 @@ juce::Image renderBarStates(juce::AudioProcessorEditor& editor, float pixelScale
     }
     return sheet;
 }
+void forEachMeter(juce::Component& c, const std::function<void(BqtVuMeter&)>& fn)
+{
+    if (auto* meter = dynamic_cast<BqtVuMeter*>(&c))
+        fn(*meter);
+    for (auto* child : c.getChildren())
+        forEachMeter(*child, fn);
+}
+
 // The first VU meter painted alone: its housing, face and needle with real alpha around them.
 juce::Image renderMeter(juce::Component& root, float pixelScale)
 {
@@ -266,8 +280,21 @@ int main(int argc, char* argv[])
     const auto tipsMode = juce::String(argv[1]) == "tips";
     const auto barMode = juce::String(argv[1]) == "bar";
     const auto vuMode = juce::String(argv[1]) == "vu"; // one meter alone, on a transparent background
-    const auto showAbout = argc > 4 && juce::String(argv[4]) == "about";
-    const auto width = (menuMode || tipsMode || barMode || vuMode) ? 865 : juce::String(argv[1]).getIntValue();
+    auto showAbout = false;
+    auto vuModeWidth = 865;
+    std::optional<float> reading;
+    for (int i = 4; i < argc; ++i)
+    {
+        const juce::String option(argv[i]);
+        if (option == "about")
+            showAbout = true;
+        else if (option.startsWith("width="))
+            vuModeWidth = option.fromFirstOccurrenceOf("=", false, false).getIntValue();
+        else if (option.startsWith("vu="))
+            reading = option.fromFirstOccurrenceOf("=", false, false).getFloatValue();
+    }
+    const auto width = vuMode ? vuModeWidth
+                     : (menuMode || tipsMode || barMode) ? 865 : juce::String(argv[1]).getIntValue();
     const auto pixelScale = argc > 3 ? juce::String(argv[3]).getFloatValue() : 1.0f;
     if (width < 100 || width > 8000 || pixelScale <= 0.0f || pixelScale > 16.0f)
     {
@@ -291,6 +318,10 @@ int main(int argc, char* argv[])
 
         const auto aspect = static_cast<double>(editor->getHeight()) / static_cast<double>(editor->getWidth());
         editor->setSize(width, juce::roundToInt(width * aspect));
+
+        if (reading.has_value())
+            forEachMeter(*editor, [&reading](BqtVuMeter& meter)
+                         { meter.showDeflectionForTest(juce::Decibels::decibelsToGain(*reading, -100.0f)); });
 
         if (showAbout)
             for (auto* child : editor->getChildren())

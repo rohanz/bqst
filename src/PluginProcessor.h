@@ -1,6 +1,7 @@
 #pragma once
 
 #include "BqtGritLabModel.h"
+#include "BqtFrameLog.h"
 
 #include <array>
 #include <atomic>
@@ -10,6 +11,7 @@
 
 #include "BqtDsp.h"
 #include "BqtLegacyGrit.h"
+#include "BqtMetering.h"
 
 // Set by the BqstChainTests target, which links the processor without the editor or its binary
 // assets so DSP behaviour can be asserted headlessly.
@@ -21,6 +23,8 @@ class BqtAudioProcessor final : public juce::AudioProcessor,
                                 private juce::Timer
 {
 public:
+    bqt::FrameLogAudio frameLogAudio;
+
     BqtAudioProcessor();
     ~BqtAudioProcessor() override = default;
 
@@ -61,6 +65,7 @@ public:
     void setStateInformation(const void* data, int sizeInBytes) override;
 
     juce::AudioProcessorValueTreeState& state() { return parameters; }
+    // Physical needle deflection relative to 0 VU (1.0 = -18 dBFS RMS sine).
     float getMeterLevel(int sideIndex) const;
 
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
@@ -186,8 +191,7 @@ private:
     std::array<juce::SmoothedValue<float, juce::ValueSmoothingTypes::Multiplicative>, 2> outputTrimGain;
     // 0..1 blend from unity toward the drive-derived autogain, so toggling autoGain ramps.
     std::array<juce::SmoothedValue<float>, 2> autoGainBlend;
-    std::array<std::atomic<float>, 2> meterLevels {};
-    std::array<float, 2> meterRms {};
+    std::array<bqt::MeterCapture, 2> meterCapture;
     double currentSampleRate = 44100.0;
     // The block size prepareToPlay sized every internal buffer and oversampler from. processBlock
     // splits anything larger into chunks of this size, which makes those sizes provable ceilings

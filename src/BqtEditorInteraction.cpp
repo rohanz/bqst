@@ -11,6 +11,7 @@ using namespace bqst::ui;
 
 void BqtAudioProcessorEditor::timerCallback()
 {
+    bqt::FrameLog::Scope timerTiming(frameLog.get(), false);
     satTypeButton.setToggleState(sideControls[0].satType.getSelectedItemIndex() == 1, juce::dontSendNotification);
     // Picks up link changes from host automation, preset loads and state restore; a click on a
     // link button also calls this directly.

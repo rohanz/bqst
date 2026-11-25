@@ -40,6 +40,9 @@ public:
     void paint(juce::Graphics&) override;
     void resized() override;
 
+    // For tests: the clock that moves the native needles.
+    const bqst::vu::NeedleClock& needleClockForTest() const { return needleClock; }
+
 private:
     BqtScreenFitConstrainer screenFit { *this };
 
@@ -196,6 +199,9 @@ private:
     juce::TextButton satTypeButton;
     juce::ToggleButton bypass;
     std::array<SideControls, 2> sideControls;
+    // Moves both native needles at the screen's refresh, off the message thread. Declared before
+    // the meters so it outlives them; stopped first thing in the destructor.
+    bqst::vu::NeedleClock needleClock;
     BqtVuMeter meterA;
     BqtVuMeter meterB;
     AboutPanel aboutPanel;
@@ -221,8 +227,8 @@ private:
     // timer. A 60 Hz juce::Timer beats against a 60 Hz refresh -- message-loop granularity
     // delivers two ticks inside one frame and none in the next -- which is what made the needle
     // look intermittently low-framerate.
+    std::unique_ptr<bqt::FrameLog> frameLog;
     juce::VBlankAttachment meterVBlank;
-    double lastMeterTickSeconds = 0.0;
     bool isMirroringLinkedControl = false;
     // Per link group (eq, sat): whether side B's controls are currently attached to side A's
     // parameters. See updateLinkedAttachments.

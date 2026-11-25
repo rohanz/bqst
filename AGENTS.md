@@ -375,7 +375,7 @@ out at that path and gitignored here; clone it there before changing Cream:
 
 ### Grit
 
-Grit is one model as of 1.3.1: 75% complete original Grit plus 25% captured LA500A
+Grit is one model as of 1.3.1: 75% complete original Grit plus 25% captured hardware
 whole-path model. This is the unchanged sound formerly called Hybrid (the default since
 1.2.0). There is no `gritRevision` / Grit Model host parameter or revision switching.
 Older sessions and presets load regardless of the revision they carry; it is ignored.
@@ -528,7 +528,7 @@ This is intentional. Help text should feel consistent with the JUCE tooltip dela
 Cream/Grit help is dynamic on the sat type button:
 
 - Cream: "Combination of op-amps, transistors and diodes for a smooth, thick saturation."
-- Grit: "Transformer-inspired saturation with firmer edge and bite, blended with a captured LA500A path."
+- Grit: "Transformer-inspired saturation with firmer edge and bite."
 
 When the sat type changes while help is visible, update the visible readout immediately.
 
