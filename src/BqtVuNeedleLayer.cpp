@@ -28,6 +28,7 @@ bool NativeNeedle::present(void*, const NeedleGeometry&, float, NeedleReading) {
 void NativeNeedle::hide() {}
 void NativeNeedle::detach() {}
 NativeNeedle::Probe NativeNeedle::probe() const { return {}; }
+bool NativeNeedle::showsAt(juce::Point<float>) const { return false; }
 } // namespace bqst::vu
 
 #endif

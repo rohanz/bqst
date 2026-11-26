@@ -239,7 +239,6 @@ bool BqtVuMeter::presentNeedle()
     auto* peer = getPeer();
     NeedleConditions conditions;
     conditions.hasClock = needleClock != nullptr;
-    conditions.editorAllows = editorAllowsNativeNeedle;
     conditions.showing = isShowing();
     conditions.hasHostView = peer != nullptr && peer->getNativeHandle() != nullptr;
     // The other meter's bounds overlap this one's, but it paints only its housing.
@@ -248,7 +247,9 @@ bool BqtVuMeter::presentNeedle()
         auto* meter = dynamic_cast<const BqtVuMeter*>(&c);
         return meter != nullptr ? meter->paintedArea() : c.getLocalBounds();
     };
-    conditions.coveredFromAbove = conditions.showing && isAreaCoveredFromAbove(*this, needleSweepArea(), paintedAreaOf);
+    // What BQST paints over the sweep: left out of the layer if every cover reports its shape.
+    const auto cover = conditions.showing ? coverFromAbove(*this, needleSweepArea(), paintedAreaOf) : CoverFromAbove {};
+    conditions.coveredFromAbove = ! cover.excludable;
     if (chooseNeedleMode(conditions) != NeedleMode::native)
         return false;
 
@@ -274,8 +275,13 @@ bool BqtVuMeter::presentNeedle()
     const auto unit = origin.getDistanceFrom(xAxis);
     geometry.lineWidth = needleWidth * unit;
     geometry.dotDiameter = pivotDotDiameter * unit;
-    geometry.needleColour = needleColour;
-    geometry.dotColour = needleColour.darker(0.35f);
+    // Exactly what the rack's bypass fills make of the painted needle: the fills are affine in
+    // colour, so the layer's antialiased edges over the dimmed face match too.
+    const auto colourOf = [this](juce::Colour c) { return needleDimmed ? dimmedForBypass(c) : c; };
+    geometry.exclusion = cover.shape;
+    geometry.exclusion.applyTransform(geometry.meterToView);
+    geometry.needleColour = colourOf(needleColour);
+    geometry.dotColour = colourOf(needleColour.darker(0.35f));
 
     // Read on the clock thread at every refresh: the audio-side movement, lock-free.
     auto reading = [&processor = audioProcessor, meterSide = side]
@@ -299,9 +305,13 @@ void BqtVuMeter::showPaintedNeedle()
     repaintNeedleAt(displayedLevel);
 }
 
-void BqtVuMeter::syncNeedlePresentation(bool editorAllowsNative)
+void BqtVuMeter::syncNeedlePresentation(bool rackDimmed)
 {
-    editorAllowsNativeNeedle = editorAllowsNative;
+    // While bypassed the audio side moves the needle to the left stop and holds it there exactly.
+    // The needle stays in the layer throughout, in the dimmed colours (a colour change never moves
+    // it), so the fall is at display rate; once the reading stops changing, the clock commits
+    // nothing more on its own (see BqtVuNeedleLayer_mac.mm), so a resting needle costs no drawing.
+    needleDimmed = rackDimmed;
     // The audio-side movement already supplies the physical response; the clock applies it.
     if (! presentNeedle())
     {

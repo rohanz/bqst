@@ -192,6 +192,8 @@ private:
     // 0..1 blend from unity toward the drive-derived autogain, so toggling autoGain ramps.
     std::array<juce::SmoothedValue<float>, 2> autoGainBlend;
     std::array<bqt::MeterCapture, 2> meterCapture;
+    // Audio thread: the plugin's bypass is on, so the meters are driven to rest (see updateMeter).
+    bool metersResting = false;
     double currentSampleRate = 44100.0;
     // The block size prepareToPlay sized every internal buffer and oversampler from. processBlock
     // splits anything larger into chunks of this size, which makes those sizes provable ceilings

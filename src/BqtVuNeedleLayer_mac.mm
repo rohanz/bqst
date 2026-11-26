@@ -49,13 +49,47 @@ CGPathRef createNeedlePath(const NeedleGeometry& geometry, float scaleFraction)
     return path;
 }
 
+// The layer's mask path for what covers the needle: the whole clip, with each cover's shape cut
+// out (even-odd: each cover is a rounded rectangle and coverFromAbove passes no two that overlap,
+// so the cut-out is exactly their area). Coordinates
+// as for the needle: the clip's top left is the origin, y down.
+CGPathRef createExclusionMask(const NeedleGeometry& geometry, CGSize size)
+{
+    const auto origin = geometry.clip.getPosition();
+    CGMutablePathRef path = CGPathCreateMutable();
+    CGPathAddRect(path, nullptr, CGRectMake(0, 0, size.width, size.height));
+    for (juce::Path::Iterator i(geometry.exclusion); i.next();)
+    {
+        const auto p = [&](float x, float y) { return CGPointMake(x - origin.x, y - origin.y); };
+        switch (i.elementType)
+        {
+            case juce::Path::Iterator::startNewSubPath: { const auto a = p(i.x1, i.y1); CGPathMoveToPoint(path, nullptr, a.x, a.y); break; }
+            case juce::Path::Iterator::lineTo: { const auto a = p(i.x1, i.y1); CGPathAddLineToPoint(path, nullptr, a.x, a.y); break; }
+            case juce::Path::Iterator::quadraticTo:
+            {
+                const auto a = p(i.x1, i.y1), b = p(i.x2, i.y2);
+                CGPathAddQuadCurveToPoint(path, nullptr, a.x, a.y, b.x, b.y);
+                break;
+            }
+            case juce::Path::Iterator::cubicTo:
+            {
+                const auto a = p(i.x1, i.y1), b = p(i.x2, i.y2), c = p(i.x3, i.y3);
+                CGPathAddCurveToPoint(path, nullptr, a.x, a.y, b.x, b.y, c.x, c.y);
+                break;
+            }
+            case juce::Path::Iterator::closePath: CGPathCloseSubpath(path); break;
+        }
+    }
+    return path;
+}
+
 // No implicit animation for anything this code changes: every change is applied exactly.
 NSDictionary<NSString*, id<CAAction>>* noActions()
 {
     static NSDictionary* actions = @{ @"position": NSNull.null, @"bounds": NSNull.null, @"frame": NSNull.null,
                                       @"hidden": NSNull.null, @"path": NSNull.null, @"contentsScale": NSNull.null,
                                       @"strokeColor": NSNull.null, @"fillColor": NSNull.null, @"lineWidth": NSNull.null,
-                                      @"geometryFlipped": NSNull.null, @"sublayers": NSNull.null,
+                                      @"geometryFlipped": NSNull.null, @"sublayers": NSNull.null, @"mask": NSNull.null,
                                       @"onOrderIn": NSNull.null, @"onOrderOut": NSNull.null };
     return actions;
 }
@@ -89,6 +123,7 @@ struct ClockShared
     std::atomic<double> lastPresentMs { 0.0 };
     bqt::FrameLogNeedle stats;
     double previousPresentMs = 0.0;  // clock thread only
+    static constexpr double stillResetsGapMs = 250.0;
 
     void tick(const CVTimeStamp* outputTime)
     {
@@ -105,24 +140,41 @@ struct ClockShared
         if (! lock.owns_lock())
             return;
 
+        // Only readings that changed are drawn and committed. A needle at rest (held there while
+        // bypassed, or fully released) therefore costs a read per refresh and nothing else: no
+        // path, no transaction, nothing for the compositor. Idling is decided here on the clock
+        // thread, so it needs no message-thread call to start or end.
         auto moved = false;
-        [CATransaction begin];
-        [CATransaction setDisableActions: YES];
         for (auto& slot : slots)
         {
             if (! slot.active || slot.needle == nil || ! slot.reading)
                 continue;
-            slot.scaleFraction = slot.reading();
+            const auto reading = slot.reading();
+            if (reading == slot.scaleFraction)
+                continue;
+            if (! moved)
+            {
+                [CATransaction begin];
+                [CATransaction setDisableActions: YES];
+                moved = true;
+            }
+            slot.scaleFraction = reading;
             CGPathRef path = createNeedlePath(slot.geometry, slot.scaleFraction);
             slot.needle.path = path;
             CGPathRelease(path);
-            moved = true;
         }
         lock.unlock();
-        [CATransaction commit];
 
         if (! moved)
+        {
+            // A needle that has stood still (at rest) is not a late one: its next movement starts a
+            // fresh gap measurement. A short pause, such as a host block longer than a refresh,
+            // still counts towards the gap, as it shows on screen.
+            if (previousPresentMs > 0.0 && bqt::FrameLog::nowMs() - previousPresentMs > stillResetsGapMs)
+                restartGap.store(true);
             return;
+        }
+        [CATransaction commit];
         const auto now = bqt::FrameLog::nowMs();
         if (restartGap.exchange(false))
             previousPresentMs = 0.0;
@@ -288,6 +340,7 @@ struct NativeNeedle::Impl
     NeedleClock* clock = nullptr;
     __weak NSView* host = nil;
     CALayer* container = nil;   // clips to the meter and sets a top-left, y-down space
+    CALayer* clipper = nil;     // holds needle and dot; masked to leave out what covers them
     CAShapeLayer* needle = nil;
     CAShapeLayer* dot = nil;
     NeedleGeometry shown;
@@ -314,8 +367,13 @@ struct NativeNeedle::Impl
         dot.anchorPoint = CGPointZero;
         dot.strokeColor = nil;
         dot.actions = noActions();
-        [container addSublayer: needle];
-        [container addSublayer: dot];   // the dot sits over the needle, as when painted
+        // The mask sits on a sublayer, so it is in the same top-left, y-down space as the needle.
+        clipper = [CALayer layer];
+        clipper.anchorPoint = CGPointZero;
+        clipper.actions = noActions();
+        [container addSublayer: clipper];
+        [clipper addSublayer: needle];
+        [clipper addSublayer: dot];   // the dot sits over the needle, as when painted
     }
 
     // With the clock's lock held.
@@ -381,6 +439,7 @@ struct NativeNeedle::Impl
         [container removeFromSuperlayer];
         [CATransaction commit];
         container = nil;
+        clipper = nil;
         needle = nil;
         dot = nil;
         host = nil;
@@ -443,8 +502,9 @@ bool NativeNeedle::present(void* hostView, const NeedleGeometry& geometry, float
     const auto windowScale = view.window != nil ? view.window.backingScaleFactor : parent.contentsScale;
     const auto scale = windowScale > 0 ? windowScale : 1.0;
 
-    const auto geometryChanged = ! impl->hasShown || impl->shown != geometry || impl->shownScale != scale
-                              || ! CGRectEqualToRect(impl->container.frame, layerRect);
+    const auto shapeChanged = ! impl->hasShown || ! impl->shown.sameShape(geometry) || impl->shownScale != scale
+                           || ! CGRectEqualToRect(impl->container.frame, layerRect);
+    const auto geometryChanged = shapeChanged || impl->shown != geometry;
     if (geometryChanged)
     {
         auto* container = impl->container;
@@ -453,6 +513,28 @@ bool NativeNeedle::present(void* hostView, const NeedleGeometry& geometry, float
         container.contentsScale = scale;
 
         const auto bounds = CGRectMake(0, 0, layerRect.size.width, layerRect.size.height);
+        impl->clipper.frame = bounds;
+        if (geometry.exclusion.isEmpty())
+        {
+            impl->clipper.mask = nil;
+        }
+        else if (shapeChanged || impl->shown.exclusion != geometry.exclusion)
+        {
+            // A cover appeared, moved or changed: in this same commit as JUCE's repaint of it.
+            CAShapeLayer* mask = [CAShapeLayer layer];
+            mask.actions = noActions();
+            mask.anchorPoint = CGPointZero;
+            mask.frame = bounds;
+            mask.contentsScale = scale;
+            mask.fillRule = kCAFillRuleEvenOdd;
+            CGColorRef opaque = createColour(juce::Colours::black);
+            mask.fillColor = opaque;
+            CGColorRelease(opaque);
+            CGPathRef maskPath = createExclusionMask(geometry, bounds.size);
+            mask.path = maskPath;
+            CGPathRelease(maskPath);
+            impl->clipper.mask = mask;
+        }
         impl->needle.frame = bounds;
         impl->needle.contentsScale = scale;
         impl->needle.lineWidth = geometry.lineWidth;
@@ -483,7 +565,7 @@ bool NativeNeedle::present(void* hostView, const NeedleGeometry& geometry, float
             return false;
         }
         const auto wasActive = entry->active;
-        if (geometryChanged || ! wasActive || becomingVisible)
+        if (shapeChanged || ! wasActive || becomingVisible)
         {
             entry->needle = impl->needle;
             entry->geometry = geometry;
@@ -494,6 +576,12 @@ bool NativeNeedle::present(void* hostView, const NeedleGeometry& geometry, float
             CGPathRef path = createNeedlePath(geometry, scaleFraction);
             impl->needle.path = path;
             CGPathRelease(path);
+        }
+        else if (geometryChanged)
+        {
+            // Colours only (the bypassed look): the path stays exactly where the clock last drew
+            // it, so the change can never move the needle, backwards or forwards.
+            entry->geometry = geometry;
         }
         entry->active = true;
     }
@@ -577,7 +665,36 @@ NativeNeedle::Probe NativeNeedle::probe() const
 
     result.lineWidth = static_cast<float>(impl->needle.lineWidth);
     result.contentsScale = static_cast<float>(impl->needle.contentsScale);
+    const auto colourOf = [](CGColorRef colour)
+    {
+        if (colour == nullptr || CGColorGetNumberOfComponents(colour) != 4)
+            return juce::Colour();
+        const auto* c = CGColorGetComponents(colour);
+        return juce::Colour::fromFloatRGBA(static_cast<float>(c[0]), static_cast<float>(c[1]),
+                                           static_cast<float>(c[2]), static_cast<float>(c[3]));
+    };
+    result.needleColour = colourOf(impl->needle.strokeColor);
+    result.dotColour = colourOf(impl->dot.fillColor);
+    result.masked = impl->clipper.mask != nil;
     return result;
+}
+
+bool NativeNeedle::showsAt(juce::Point<float> viewPoint) const
+{
+    NSView* view = impl->host;
+    if (impl->container == nil || view == nil || view.layer == nil || impl->container.hidden)
+        return false;
+    const auto inParent = [view convertPointToLayer: NSMakePoint(viewPoint.x, viewPoint.y)];
+    const auto inContainer = [impl->container convertPoint: inParent fromLayer: view.layer];
+    if (! CGRectContainsPoint(impl->container.bounds, inContainer))
+        return false;
+    auto* mask = static_cast<CAShapeLayer*>(impl->clipper.mask);
+    if (mask == nil)
+        return true;
+    // A mask has no superlayer to convert through; it lies over its layer at mask.frame.
+    const auto inClipper = [impl->clipper convertPoint: inParent fromLayer: view.layer];
+    const auto inMask = CGPointMake(inClipper.x - mask.frame.origin.x, inClipper.y - mask.frame.origin.y);
+    return mask.path != nullptr && CGPathContainsPoint(mask.path, nullptr, inMask, true);
 }
 } // namespace bqst::vu
 

@@ -245,6 +245,17 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
 
     meterA.setNeedleClock(&needleClock);
     meterB.setNeedleClock(&needleClock);
+    needleCoverWatcher.changed = [this]
+    {
+        meterA.coversChanged();
+        meterB.coversChanged();
+    };
+    for (auto* child : getChildren())
+        if (dynamic_cast<bqst::vu::OpaqueCover*>(child) != nullptr)
+        {
+            child->addComponentListener(&needleCoverWatcher);
+            needleCovers.push_back(child);
+        }
 
     // Display callbacks present the sample-time movement published by the processor.
     meterVBlank = juce::VBlankAttachment(this, [this]
@@ -262,11 +273,11 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
         meterB.updateLevel();
 
         // On macOS the needles may be presented in a native layer that the needle clock moves at
-        // the display's own rate, however often this callback runs (see BqtVuNeedleLayer.h). The
-        // bypassed look is painted over the rack, which a native layer would hide, so the needles
-        // are painted while bypassed.
-        meterA.syncNeedlePresentation(! bypassed);
-        meterB.syncNeedlePresentation(! bypassed);
+        // the display's own rate, however often this callback runs (see BqtVuNeedleLayer.h).
+        // While bypassed, the needles stay in that layer, dimmed like the rack, fall to rest and
+        // stand still there (the clock then commits nothing).
+        meterA.syncNeedlePresentation(bypassed);
+        meterB.syncNeedlePresentation(bypassed);
         if (frameLog)
         {
             frameTiming.nativeA = meterA.isNeedleNative();
@@ -279,6 +290,8 @@ BqtAudioProcessorEditor::BqtAudioProcessorEditor(BqtAudioProcessor& p)
 
 BqtAudioProcessorEditor::~BqtAudioProcessorEditor()
 {
+    for (auto* cover : needleCovers)
+        cover->removeComponentListener(&needleCoverWatcher);
     // Before anything the clock thread reads (the meters' layers, the frame log's counters) goes.
     needleClock.stop();
     stopTimer();

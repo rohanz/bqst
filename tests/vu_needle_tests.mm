@@ -11,8 +11,9 @@
 //  - hosted, the layer is attached and its needle, pivot dot and clip land exactly where the
 //    painted needle would, at several editor sizes, mapped back through Core Animation;
 //  - a moving reading is presented exactly at the painted position without animation;
-//  - anything over the needle's sweep (a component, the About card) and the bypassed look switch
-//    to the painted needle, and back;
+//  - anything over the needle's sweep (a component, the About card) switches to the painted
+//    needle, and back; under the bypassed look the needle stays in the layer, dimmed like the
+//    rack, falls to rest and stands still there with the clock committing nothing;
 //  - removing the editor from its view, and deleting the editor, leave no layer behind;
 //  - the needle clock moves the layer on its own thread, exactly along the painted needle's path,
 //    and stops while no needle is native;
@@ -52,6 +53,10 @@ API_AVAILABLE(macos(12.3))
     std::atomic<double> maxGapMs;
     double lastDisplayMs;
     uint64_t lastHash;
+    // A sub-rectangle (capture pixels) whose own changes are counted separately; empty: none.
+    std::atomic<int> regionX, regionY, regionW, regionH;
+    std::atomic<int> regionPictures;
+    uint64_t lastRegionHash;
 }
 @end
 
@@ -84,6 +89,21 @@ API_AVAILABLE(macos(12.3))
         return;
     lastHash = hash;
 
+    auto regionChanged = false;
+    if (const auto rw = regionW.load(); rw > 0)
+    {
+        const auto rx = static_cast<size_t>(regionX.load()), ry = static_cast<size_t>(regionY.load());
+        const auto rh = static_cast<size_t>(regionH.load());
+        uint64_t regionHash = 1469598103934665603ull;
+        CVPixelBufferLockBaseAddress(pixels, kCVPixelBufferLock_ReadOnly);
+        for (size_t y = ry; y < std::min(height, ry + rh); ++y)
+            for (size_t x = rx * 4; x < std::min(width, rx + static_cast<size_t>(rw)) * 4; ++x)
+                regionHash = (regionHash ^ base[y * rowBytes + x]) * 1099511628211ull;
+        CVPixelBufferUnlockBaseAddress(pixels, kCVPixelBufferLock_ReadOnly);
+        regionChanged = regionHash != lastRegionHash;
+        lastRegionHash = regionHash;
+    }
+
     NSNumber* displayTime = info[SCStreamFrameInfoDisplayTime];
     static const double ticksToMs = []
     {
@@ -105,6 +125,8 @@ API_AVAILABLE(macos(12.3))
     }
     lastDisplayMs = displayMs;
     pictures.fetch_add(1);
+    if (regionChanged)
+        regionPictures.fetch_add(1);
 }
 @end
 
@@ -218,15 +240,13 @@ void selectionRules()
     using namespace bqst::vu;
     NeedleConditions ok;
     ok.compiledIn = true;
-    ok.hasClock = ok.editorAllows = ok.showing = ok.hasHostView = true;
+    ok.hasClock = ok.showing = ok.hasHostView = true;
     check(chooseNeedleMode(ok) == NeedleMode::native, "all conditions met selects the layer");
 
     auto c = ok; c.compiledIn = false;
     check(chooseNeedleMode(c) == NeedleMode::painted, "switch off paints");
     c = ok; c.hasClock = false;
     check(chooseNeedleMode(c) == NeedleMode::painted, "no needle clock paints");
-    c = ok; c.editorAllows = false;
-    check(chooseNeedleMode(c) == NeedleMode::painted, "bypassed look paints");
     c = ok; c.showing = false;
     check(chooseNeedleMode(c) == NeedleMode::painted, "not showing paints");
     c = ok; c.hasHostView = false;
@@ -248,18 +268,67 @@ void selectionRules()
     before.setBounds(0, 0, 200, 200);
     after.setBounds(150, 150, 20, 20);
     const auto area = juce::Rectangle<int>(10, 10, 50, 50);
-    check(! isAreaCoveredFromAbove(meter, area), "earlier or distant siblings do not cover");
+    const auto covered = [&](const std::function<juce::Rectangle<int>(const juce::Component&)>& paintedAreaOf = {})
+    {
+        return ! coverFromAbove(meter, area, paintedAreaOf).excludable;
+    };
+    check(! covered(), "earlier or distant siblings do not cover");
     after.setBounds(40, 40, 10, 10);
-    check(isAreaCoveredFromAbove(meter, area), "a later sibling over the area covers");
+    check(covered(), "a later sibling over the area covers");
     after.setVisible(false);
-    check(! isAreaCoveredFromAbove(meter, area), "a hidden sibling does not cover");
+    check(! covered(), "a hidden sibling does not cover");
     top.addAndMakeVisible(overlay);
     overlay.setBounds(300, 300, 50, 50);
-    check(! isAreaCoveredFromAbove(meter, area), "an ancestor's later sibling away from the area does not cover");
-    overlay.setBounds(60, 60, 10, 10);   // rack (10,10) + 1.5 * (20+10..20+60) = 55..130
-    check(isAreaCoveredFromAbove(meter, area), "an ancestor's later sibling over the scaled area covers");
+    check(! covered(), "an ancestor's later sibling away from the area does not cover");
+    overlay.setBounds(60, 60, 10, 10);   // 1.5 * (rack 10 + meter 20 + 10..60) = 60..135
+    check(covered(), "an ancestor's later sibling over the scaled area covers");
     const auto paintsNothing = [](const juce::Component&) { return juce::Rectangle<int>(); };
-    check(! isAreaCoveredFromAbove(meter, area, paintsNothing), "a sibling that paints elsewhere in its bounds does not cover");
+    check(! covered(paintsNothing), "a sibling that paints elsewhere in its bounds does not cover");
+    top.removeChildComponent(&overlay);
+
+    // A cover that reports its opaque shape is left out instead: the same rule for any such
+    // component, its shape mapped into the meter's coordinates through every transform.
+    struct Card final : juce::Component, OpaqueCover
+    {
+        juce::Rectangle<float> card;
+        OpaqueCoverShape opaqueShape() const override { return { card, 4.0f }; }
+    };
+    Card card;
+    top.addAndMakeVisible(card);   // spans everything, paints only its card
+    card.setBounds(top.getLocalBounds());
+    card.card = { 60.0f, 60.0f, 30.0f, 15.0f };   // in meter coordinates: 60/1.5 - 30 = 10 ..
+    {
+        const auto cover = coverFromAbove(meter, area);
+        const auto expected = juce::Rectangle<float>(10.0f, 10.0f, 20.0f, 10.0f);
+        const auto b = cover.shape.getBounds();
+        check(cover.excludable && std::abs(b.getX() - expected.getX()) < 0.01f && std::abs(b.getY() - expected.getY()) < 0.01f
+                  && std::abs(b.getWidth() - expected.getWidth()) < 0.01f && std::abs(b.getHeight() - expected.getHeight()) < 0.01f,
+              "an opaque cover is left out, mapped into the meter's coordinates (" + b.toString() + ")");
+        check(! cover.shape.contains(10.2f, 10.2f) && cover.shape.contains(13.0f, 13.0f) && ! cover.shape.contains(31.0f, 15.0f),
+              "the left-out shape keeps the cover's rounded corners");
+    }
+    card.card = { 300.0f, 300.0f, 20.0f, 20.0f };
+    check(coverFromAbove(meter, area).excludable && coverFromAbove(meter, area).shape.isEmpty(),
+          "an opaque cover that paints away from the area leaves nothing out, though its bounds overlap");
+    card.card = { 60.0f, 60.0f, 30.0f, 15.0f };
+    card.setAlpha(0.5f);
+    check(! coverFromAbove(meter, area).excludable, "a translucent cover cannot be left out: painted needle");
+    card.setAlpha(1.0f);
+    Card second;
+    top.addAndMakeVisible(second);
+    second.setBounds(top.getLocalBounds());
+    second.card = { 95.0f, 95.0f, 10.0f, 10.0f };   // 33.3..40 in meter coordinates
+    {
+        const auto cover = coverFromAbove(meter, area);
+        check(cover.excludable && cover.shape.contains(13.0f, 13.0f) && cover.shape.contains(35.0f, 35.0f),
+              "two separate opaque covers are both left out");
+    }
+    second.card = { 65.0f, 65.0f, 10.0f, 10.0f };   // overlaps the first
+    check(! coverFromAbove(meter, area).excludable, "overlapping opaque covers cannot be left out exactly: painted needle");
+    second.setVisible(false);
+    after.setVisible(true);
+    after.setBounds(40, 40, 10, 10);
+    check(! coverFromAbove(meter, area).excludable, "an opaque cover beside one that does not report its shape: painted needle");
 }
 
 void paintedWhenOffscreen(BqtAudioProcessor& processor)
@@ -270,7 +339,7 @@ void paintedWhenOffscreen(BqtAudioProcessor& processor)
     check(meters.size() == 2, "editor has two meters");
     for (auto* meter : meters)
     {
-        meter->syncNeedlePresentation(true);
+        meter->syncNeedlePresentation(false);
         check(! meter->isNeedleNative(), "offscreen editor paints its needle");
 
         // The snapshot shows the needle: the point a third of the way from pivot to tip is the
@@ -334,6 +403,11 @@ Expected expectedFor(BqtVuMeter& meter, float scaleFraction)
     return e;
 }
 
+bool meterShowsAt(BqtVuMeter& meter, juce::Point<float> viewPoint)
+{
+    return meter.nativeNeedleShowsAt(viewPoint);
+}
+
 void checkAligned(BqtVuMeter& meter, NSWindow* window, const juce::String& label)
 {
     const auto probe = meter.nativeNeedleProbe();
@@ -353,11 +427,11 @@ void checkAligned(BqtVuMeter& meter, NSWindow* window, const juce::String& label
           label + ": layer drawn at the window's pixel density " + juce::String(probe.contentsScale));
 }
 
-void driveMeters(BqtAudioProcessor& processor, float amplitude)
+void driveMeters(BqtAudioProcessor& processor, float amplitude, int blocks = 60)
 {
     juce::AudioBuffer<float> buffer(2, 512);
     juce::MidiBuffer midi;
-    for (int block = 0; block < 60; ++block)
+    for (int block = 0; block < blocks; ++block)
     {
         for (int ch = 0; ch < 2; ++ch)
             for (int i = 0; i < buffer.getNumSamples(); ++i)
@@ -407,7 +481,7 @@ void hosted(BqtAudioProcessor& processor)
         // Switched off at build time: hosted or not, the needle is painted and no layer is added.
         for (auto* meter : meters)
         {
-            meter->syncNeedlePresentation(true);
+            meter->syncNeedlePresentation(false);
             check(! meter->isNeedleNative(), "switched off: hosted meter paints its needle");
         }
         check(sublayerCount(peerView) == baselineSublayers, "switched off: no layer added");
@@ -422,7 +496,7 @@ void hosted(BqtAudioProcessor& processor)
         editor->setSize(width, bqt::editor::heightForWidth(width));
         for (size_t i = 0; i < meters.size(); ++i)
         {
-            meters[i]->syncNeedlePresentation(true);
+            meters[i]->syncNeedlePresentation(false);
             checkAligned(*meters[i], window, "width " + juce::String(width) + " meter " + juce::String(static_cast<int>(i)));
         }
     }
@@ -462,22 +536,250 @@ void hosted(BqtAudioProcessor& processor)
         check(! near(tips.front(), tips[tips.size() - 2], 0.01f), "the clock moved the tip without the message thread");
     }
 
-    // Bypassed look: painted, layer hidden; and back. With both needles painted the clock stops.
+    // Bypass. The needle never leaves the layer for it: it only takes the colours the rack's
+    // dimming gives the painted needle, falls to rest, stands still there with the clock committing
+    // nothing, and rises again on release.
+    const auto undimmed = meters[0]->nativeNeedleProbe().needleColour;
+    const auto dimmed = bqst::vu::dimmedForBypass(undimmed);
+    check(dimmed != undimmed, "the bypassed look changes the needle colour");
+    const auto sameColour = [](juce::Colour a, juce::Colour b)
+    {
+        return near(a.getFloatRed(), b.getFloatRed(), 0.002f) && near(a.getFloatGreen(), b.getFloatGreen(), 0.002f)
+            && near(a.getFloatBlue(), b.getFloatBlue(), 0.002f) && near(a.getFloatAlpha(), b.getFloatAlpha(), 0.002f);
+    };
+    const auto syncAll = [&](bool rackDimmed, const juce::String& label)
+    {
+        for (auto* meter : meters)
+        {
+            meter->updateLevel();
+            meter->syncNeedlePresentation(rackDimmed);
+            check(sameColour(meter->nativeNeedleProbe().needleColour, rackDimmed ? dimmed : undimmed),
+                  label + ": needle colour follows the bypassed look");
+            checkAligned(*meter, window, label);
+        }
+    };
+    auto* bypassParameter = processor.state().getParameter("bypass");
+
+    // Rapid toggling, mid-fall and mid-rise: about every 50 ms from a steady reading.
+    driveMeters(processor, 0.3f);
+    syncAll(false, "steady before bypass");
+    for (int i = 0; i < 8; ++i)
+    {
+        const auto on = i % 2 == 0;
+        bypassParameter->setValueNotifyingHost(on ? 1.0f : 0.0f);
+        driveMeters(processor, 0.3f, 5);
+        syncAll(on, juce::String(on ? "bypass toggled on (falling) " : "bypass toggled off (rising) ") + juce::String(i));
+    }
+    check(clock.probe().running, "rapid bypass toggling: the clock keeps presenting");
+
+    // Fall to rest: the needle reaches the stop exactly and the clock idles by itself.
+    bypassParameter->setValueNotifyingHost(1.0f);
+    for (int i = 0; i < 4; ++i)
+        driveMeters(processor, 0.3f);   // about 2.5 s with signal still passing through
+    juce::Thread::sleep(60);            // that took milliseconds: let the clock draw the stop
+    syncAll(true, "bypassed at rest");
+    for (auto* meter : meters)
+        check(meter->nativeNeedleProbe().scaleFraction == 0.0f && meter->currentNeedleLine() == meter->needleLineAt(0.0f),
+              "bypassed at rest: needle exactly at the left stop");
+    {
+        const auto before = clock.probe();
+        juce::Thread::sleep(120);
+        driveMeters(processor, 0.3f);
+        for (auto* meter : meters)
+            check(! meter->updateLevel(), "bypassed at rest: the needle does not move or repaint");
+        const auto after = clock.probe();
+        check(after.running && after.ticks > before.ticks + 3, "bypassed at rest: the clock still ticks (it notices movement itself)");
+        check(after.presents == before.presents, "bypassed at rest: the clock commits nothing ("
+                                                 + juce::String(static_cast<juce::int64>(after.presents - before.presents)) + " presents)");
+    }
+
+    // A colour change never moves the needle: with the message thread's own reading stale, the
+    // layer keeps the position the clock last drew.
     for (auto* meter : meters)
     {
+        const auto tipBefore = meter->nativeNeedleProbe().tip;
+        meter->showDeflectionForTest(1.0f);
         meter->syncNeedlePresentation(false);
-        check(! meter->isNeedleNative() && ! meter->nativeNeedleProbe().visible, "bypassed look paints the needle");
-    }
-    check(! clock.probe().running, "clock stops while no needle is native");
-    {
-        const auto stoppedAt = clock.probe().presents;
-        juce::Thread::sleep(40);
-        check(clock.probe().presents == stoppedAt, "a stopped clock presents nothing");
-    }
-    for (auto* meter : meters)
-    {
+        const auto probe = meter->nativeNeedleProbe();
+        check(sameColour(probe.needleColour, undimmed), "colour-only change: colour applied");
+        check(probe.scaleFraction == 0.0f && near(probe.tip, tipBefore, 0.001f), "colour-only change: needle not moved");
         meter->syncNeedlePresentation(true);
-        checkAligned(*meter, window, "after bypass");
+        check(probe.scaleFraction == 0.0f && near(meter->nativeNeedleProbe().tip, tipBefore, 0.001f),
+              "colour-only change back: needle not moved");
+    }
+    syncAll(true, "bypassed at rest, after colour checks");
+
+    // Released: rising from rest, undimmed, with the clock committing again.
+    {
+        const auto before = clock.probe().presents;
+        bypassParameter->setValueNotifyingHost(0.0f);
+        driveMeters(processor, 0.3f, 10);
+        for (auto* meter : meters)
+            check(meter->updateLevel(), "after bypass: the needle rises");
+        syncAll(false, "after bypass");
+        juce::Thread::sleep(60);
+        check(clock.probe().presents > before, "after bypass: the clock commits the rise");
+    }
+
+    // The About card. The panel spans the editor but paints only its card, which overlaps the
+    // lower part of the left meter: both needles stay in the layer, the left one masked by the
+    // card's exact shape, the right one not masked at all.
+    juce::Component* about = nullptr;
+    for (auto* child : editor->getChildren())
+        if (juce::String(typeid(*child).name()).contains("AboutPanel"))
+            about = child;
+    auto* aboutCover = dynamic_cast<const bqst::vu::OpaqueCover*>(about);
+    check(about != nullptr && aboutCover != nullptr, "found the About card, which reports its shape");
+    if (about != nullptr && aboutCover != nullptr)
+    {
+        // The card in host-view coordinates, as the layer must leave it out.
+        const auto cardInView = [&]
+        {
+            auto card = aboutCover->opaqueShape().toPath();
+            card.applyTransform(bqst::vu::transformBetween(*about, *editor).scaled(editor->getDesktopScaleFactor()));
+            return card;
+        };
+        // Every point of the left meter's clip near the card, away from the antialiased edge:
+        // the layer shows there exactly where the card does not (corners included).
+        const auto maskMatchesCard = [&](const juce::String& label)
+        {
+            const auto card = cardInView();
+            const auto clip = meters[0]->nativeNeedleProbe().clip;
+            const auto region = clip.getIntersection(card.getBounds().expanded(14.0f));
+            int hidden = 0, shown = 0, wrong = 0;
+            for (auto y = region.getY() + 0.31f; y < region.getBottom(); y += 0.83f)
+                for (auto x = region.getX() + 0.27f; x < region.getRight(); x += 0.83f)
+                {
+                    const auto inside = card.contains(x, y);
+                    auto nearEdge = false;
+                    for (const auto d : { juce::Point<float>(0.7f, 0.0f), { -0.7f, 0.0f }, { 0.0f, 0.7f }, { 0.0f, -0.7f } })
+                        nearEdge = nearEdge || card.contains(x + d.x, y + d.y) != inside;
+                    if (nearEdge)
+                        continue;
+                    const auto shows = meters[0]->isNeedleNative() && meterShowsAt(*meters[0], { x, y });
+                    (inside ? hidden : shown) += 1;
+                    wrong += shows == inside ? 1 : 0;
+                }
+            check(hidden > 100 && shown > 100 && wrong == 0,
+                  label + ": away from the antialiased edge, the left needle is left out just where the card is (" + juce::String(hidden) + " hidden, "
+                      + juce::String(shown) + " shown, " + juce::String(wrong) + " wrong)");
+        };
+        const auto aboutState = [&](bool rackDimmed, const juce::String& label)
+        {
+            syncAll(rackDimmed, label);
+            check(meters[0]->nativeNeedleProbe().masked, label + ": the left needle is masked by the card");
+            check(! meters[1]->nativeNeedleProbe().masked, label + ": the right needle is not masked (the card is not over it)");
+            maskMatchesCard(label);
+        };
+
+        // Opened mid-movement: no hand-over, the clock's position is kept.
+        driveMeters(processor, 0.3f);
+        syncAll(false, "before About");
+        std::vector<float> before;
+        for (auto* meter : meters)
+            before.push_back(meter->nativeNeedleProbe().scaleFraction);
+        // Checked straight after the change, before any display callback or sync: the cut-out is
+        // in place in the same message-thread turn as the card's repaint.
+        about->setVisible(true);
+        for (size_t i = 0; i < meters.size(); ++i)
+        {
+            check(meters[i]->isNeedleNative(), "About opened: needle stays in the layer");
+            check(meters[i]->nativeNeedleProbe().scaleFraction == before[i], "About opened: the needle is not moved by it");
+        }
+        check(meters[0]->nativeNeedleProbe().masked && ! meters[1]->nativeNeedleProbe().masked,
+              "About opened: left masked at once, right not");
+        maskMatchesCard("About opened, at once");
+        aboutState(false, "About open");
+
+        // Both needles keep moving at the clock's rate while it is open.
+        {
+            const auto presents = clock.probe().presents;
+            driveMeters(processor, 0.6f, 20);
+            juce::Thread::sleep(200);   // the released movement after the last block
+            check(clock.probe().presents > presents + 2, "About open: the clock moves the needles");
+            aboutState(false, "About open, moving");
+        }
+
+        // With bypass: dimmed and masked; through the fall to rest.
+        bypassParameter->setValueNotifyingHost(1.0f);
+        driveMeters(processor, 0.3f, 5);
+        aboutState(true, "About open, bypassed, falling");
+        for (int i = 0; i < 4; ++i)
+            driveMeters(processor, 0.3f);
+        juce::Thread::sleep(60);
+        aboutState(true, "About open, bypassed at rest");
+        for (auto* meter : meters)
+            check(meter->nativeNeedleProbe().scaleFraction == 0.0f, "About open, bypassed: at the stop");
+        bypassParameter->setValueNotifyingHost(0.0f);
+        driveMeters(processor, 0.3f, 10);
+        aboutState(false, "About open, released");
+
+        // Resized while open: the card is centred again and the mask follows it.
+        editor->setSize(1200, bqt::editor::heightForWidth(1200));
+        maskMatchesCard("About open, resized, at once");
+        aboutState(false, "About open, resized");
+        editor->setSize(1100, bqt::editor::heightForWidth(1100));
+        maskMatchesCard("About open, resized back, at once");
+        aboutState(false, "About open, resized back");
+
+        // Closed mid-movement: the mask goes, the needle stays where the clock drew it.
+        driveMeters(processor, 0.3f, 10);
+        juce::Thread::sleep(40);
+        std::vector<float> fractions;
+        for (auto* meter : meters)
+            fractions.push_back(meter->nativeNeedleProbe().scaleFraction);
+        about->setVisible(false);   // no sync: the mask must be gone at once
+        for (size_t i = 0; i < meters.size(); ++i)
+        {
+            auto* meter = meters[i];
+            const auto fraction = fractions[i];
+            const auto probe = meter->nativeNeedleProbe();
+            check(meter->isNeedleNative() && ! probe.masked, "About closed: needle in the layer, unmasked");
+            check(probe.scaleFraction == fraction || std::abs(probe.scaleFraction - fraction) < 0.05f,
+                  "About closed mid-movement: the needle is not moved by it");
+        }
+        syncAll(false, "About closed");
+    }
+    // The value readout over a needle: the same rule as the About card, nothing specific to it.
+    {
+        juce::Component* readout = nullptr;
+        for (auto* child : editor->getChildren())
+            if (juce::String(typeid(*child).name()).contains("BqtReadoutBubble"))
+                readout = child;
+        check(readout != nullptr && dynamic_cast<const bqst::vu::OpaqueCover*>(readout) != nullptr,
+              "found the value readout, which reports its shape");
+        if (readout != nullptr)
+        {
+            const auto sweep = editor->getLocalArea(meters[0], meters[0]->needleSweepArea());
+            // Its bounds are in the editor's unscaled space (it carries the editor's UI scale).
+            const auto target = sweep.getCentre().translated(0, -sweep.getHeight() / 6).toFloat()
+                                    .transformedBy(readout->getTransform().inverted());
+            // Every check straight after the change, with no sync and no display callback.
+            const auto readoutInView = [&]
+            {
+                auto shape = dynamic_cast<const bqst::vu::OpaqueCover*>(readout)->opaqueShape().toPath();
+                shape.applyTransform(bqst::vu::transformBetween(*readout, *editor).scaled(editor->getDesktopScaleFactor()));
+                return shape.getBounds();
+            };
+            readout->setBounds(juce::Rectangle<int>(60, 24).withCentre(target.roundToInt()));
+            readout->setVisible(true);
+            check(meters[0]->nativeNeedleProbe().masked && ! meters[1]->nativeNeedleProbe().masked,
+                  "readout shown over the left needle: left masked at once, right not");
+            auto shown = readoutInView();
+            check(! meters[0]->nativeNeedleShowsAt(shown.getCentre()), "readout: the needle is left out under it at once");
+            check(meters[0]->nativeNeedleShowsAt(shown.getCentre().translated(0.0f, -shown.getHeight())),
+                  "readout: the needle shows right above it");
+            // Moved (as it follows a dragged knob): the cut-out moves with it at once.
+            readout->setBounds(readout->getBounds().translated(0, 12));
+            const auto moved = readoutInView();
+            check(! meters[0]->nativeNeedleShowsAt(moved.getCentre()), "readout moved: left out at its new place at once");
+            check(meters[0]->nativeNeedleShowsAt({ shown.getCentreX(), shown.getY() + 1.0f }),
+                  "readout moved: shown again where it was");
+            syncAll(false, "readout over the left needle");
+            readout->setVisible(false);
+            check(! meters[0]->nativeNeedleProbe().masked, "readout hidden: unmasked at once");
+            syncAll(false, "readout gone");
+        }
     }
     check(clock.probe().running, "clock restarts with a native needle");
 
@@ -487,35 +789,13 @@ void hosted(BqtAudioProcessor& processor)
         editor->addAndMakeVisible(cover);
         cover.setBounds(editor->getLocalArea(meters[0], meters[0]->needleSweepArea().withSizeKeepingCentre(10, 10)));
         for (auto* meter : meters)
-            meter->syncNeedlePresentation(true);
+            meter->syncNeedlePresentation(false);
         check(! meters[0]->isNeedleNative() && ! meters[0]->nativeNeedleProbe().visible, "covered meter paints its needle");
         check(meters[1]->isNeedleNative(), "uncovered meter keeps the layer");
         editor->removeChildComponent(&cover);
     }
-    meters[0]->syncNeedlePresentation(true);
+    meters[0]->syncNeedlePresentation(false);
     checkAligned(*meters[0], window, "after cover removed");
-
-    // The About card covers everything.
-    juce::Component* about = nullptr;
-    for (auto* child : editor->getChildren())
-        if (juce::String(typeid(*child).name()).contains("AboutPanel"))
-            about = child;
-    check(about != nullptr, "found the About card");
-    if (about != nullptr)
-    {
-        about->setVisible(true);
-        for (auto* meter : meters)
-        {
-            meter->syncNeedlePresentation(true);
-            check(! meter->isNeedleNative(), "About card open: needle painted");
-        }
-        about->setVisible(false);
-        for (auto* meter : meters)
-        {
-            meter->syncNeedlePresentation(true);
-            check(meter->isNeedleNative(), "About card closed: layer back");
-        }
-    }
 
     // Detach: removing the editor from its view switches to the painted needle at once (JUCE
     // hides the editor), and the layers let go of the old view by the next frame call. JUCE gives
@@ -524,7 +804,7 @@ void hosted(BqtAudioProcessor& processor)
     for (auto* meter : meters)
     {
         check(! meter->isNeedleNative(), "no peer: painted");
-        meter->syncNeedlePresentation(true);
+        meter->syncNeedlePresentation(false);
         check(! meter->isNeedleNative(), "no peer after a frame: still painted");
         check(! meter->nativeNeedleProbe().attached, "no peer after a frame: layer detached");
     }
@@ -537,7 +817,7 @@ void hosted(BqtAudioProcessor& processor)
     const auto secondBaseline = sublayerCount(secondView);
     for (auto* meter : meters)
     {
-        meter->syncNeedlePresentation(true);
+        meter->syncNeedlePresentation(false);
         checkAligned(*meter, window, "reattached");
     }
     check(sublayerCount(secondView) == secondBaseline + 2, "reattached: one layer per meter");
@@ -547,7 +827,7 @@ void hosted(BqtAudioProcessor& processor)
     const auto stoppedTicks = clock.probe().ticks;
     meters[0]->setNeedleClock(nullptr);
     check(! clock.probe().running, "detaching first needle cannot restart a stopped clock");
-    meters[1]->syncNeedlePresentation(true);
+    meters[1]->syncNeedlePresentation(false);
     check(! clock.probe().running, "presenting remaining needle cannot restart a stopped clock");
     juce::Thread::sleep(40);
     check(clock.probe().ticks == stoppedTicks, "no clock ticks after final shutdown");
@@ -614,6 +894,63 @@ NSWindow* makeHostWindow(NSRect frame)
     return window;
 }
 
+// An editor opened while the plugin is already bypassed, with the needles at rest: through the
+// editor's own display callbacks, both needles are presented in the layer straight away, dimmed,
+// at the stop, with the clock committing nothing; on release they rise undimmed.
+void openedWhileBypassed(BqtAudioProcessor& processor)
+{
+    if (! bqst::vu::nativeNeedleCompiledIn)
+        return;
+    auto* bypass = processor.state().getParameter("bypass");
+    bypass->setValueNotifyingHost(1.0f);
+    for (int i = 0; i < 4; ++i)
+        driveMeters(processor, 0.3f);
+
+    NSWindow* window = makeHostWindow(NSMakeRect(0, 0, 1400, 1000));
+    auto editor = std::unique_ptr<juce::AudioProcessorEditor>(processor.createEditor());
+    editor->setVisible(true);
+    editor->addToDesktop(0, (__bridge void*) window.contentView);
+    std::vector<BqtVuMeter*> meters;
+    collectMeters(*editor, meters);
+    check(meters.size() == 2, "opened while bypassed: two meters");
+    pump(0.4);
+
+    std::vector<juce::Colour> bypassedColours;
+    for (auto* meter : meters)
+    {
+        const auto probe = meter->nativeNeedleProbe();
+        check(meter->isNeedleNative() && probe.visible, "opened while bypassed: needle in the layer");
+        check(probe.scaleFraction == 0.0f, "opened while bypassed: needle at the stop");
+        checkAligned(*meter, window, "opened while bypassed");
+        bypassedColours.push_back(probe.needleColour);
+    }
+    const auto& clock = clockOf(*editor);
+    {
+        const auto before = clock.probe();
+        pump(0.15);
+        driveMeters(processor, 0.3f, 5);
+        pump(0.15);
+        check(clock.probe().presents == before.presents, "opened while bypassed: nothing committed while at rest");
+    }
+
+    bypass->setValueNotifyingHost(0.0f);
+    driveMeters(processor, 0.3f, 10);
+    pump(0.2);
+    for (size_t i = 0; i < meters.size(); ++i)
+    {
+        const auto probe = meters[i]->nativeNeedleProbe();
+        check(meters[i]->isNeedleNative() && probe.scaleFraction > 0.0f, "opened while bypassed, released: needle rises in the layer");
+        const auto expected = bqst::vu::dimmedForBypass(probe.needleColour);
+        check(probe.needleColour != bypassedColours[i]
+                  && near(expected.getFloatRed(), bypassedColours[i].getFloatRed(), 0.002f)
+                  && near(expected.getFloatGreen(), bypassedColours[i].getFloatGreen(), 0.002f)
+                  && near(expected.getFloatBlue(), bypassedColours[i].getFloatBlue(), 0.002f),
+              "opened while bypassed: it was the dimmed form of the released colour");
+    }
+    editor.reset();
+    [window close];
+}
+
 // Editor closed and plugin destroyed while the clock ticks and audio runs on another thread, rapid
 // open and close, and peer changes. Meant to run under AddressSanitizer or ThreadSanitizer too.
 void teardown()
@@ -637,7 +974,7 @@ void teardown()
             std::vector<BqtVuMeter*> meters;
             collectMeters(*editor, meters);
             for (auto* meter : meters)
-                meter->syncNeedlePresentation(true);
+                meter->syncNeedlePresentation(false);
             if (bqst::vu::nativeNeedleCompiledIn && i == 0)
                 check(clockOf(*editor).probe().running, "teardown: clock running before close");
             if (i % 3 == 1)
@@ -648,7 +985,7 @@ void teardown()
                 editor->removeFromDesktop();
                 editor->addToDesktop(0, (__bridge void*) content);
                 for (auto* meter : meters)
-                    meter->syncNeedlePresentation(true);
+                    meter->syncNeedlePresentation(false);
                 juce::Thread::sleep(3);
             }
             editor.reset();
@@ -663,7 +1000,7 @@ void teardown()
             std::vector<BqtVuMeter*> meters;
             collectMeters(*editor, meters);
             for (auto* meter : meters)
-                meter->syncNeedlePresentation(true);
+                meter->syncNeedlePresentation(false);
             juce::Thread::sleep(30);
             if (bqst::vu::nativeNeedleCompiledIn)
                 check(clockOf(*editor).probe().presents > 0, "teardown: clock presented before the plugin closed");
@@ -806,6 +1143,24 @@ void presentation(BqtAudioProcessor& processor)
                       << "/s, JUCE display callbacks " << m.callbacks << "/s\n";
             return m;
         };
+        // For "nothing moves" claims. The capture sees the whole display region, and the user may
+        // be at the machine (the auto-hiding Dock, for one, slides over floating windows), so a
+        // region that changed while this process committed nothing is measured again, up to three
+        // times. Clock commits, this process's own evidence, must be zero on every attempt.
+        const auto measureStill = [&](const char* label, const std::function<void()>& messageThread, double allowedPictures)
+        {
+            Measured m {};
+            auto presents = 0.0;
+            for (int attempt = 0; attempt < 3; ++attempt)
+            {
+                m = measure(label, messageThread);
+                presents = std::max(presents, m.presents);
+                if (m.pictures < allowedPictures)
+                    break;
+            }
+            m.presents = presents;
+            return m;
+        };
         const auto atDisplayRate = [&](const Measured& m, const juce::String& label)
         {
             const auto period = 1000.0 / m.refreshHz;
@@ -832,19 +1187,115 @@ void presentation(BqtAudioProcessor& processor)
         check(throttled.callbacks <= 31.0, "throttled: JUCE callbacks limited to 30/s");
         check(meters[0]->isNeedleNative() && meters[1]->isNeedleNative(), "throttled: needles stayed native");
 
-        // Control: with the bypassed look the needles are painted, so a stalled message thread
-        // must freeze them on screen. This shows the capture detects message-thread dependence.
+        // Bypass with the message thread stalled from the first bypassed frame on: the fall
+        // reaches the screen at display rate (it is the clock's, not JUCE's), and once the
+        // needles are at rest the clock stops committing by itself, with no message-thread call.
         auto* bypass = processor.state().getParameter("bypass");
         bypass->setValueNotifyingHost(1.0f);
-        pump(0.5);
-        check(! meters[0]->isNeedleNative(), "control: bypassed look paints the needle");
-        const auto control = measure("control: painted needle, message thread stalled 1.5 s",
-                                     [] { std::this_thread::sleep_for(std::chrono::milliseconds(1500)); });
-        check(control.pictures < 3.0, "control: a painted needle does not move while the message thread is stalled");
-        check(control.presents < 1.0, "control: clock idle while no needle is native");
+        pump(0.04);   // one display callback applies the bypassed look
+        {
+            const auto fall = measure("bypass fall, message thread stalled 0.15 s",
+                                      [] { std::this_thread::sleep_for(std::chrono::milliseconds(150)); });
+            check(fall.pictures >= 0.8 * fall.refreshHz, "bypass fall: needle pictures reach the screen at display rate");
+            // The clock commits changed readings only, and the feed publishes about every 10 ms
+            // with scheduling jitter, so in nine frames one may bring no new reading.
+            check(fall.presents >= 0.8 * fall.refreshHz, "bypass fall: clock presents at display rate");
+            // Still stalled (no event loop runs between these measurements) while the fall ends.
+            measure("bypass fall ends, message thread stalled 2.5 s",
+                    [] { std::this_thread::sleep_for(std::chrono::milliseconds(2500)); });
+            const auto still = measureStill("bypassed at rest, message thread stalled 1 s",
+                                            [] { std::this_thread::sleep_for(std::chrono::seconds(1)); }, 1.0);
+            check(still.pictures < 1.0, "bypassed at rest: nothing moves on screen");
+            check(still.presents < 1.0, "bypassed at rest: the clock commits nothing, without the message thread");
+        }
+        pump(0.3);
+        check(meters[0]->isNeedleNative() && meters[1]->isNeedleNative(), "bypassed at rest: needles stay in the layer");
+        {
+            const auto still = measureStill("bypassed at rest, message thread free 1 s", [] { pump(1.0); }, 1.0);
+            check(still.pictures < 1.0 && still.presents < 1.0, "bypassed at rest, message thread free: nothing moves or commits");
+        }
         bypass->setValueNotifyingHost(0.0f);
+        pump(0.04);   // one display callback removes the bypassed look
+        {
+            // The rise from rest is the clock's too: display rate with the message thread stalled.
+            const auto rise = measure("rise after bypass, message thread stalled 0.15 s",
+                                      [] { std::this_thread::sleep_for(std::chrono::milliseconds(150)); });
+            check(rise.pictures >= 0.8 * rise.refreshHz, "rise after bypass: needle pictures reach the screen at display rate");
+            check(rise.presents >= 0.8 * rise.refreshHz, "rise after bypass: clock presents at display rate");
+        }
         pump(0.5);
-        check(meters[0]->isNeedleNative(), "control: layer back after bypass");
+        check(meters[0]->isNeedleNative(), "released: needles in the layer");
+
+        // The About card on screen, message thread stalled: both needles stay in the layer, the
+        // left one keeps moving above the card at display rate, and inside the card (where the
+        // needle's lower part passes behind it) the picture never changes. This is the window
+        // server's own rendering of the mask, not its model.
+        {
+            juce::Component* aboutCard = nullptr;
+            for (auto* child : editor->getChildren())
+                if (juce::String(typeid(*child).name()).contains("AboutPanel"))
+                    aboutCard = child;
+            auto* aboutCover = dynamic_cast<const bqst::vu::OpaqueCover*>(aboutCard);
+            check(aboutCover != nullptr, "on screen: found the About card");
+            if (aboutCover != nullptr)
+            {
+                aboutCard->setVisible(true);
+                pump(0.3);
+                check(meters[0]->isNeedleNative() && meters[1]->isNeedleNative(), "on screen, About open: needles in the layer");
+                auto card = aboutCover->opaqueShape().toPath();
+                card.applyTransform(bqst::vu::transformBetween(*aboutCard, *editor).scaled(editor->getDesktopScaleFactor()));
+                // Inside the rounded card, clear of its antialiased edge, within the captured meter.
+                const auto inner = card.getBounds().reduced(12.0f).getIntersection(clip.reduced(2.0f));
+                const auto probe = meters[0]->nativeNeedleProbe();
+                auto needleCrosses = false;
+                for (int i = 0; i <= 20; ++i)
+                    needleCrosses = needleCrosses || inner.contains(probe.pivot + (probe.tip - probe.pivot) * (static_cast<float>(i) / 20.0f));
+                check(! inner.isEmpty() && needleCrosses, "on screen: the left needle passes behind the card");
+                const auto scale = static_cast<float>(window.backingScaleFactor);
+                output->regionX.store(static_cast<int>((inner.getX() - clip.getX()) * scale));
+                output->regionY.store(static_cast<int>((inner.getY() - clip.getY()) * scale));
+                output->regionH.store(static_cast<int>(inner.getHeight() * scale));
+                output->regionW.store(static_cast<int>(inner.getWidth() * scale));
+                pump(0.1);
+                // Inside the card nothing may change; other screen content (the Dock) can, so a
+                // changed card region is measured again, up to three times.
+                Measured withAbout {};
+                int regionPictures = 0;
+                for (int attempt = 0; attempt < 3; ++attempt)
+                {
+                    output->regionPictures.store(0);
+                    withAbout = measure("About open, message thread stalled 1 s",
+                                        [] { std::this_thread::sleep_for(std::chrono::seconds(1)); });
+                    regionPictures = output->regionPictures.load();
+                    std::cout << "  pictures inside the card: " << regionPictures << "\n";
+                    if (regionPictures == 0)
+                        break;
+                }
+                check(withAbout.pictures >= 0.8 * withAbout.refreshHz, "About open: the left needle moves on screen at display rate");
+                check(regionPictures == 0, "About open: nothing of the needle shows inside the card");
+                output->regionW.store(0);
+                aboutCard->setVisible(false);
+                pump(0.3);
+                check(meters[0]->isNeedleNative() && ! meters[0]->nativeNeedleProbe().masked, "on screen, About closed: unmasked");
+            }
+        }
+
+        // Control: under a cover that does not report its shape the needles are painted, so a
+        // stalled message thread must freeze them on screen. This shows the capture detects
+        // message-thread dependence.
+        {
+            juce::Component cover;
+            editor->addAndMakeVisible(cover);
+            cover.setBounds(editor->getLocalArea(meters[0], meters[0]->needleSweepArea().withSizeKeepingCentre(4, 4)));
+            pump(0.3);
+            check(! meters[0]->isNeedleNative(), "control: a plain cover paints the needle");
+            const auto control = measureStill("control: painted needle, message thread stalled 1.5 s",
+                                              [] { std::this_thread::sleep_for(std::chrono::milliseconds(1500)); }, 3.0);
+            check(control.pictures < 3.0, "control: a painted needle does not move while the message thread is stalled");
+            editor->removeChildComponent(&cover);
+            pump(0.5);
+            check(meters[0]->isNeedleNative(), "control: layer back after the cover");
+        }
 
         // Window moved to another screen: the clock follows it and keeps the needle at that
         // screen's rate.
@@ -912,6 +1363,7 @@ int main()
         paintedWhenOffscreen(processor);
         slowPaintedFade(processor);
         @autoreleasepool { hosted(processor); }
+        @autoreleasepool { openedWhileBypassed(processor); }
         @autoreleasepool { presentation(processor); }
 
         processor.releaseResources();

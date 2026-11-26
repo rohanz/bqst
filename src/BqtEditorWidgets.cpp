@@ -250,11 +250,15 @@ void BqtReadoutBubble::setText(juce::String newText)
     repaint();
 }
 
+bqst::vu::OpaqueCoverShape BqtReadoutBubble::opaqueShape() const
+{
+    return { getLocalBounds().toFloat().reduced(1.0f), fieldCorner };
+}
+
 void BqtReadoutBubble::paint(juce::Graphics& g)
 {
-    const auto bounds = getLocalBounds().toFloat();
     g.setColour(juce::Colour(0xff111111));
-    g.fillRoundedRectangle(bounds.reduced(1.0f), fieldCorner); // flat, like a switched-on bar button
+    g.fillPath(opaqueShape().toPath()); // flat, like a switched-on bar button
     g.setColour(juce::Colour(panelText));
     g.setFont(juce::Font(faceFont(16.5f, true)));
     g.drawText(text, getLocalBounds().reduced(8, 2), juce::Justification::centred);

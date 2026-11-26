@@ -293,13 +293,19 @@ juce::Rectangle<int> BqtAudioProcessorEditor::AboutPanel::cardBounds() const
     return juce::Rectangle<int>(420, 230).withCentre(getLocalBounds().getCentre());
 }
 
+// The card's fill: everything the panel paints lies inside it.
+bqst::vu::OpaqueCoverShape BqtAudioProcessorEditor::AboutPanel::opaqueShape() const
+{
+    return { cardBounds().toFloat(), 10.0f };
+}
+
 // A flat cream card with a hairline edge over the undimmed editor; every line in the face font's
 // semibold, set apart by size and ink strength.
 void BqtAudioProcessorEditor::AboutPanel::paint(juce::Graphics& g)
 {
     const auto card = cardBounds();
     g.setColour(juce::Colour(menuPanel));
-    g.fillRoundedRectangle(card.toFloat(), 10.0f);
+    g.fillPath(opaqueShape().toPath());
     g.setColour(juce::Colour(ink).withAlpha(0.25f));
     g.drawRoundedRectangle(card.toFloat().reduced(0.5f), 10.0f, 1.0f);
 
@@ -372,9 +378,10 @@ void BqtAudioProcessorEditor::RackComponent::paintOverChildren(juce::Graphics& g
         return;
 
     const auto bounds = getLocalBounds().toFloat();
-    g.setColour(juce::Colours::black.withAlpha(0.28f));
+    // The same fills dim a native needle shown over the rack (bqst::vu::dimmedForBypass).
+    g.setColour(bqst::vu::bypassShade);
     g.fillRect(bounds);
-    g.setColour(juce::Colour(0xff8a8a8a).withAlpha(0.16f));
+    g.setColour(bqst::vu::bypassWash);
     g.fillRect(bounds);
 }
 

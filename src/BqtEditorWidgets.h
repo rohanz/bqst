@@ -2,6 +2,8 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include "BqtVuNeedleLayer.h"
+
 #include <array>
 #include <functional>
 #include <memory>
@@ -79,11 +81,13 @@ private:
     juce::VBlankAttachment frameClock;
 };
 
-class BqtReadoutBubble final : public juce::Component
+// Reports its fill as its opaque shape, so over a VU meter the needle layer leaves it out.
+class BqtReadoutBubble final : public juce::Component, public bqst::vu::OpaqueCover
 {
 public:
     void setText(juce::String newText);
     void paint(juce::Graphics& g) override;
+    bqst::vu::OpaqueCoverShape opaqueShape() const override;
 
 private:
     juce::String text;

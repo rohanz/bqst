@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.3.3
+
+- While bypassed, the VU needles fall smoothly to the left stop and stay there; releasing bypass
+  lets them rise again with the normal movement. The sound is unchanged.
+- When the host stops and later resumes processing, the VU needles carry on from where they
+  had fallen instead of jumping back to their old reading.
+- On macOS a needle that stands still no longer redraws at every screen refresh.
+- On macOS the VU needles stay smooth while the About card or a value readout is open; they
+  still pass behind it.
+
 ## 1.3.2
 
 Interface:

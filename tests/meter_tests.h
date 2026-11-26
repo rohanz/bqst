@@ -3,6 +3,12 @@
 #include "../src/BqtMetering.h"
 #include <array>
 
+inline const char* resumeLabel(bool bypassed)
+{
+    return bypassed ? "resumed callbacks continue the bypassed needle from where it was shown"
+                    : "resumed callbacks continue the needle from where it was shown";
+}
+
 template <typename Check>
 void testMetering(Check check)
 {
@@ -116,5 +122,184 @@ void testMetering(Check check)
             capture.prepare(rate, blockSize / rate);
             check(capture.level(2.0) == 0.0f, "prepare clears movement and partial rectifier integral");
         }
+    }
+    // Bypass rest: resting pushes move the needle to the left stop with the same movement as
+    // losing the signal, then hold it there exactly; releasing it rises like a needle from rest.
+    {
+        const double rate = 48000.0;
+        const int block = 48; // 1 ms
+        std::array<float, 48> loud {}, silent {};
+        loud.fill(static_cast<float>(1.0 / (bqt::MeterCapture::sineCalibration * bqt::MeterCapture::zeroVuGain)));
+        bqt::MeterCapture resting, silenced, fresh;
+        for (auto* c : { &resting, &silenced, &fresh })
+        {
+            c->prepare(rate, block / rate);
+            c->beginCallback(0.0, block / rate, true);
+        }
+        double t = 0.0;
+        for (int i = 0; i < 1000; ++i) // 1 s at 0 VU
+        {
+            t += 0.001;
+            resting.push(loud.data(), block, rate, t);
+            silenced.push(loud.data(), block, rate, t);
+        }
+        check(resting.level(t) > 0.99f, "fed meter reads 0 VU before bypass");
+
+        bool sameAsSilence = true, straightToStop = true;
+        int restTick = -1;
+        float previous = resting.level(t);
+        for (int i = 0; i < 3000; ++i) // 3 s bypassed, loud signal still arriving
+        {
+            t += 0.001;
+            resting.push(loud.data(), block, rate, t, true);
+            silenced.push(silent.data(), block, rate, t);
+            const auto r = resting.level(t);
+            if (restTick < 0 && r == 0.0f && silenced.level(t) != 0.0f
+                && std::abs(silenced.level(t)) < bqt::MeterCapture::restPosition)
+                restTick = i;
+            if (restTick < 0)
+            {
+                sameAsSilence = sameAsSilence && r == silenced.level(t);
+                // May touch the stop at the 1.25% undershoot, never swing back up visibly.
+                straightToStop = straightToStop && (r <= previous || r < 2.0e-4f);
+            }
+            else if (r != 0.0f)
+            {
+                check(false, "bypassed needle stays exactly at rest despite the signal");
+                break;
+            }
+            previous = r;
+        }
+        check(sameAsSilence, "bypass fall uses exactly the movement of losing the signal");
+        check(straightToStop, "bypass fall goes straight to the stop");
+        check(restTick > 300 && restTick < 1500, "bypass fall reaches exact rest in about a second");
+
+        // Release: from rest, the same movement as a fresh meter fed the same signal.
+        bool sameAsFresh = true;
+        for (int i = 0; i < 1000; ++i)
+        {
+            t += 0.001;
+            resting.push(loud.data(), block, rate, t);
+            fresh.push(loud.data(), block, rate, t);
+            sameAsFresh = sameAsFresh && resting.level(t) == fresh.level(t);
+        }
+        check(sameAsFresh && resting.level(t) > 0.99f, "after bypass the needle rises from rest normally");
+
+        // Rapid toggling mid-fall and mid-rise: never faster than the movement itself allows.
+        float fastestStep = 0.0f, fastestToggledStep = 0.0f;
+        {
+            bqt::MeterCapture step;
+            step.prepare(rate, block / rate);
+            step.beginCallback(0.0, block / rate, true);
+            float last = 0.0f;
+            for (int i = 0; i < 2000; ++i)
+            {
+                step.push(i < 1000 ? loud.data() : silent.data(), block, rate, 0.001 * (i + 1));
+                const auto r = step.level(0.001 * (i + 1));
+                fastestStep = std::max(fastestStep, std::abs(r - last));
+                last = r;
+            }
+        }
+        float last = resting.level(t);
+        for (int i = 0; i < 2000; ++i)
+        {
+            t += 0.001;
+            const auto bypassed = (i / 37) % 2 == 0; // toggles every 37 ms
+            resting.push(loud.data(), block, rate, t, bypassed);
+            const auto r = resting.level(t);
+            fastestToggledStep = std::max(fastestToggledStep, std::abs(r - last));
+            last = r;
+        }
+        check(fastestToggledStep <= fastestStep * 1.0001f, "rapid bypass toggling moves no faster than a full step and release");
+    }
+
+    // Callbacks that stop and resume (the host stops processing), bypassed or not: the needle
+    // carries on from where it was shown, released by the movement, and never jumps back.
+    for (const bool bypassed : { false, true })
+        for (const double pause : { 0.05, 0.3, 1.0, 5.0 })
+        {
+            const double rate = 48000.0;
+            std::array<float, 48> loud {}, silent {};
+            loud.fill(static_cast<float>(1.0 / (bqt::MeterCapture::sineCalibration * bqt::MeterCapture::zeroVuGain)));
+            bqt::MeterCapture capture;
+            capture.prepare(rate, 0.001);
+            double t = 100.0;
+            for (int i = 0; i < 1000; ++i)
+            {
+                t += 0.001;
+                capture.beginCallback(t, 0.001, false);
+                capture.push(loud.data(), 48, rate, t);
+            }
+            // A few bypassed callbacks start the fall, then the host stops calling.
+            for (int i = 0; i < (bypassed ? 20 : 0); ++i)
+            {
+                t += 0.001;
+                capture.beginCallback(t, 0.001, false);
+                capture.push(loud.data(), 48, rate, t, true);
+            }
+            t += pause;
+            const auto shown = capture.level(t);
+            if (pause >= 5.0)
+                check(shown == 0.0f, "a long stop releases the shown needle to rest");
+            // A callback that pushes nothing, then a real one 1 ms later.
+            capture.beginCallback(t, 0.0, false);
+            capture.push(silent.data(), 0, rate, t);
+            check(capture.level(t) == shown, "an empty callback after a stop leaves the shown needle where it was");
+            t += 0.001;
+            capture.beginCallback(t, 0.001, false);
+            capture.push(bypassed ? loud.data() : silent.data(), 48, rate, t, bypassed);
+            const auto resumed = capture.level(t);
+            check(resumed <= shown + 1.0e-4f && resumed >= shown - 0.02f,
+                  resumeLabel(bypassed));
+        }
+    // Realtime -> offline render: the first offline block never depends on wall time, however
+    // long the pause before it.
+    {
+        const double rate = 48000.0;
+        std::array<float, 48> loud {};
+        loud.fill(static_cast<float>(1.0 / (bqt::MeterCapture::sineCalibration * bqt::MeterCapture::zeroVuGain)));
+        float firstOffline[2] {};
+        for (const double pause : { 0.0, 1.0 })
+        {
+            bqt::MeterCapture capture;
+            capture.prepare(rate, 0.001);
+            double t = 100.0;
+            for (int i = 0; i < 1000; ++i)
+            {
+                t += 0.001;
+                capture.beginCallback(t, 0.001, false);
+                capture.push(loud.data(), 48, rate, t);
+            }
+            t += 0.001 + pause;
+            capture.beginCallback(t, 0.001, true);
+            capture.push(loud.data(), 48, rate, t);
+            firstOffline[pause > 0.0 ? 1 : 0] = capture.level(t);
+        }
+        check(firstOffline[0] == firstOffline[1] && firstOffline[0] > 0.99f,
+              "offline render after a realtime pause is independent of wall time");
+    }
+
+    // A stop, one resumed block, then another stop: the stop grace comes from the callback
+    // spacing (here unknown again), never from the length of the first stop.
+    {
+        const double rate = 48000.0;
+        std::array<float, 48> loud {};
+        loud.fill(static_cast<float>(1.0 / (bqt::MeterCapture::sineCalibration * bqt::MeterCapture::zeroVuGain)));
+        bqt::MeterCapture capture;
+        capture.prepare(rate, 0.001);
+        double t = 100.0;
+        for (int i = 0; i < 1000; ++i)
+        {
+            t += 0.001;
+            capture.beginCallback(t, 0.001, false);
+            capture.push(loud.data(), 48, rate, t);
+        }
+        t += 0.150;
+        capture.beginCallback(t, 0.001, false);
+        capture.push(loud.data(), 48, rate, t, true);
+        const auto resumed = capture.level(t);
+        const auto later = capture.level(t + bqt::MeterCapture::unknownSpacingGrace + 0.02);
+        check(resumed > 0.05f && later < resumed - 0.01f,
+              "a second stop right after a resume releases after the normal grace, not twice the first stop");
     }
 }

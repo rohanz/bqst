@@ -74,12 +74,14 @@ private:
     };
 
     // Covers the whole editor while open, without dimming it: a click anywhere (on the card or
-    // beside it) or Escape closes it. Read as a dialog.
-    class AboutPanel final : public juce::Component
+    // beside it) or Escape closes it. Read as a dialog. It paints only the card, which it reports
+    // as its opaque shape, so the VU needle layers leave out just the card (BqtVuNeedleLayer.h).
+    class AboutPanel final : public juce::Component, public bqst::vu::OpaqueCover
     {
     public:
         AboutPanel();
         void paint(juce::Graphics& g) override;
+        bqst::vu::OpaqueCoverShape opaqueShape() const override;
         void mouseDown(const juce::MouseEvent& event) override;
         void mouseUp(const juce::MouseEvent& event) override;
         bool keyPressed(const juce::KeyPress& key) override;
@@ -229,6 +231,18 @@ private:
     // look intermittently low-framerate.
     std::unique_ptr<bqt::FrameLog> frameLog;
     juce::VBlankAttachment meterVBlank;
+    // Every child that paints over the meters and reports its shape (bqst::vu::OpaqueCover): a
+    // change to one re-presents both needles at once, in the same message-thread turn (and so the
+    // same Core Animation commit) as the change's own repaint, not at the next display callback.
+    struct NeedleCoverWatcher final : juce::ComponentListener
+    {
+        std::function<void()> changed;
+        void componentVisibilityChanged(juce::Component&) override { changed(); }
+        void componentMovedOrResized(juce::Component&, bool, bool) override { changed(); }
+        void componentBroughtToFront(juce::Component&) override { changed(); }
+    };
+    NeedleCoverWatcher needleCoverWatcher;
+    std::vector<juce::Component*> needleCovers;
     bool isMirroringLinkedControl = false;
     // Per link group (eq, sat): whether side B's controls are currently attached to side A's
     // parameters. See updateLinkedAttachments.

@@ -945,12 +945,58 @@ int main()
             check(processor->getMeterLevel(0) == offlineReading,
                   "non-realtime processor does not release its meter between render callbacks");
             processor->setNonRealtime(false);
-            // Full bypass continues driving the movement from the passthrough signal.
+            // Bypass: the needles fall to the left stop with the normal movement (no snap) and
+            // stay there, whatever passes through; released, they rise from rest again.
+            const auto calibrated = [](float amplitude) { return amplitude / std::sqrt(2.0f) * bqt::MeterCapture::zeroVuGain; };
             setParam(*processor, "bypass", 1.0f);
+            render(*processor, 1000.0, 0.5f, 0.1);
+            const auto falling = processor->getMeterLevel(0);
+            check(falling > 0.2f * reading && falling < 0.8f * reading,
+                  "bypass: the needle falls with the VU movement, not a snap");
+            render(*processor, 1000.0, 0.5f, 2.0);
+            check(processor->getMeterLevel(0) == 0.0f && processor->getMeterLevel(1) == 0.0f,
+                  "bypass: both needles reach the left stop and rest there");
+            render(*processor, 1000.0, 0.9f, 1.0);
+            check(processor->getMeterLevel(0) == 0.0f && processor->getMeterLevel(1) == 0.0f,
+                  "bypass: a needle at rest stays still with signal passing through");
+            setParam(*processor, "bypass", 0.0f);
+            render(*processor, 1000.0, 0.125f, 0.05);
+            const auto rising = processor->getMeterLevel(0);
+            check(rising > 0.0f && rising < 0.8f * calibrated(0.125f),
+                  "after bypass: the needle rises from rest with the VU movement");
             render(*processor, 1000.0, 0.125f, 1.0);
-            check(std::abs(processor->getMeterLevel(0) - 0.125f / std::sqrt(2.0f)
-                           * bqt::MeterCapture::zeroVuGain) < 0.005f,
-                  "fully bypassed signal continues driving the VU movement");
+            check(std::abs(processor->getMeterLevel(0) - calibrated(0.125f)) < 0.005f,
+                  "after bypass: the needle reads the signal again");
+            // Rapid bypass toggling mid-fall and mid-rise: the reading only ever moves by the
+            // movement, never jumps (at most a full-scale step's 10 ms worth per 10 ms block).
+            {
+                auto last = processor->getMeterLevel(0);
+                auto largest = 0.0f;
+                for (int i = 0; i < 40; ++i)
+                {
+                    if (i % 4 == 0)
+                        setParam(*processor, "bypass", (i / 4) % 2 == 0 ? 1.0f : 0.0f);
+                    render(*processor, 1000.0, 0.5f, 0.01);
+                    const auto now = processor->getMeterLevel(0);
+                    largest = std::max(largest, std::abs(now - last));
+                    last = now;
+                }
+                check(largest < 0.12f * calibrated(0.5f), "rapid bypass toggling: no jump in the reading");
+                setParam(*processor, "bypass", 0.0f);
+            }
+            // The host stops calling mid-fall (bypassed): the shown needle keeps falling, and on
+            // resume continues from there instead of jumping back up.
+            {
+                render(*processor, 1000.0, 0.5f, 1.0);
+                setParam(*processor, "bypass", 1.0f);
+                render(*processor, 1000.0, 0.5f, 0.02);
+                juce::Thread::sleep(250);
+                const auto shown = processor->getMeterLevel(0);
+                render(*processor, 1000.0, 0.5f, 0.01);
+                const auto resumed = processor->getMeterLevel(0);
+                check(resumed <= shown + 1.0e-4f, "stopped mid-fall: resumed needle does not jump back up");
+                setParam(*processor, "bypass", 0.0f);
+            }
             processor->prepareToPlay(sampleRate, size);
             check(processor->getMeterLevel(0) == 0.0f, "processor prepare resets its published meters");
         }

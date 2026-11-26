@@ -552,8 +552,9 @@ void BqtAudioProcessor::applyLatencyDelay(float* samples, int numSamples, int si
 void BqtAudioProcessor::updateMeter(int sideIndex, const float* samples, int numSamples)
 {
     meterCapture[static_cast<size_t>(sideIndex)].push(
-        samples, numSamples, currentSampleRate, juce::Time::getMillisecondCounterHiRes() * 0.001);
+        samples, numSamples, currentSampleRate, juce::Time::getMillisecondCounterHiRes() * 0.001, metersResting);
 }
+
 
 float BqtAudioProcessor::getMeterLevel(int sideIndex) const
 {
@@ -747,6 +748,9 @@ int BqtAudioProcessor::processSubBlock(float* left, float* right, int numSamples
 
     const auto bypassEnabled = loadFlag(paramPtrs.bypass);
     globalBypassMix.setTargetValue(bypassEnabled ? 1.0f : 0.0f);
+    // While bypassed the needles fall to rest and stay there, from the moment bypass is switched
+    // on; on release they rise from rest with the processed signal. Meters only, never audio.
+    metersResting = bypassEnabled;
     const auto needsBypassCrossfade = bypassEnabled || globalBypassMix.isSmoothing() || globalBypassMix.getCurrentValue() > 0.0f;
     const auto fullyBypassed = bypassEnabled && ! globalBypassMix.isSmoothing() && globalBypassMix.getCurrentValue() >= 1.0f;
 

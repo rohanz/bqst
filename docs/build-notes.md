@@ -256,22 +256,36 @@ are incomplete. Disk writing never runs in either editor callback or audio proce
 On macOS a native needle is not moved by those display callbacks: the editor's needle
 clock (a display link bound to the screen the editor's window is on, running on its
 own thread) moves it at every refresh of that screen, however often the host lets the
-message thread run (`src/BqtVuNeedleLayer.h`). These fields show its real rate next
-to the callback rate above:
+message thread run (`src/BqtVuNeedleLayer.h`). Anything BQST paints over a needle's
+sweep either reports its opaque shape (`bqst::vu::OpaqueCover`: the About card, the value
+readout), and the needle layer is masked by that shape so the needle stays native and
+still passes behind it, or it does not, and that needle is painted instead. A shape is a
+rounded rectangle, which the mask cuts out exactly; the cover paints its fill from the same
+shape. The editor re-presents the needles in the same turn as a cover is shown, hidden or
+moved, so no frame pairs a cover with an old mask. One limit: on the one-pixel antialiased
+fringe of a cover the result is a layer above the paint, not the needle painted under the
+cover. Where the cover has coverage `a` over needle N, cover colour C and face B, the
+screen shows (1-a)N + a(aC + (1-a)B) instead of (1-a)N + aC, a difference of a(1-a)(B-C),
+at most a quarter of B-C. These fields
+show its real rate next to the callback rate above:
 
 - `refresh_hz`: the clock's display link refresh rate (the screen's current rate);
   0 until the clock has ticked once.
 - `screen_max_fps`: the maximum refresh rate macOS reports for that screen (macOS 12+;
   0 if unknown). A 60 here means the screen itself is limited to 60 Hz (for example a
   ProMotion panel set to a fixed 60 Hz, or an external display).
-- `needle_presents_per_s`: needle positions the clock committed to the system
-  compositor per second of the actual interval (one commit moves both needles). It
-  should equal `refresh_hz` whenever a needle is native, even in an interval with
-  `frames=0`; it is 0 while both needles are painted (bypassed look, About card, menu
-  over the meters), because the clock stops then.
+- `needle_presents_per_s`: changed needle positions the clock committed to the system
+  compositor per second of the actual interval (one commit moves both needles). The
+  clock commits only when a reading changed, so it should equal `refresh_hz` whenever a
+  native needle is moving and the audio side publishes at least once a refresh, even in
+  an interval with `frames=0`. It is lower when host blocks are longer than a refresh
+  (the reading then changes once a block), and 0 while the needles stand still (bypassed
+  and at rest, or fully released) or both are painted (a cover over them that does not
+  report its shape; the clock stops then).
 - `needle_gap_max_ms`: the longest time between two consecutive commits in the
   interval, while the clock was running (a refresh skipped because the message thread
-  was changing a needle at that instant shows up here).
+  was changing a needle at that instant shows up here). A needle that stood still for
+  more than 250 ms starts a fresh measurement when it moves again.
 - `needle_cpu_ms`: CPU time the clock thread spent inside its ticks during the
   interval (path, Core Animation commit). At 60 Hz it measured about 3 ms per second
   on an M-series Mac, so about 6 ms per second (0.6% of one core) at 120 Hz.

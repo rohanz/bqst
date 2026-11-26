@@ -12,6 +12,16 @@ namespace bqst::vu
 // is linear amplitude relative to 0 VU (0 = no signal, 1 = 0 VU). Linear in amplitude like a moving
 // coil, with full scale at +3 VU: 0 VU sits at about 71% of the arc, -20 VU at about 7%.
 float vuDeflectionToScaleFraction(float deflection);
+
+// The bypassed look: the editor dims the whole rack with these two fills, painted over it (see
+// RackComponent::paintOverChildren). A native needle sits above everything JUCE paints, so while
+// it is shown over the dimmed rack it takes its colours through the same fills instead.
+inline const juce::Colour bypassShade = juce::Colours::black.withAlpha(0.28f);
+inline const juce::Colour bypassWash = juce::Colour(0xff8a8a8a).withAlpha(0.16f);
+inline juce::Colour dimmedForBypass(juce::Colour colour)
+{
+    return colour.overlaidWith(bypassShade).overlaidWith(bypassWash).withAlpha(colour.getAlpha());
+}
 } // namespace bqst::vu
 
 class BqtVuMeter final : public juce::Component
@@ -27,9 +37,12 @@ public:
     bool updateLevel();
     // Called once per display frame after updateLevel: shows the needle in the native layer when
     // it can (see BqtVuNeedleLayer.h), otherwise paints it. While native, the needle is moved by
-    // the needle clock at the screen's own rate, not here. editorAllowsNative is false while the
-    // editor paints anything over the meters that this meter cannot see (the bypassed look).
-    void syncNeedlePresentation(bool editorAllowsNative);
+    // the needle clock at the screen's own rate, not here. rackDimmed is true while the editor
+    // paints its bypassed look over the meters: a native needle then takes the dimmed colours.
+    void syncNeedlePresentation(bool rackDimmed);
+    // Something painted over the meters changed (shown, hidden, moved): re-present the native
+    // needle now, with its new cut-out, rather than at the next display callback.
+    void coversChanged() { syncNeedleGeometry(); }
 
     // For tests: the needle as painted at the current reading (pivot to tip, meter coordinates),
     // whether the native layer is presenting it, and the layer's own state.
@@ -40,6 +53,7 @@ public:
     void showDeflectionForTest(float deflection) { displayedLevel = bqst::vu::vuDeflectionToScaleFraction(deflection); }
     bool isNeedleNative() const { return needleIsNative; }
     bqst::vu::NativeNeedle::Probe nativeNeedleProbe() const { return nativeNeedle.probe(); }
+    bool nativeNeedleShowsAt(juce::Point<float> viewPoint) const { return nativeNeedle.showsAt(viewPoint); }
     // The area the needle and pivot dot can ever occupy, in meter coordinates.
     juce::Rectangle<int> needleSweepArea() const;
     // The part of the meter's bounds it paints (its housing); the rest is transparent.
@@ -89,6 +103,6 @@ private:
     bqst::vu::NeedleClock* needleClock = nullptr;
     bqst::vu::NativeNeedle nativeNeedle;
     bool needleIsNative = false;
-    bool editorAllowsNativeNeedle = false;
+    bool needleDimmed = false;
     Watcher watcher { *this };
 };
